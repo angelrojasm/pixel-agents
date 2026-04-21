@@ -1,7 +1,23 @@
 import { isBrowserRuntime } from './runtime';
 
-declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+declare function acquireVsCodeApi(): {
+  postMessage(msg: unknown): void;
+  getState<T = unknown>(): T | undefined;
+  setState<T = unknown>(state: T): T;
+};
 
-export const vscode: { postMessage(msg: unknown): void } = isBrowserRuntime
-  ? { postMessage: (msg: unknown) => console.log('[vscode.postMessage]', msg) }
-  : (acquireVsCodeApi() as { postMessage(msg: unknown): void });
+export interface VSCodeApi {
+  postMessage(msg: unknown): void;
+  getState<T = unknown>(): T | undefined;
+  setState<T = unknown>(state: T): T;
+}
+
+const browserFallback: VSCodeApi = {
+  postMessage: (msg: unknown) => console.log('[vscode.postMessage]', msg),
+  getState: () => undefined,
+  setState: (state) => state,
+};
+
+export const vscode: VSCodeApi = isBrowserRuntime
+  ? browserFallback
+  : (acquireVsCodeApi() as VSCodeApi);

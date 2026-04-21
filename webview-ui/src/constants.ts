@@ -148,3 +148,19 @@ export const FUEL_COLOR_CRITICAL = '#ff2222';
 export const FUEL_GAUGE_BG = '#222';
 export const TEAM_LEAD_COLOR = '#ffd700';
 export const TEAM_ROLE_COLOR = '#66aaff';
+
+// ── Bottom Drawer (Phase 2 UX shell) ─────────────────────────
+export const DRAWER_HEIGHT_RATIO = 0.4; // fraction of viewport when open
+export const DRAWER_HEIGHT_MAX_PX = 320; // upper bound on drawer height
+export const RAIL_HEIGHT_PX = 28; // lite-rail band height
+export const PEEK_HEIGHT_PX = 6; // edge-hug peek tab height
+export const MIN_DRAWER_VIEWPORT_PX = 360; // below this, drawer force-collapses to rail
+export const DRAWER_HEADER_HEIGHT_PX = 22;
+// Colors (centralized here — this file is exempt from no-inline-colors)
+export const DRAWER_BG_CHROME = '#0a0a14';
+export const DRAWER_BG_CELL = '#1e1e2e';
+export const DRAWER_BORDER = '#4a4a6e';
+export const DRAWER_ACCENT = '#4ade80';
+export const DRAWER_MUTED = '#6b7280';
+export const DRAWER_WAITING = '#f59e0b';
+export const DRAWER_SPRITE_PLACEHOLDER = '#f5c2a7';
