@@ -172,4 +172,42 @@ describe('PtyManager', () => {
 
     manager.disposeAll();
   });
+
+  it('attachSource() routes inbound messages from a second source to the same workers', () => {
+    const sink = makeSink();
+    const source = makeSource();
+    const manager = new PtyManager({ sink, source });
+
+    manager.start(7, {
+      shell: '/bin/sh',
+      args: ['-c', 'read line; printf "got:%s\\n" "$line"'],
+      cwd: process.cwd(),
+      env: process.env as Record<string, string>,
+      cols: 80,
+      rows: 24,
+    });
+
+    // Attach a SECOND source (simulating a second webview).
+    const secondSource = makeSource();
+    manager.attachSource(secondSource);
+
+    // Emit from the second source — manager should still write to the worker.
+    secondSource.emit({ type: 'ptyInput', agentId: 7, data: 'world\n' });
+
+    // Wait for the subprocess to consume + exit.
+    return new Promise<void>((resolve) => {
+      const interval = setInterval(() => {
+        if (sink.sent.some((m) => m.type === 'ptyExit' && m.agentId === 7)) {
+          clearInterval(interval);
+          const out = sink.sent
+            .filter((m) => m.type === 'ptyData' && m.agentId === 7)
+            .map((m) => m.data)
+            .join('');
+          expect(out).toContain('got:world');
+          manager.disposeAll();
+          resolve();
+        }
+      }, 10);
+    });
+  });
 });

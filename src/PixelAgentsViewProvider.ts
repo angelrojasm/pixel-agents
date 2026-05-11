@@ -66,9 +66,10 @@ import {
 import type { LayoutWatcher } from './layoutPersistence.js';
 import { readLayoutFromFile, watchLayoutFile, writeLayoutToFile } from './layoutPersistence.js';
 import { webviewMessageSource } from './messageSource.js';
+import { PtyManager } from './pty/ptyManager.js';
 import { clearAwaitingUser } from './timerManager.js';
 import { setHookProvider } from './transcriptParser.js';
-import type { AgentState, MessageSink } from './types.js';
+import type { AgentState, MessageSink, MessageSource } from './types.js';
 
 export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   nextAgentId = { current: 1 };
@@ -134,6 +135,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private pixelAgentsServer: PixelAgentsServer | null = null;
   // ServerConfig is not stored as a field; use this.pixelAgentsServer?.getConfig() if needed.
   private hookEventHandler: HookEventHandler | null = null;
+
+  // Pty manager (lazy-init on first webview; shared across all webviews via attachSource)
+  private ptyManager: PtyManager | null = null;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.initHooks();
@@ -370,6 +374,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     webviewMessageSource(webviewView.webview).onMessage((message) =>
       this.handleWebviewMessage(message),
     );
+    this.ensurePtyManager(webviewMessageSource(webviewView.webview));
   }
 
   /**
@@ -406,6 +411,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     webviewMessageSource(panel.webview).onMessage((message) => this.handleWebviewMessage(message));
+    this.ensurePtyManager(webviewMessageSource(panel.webview));
   }
 
   /** Dispatch an incoming message from any registered webview. */
@@ -1103,6 +1109,20 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  /** Lazy-init the PtyManager on the first webview, then attach additional
+   *  webview sources to the same manager so pty messages route from any
+   *  open webview into the workers. */
+  private ensurePtyManager(source: MessageSource): void {
+    if (this.ptyManager === null) {
+      this.ptyManager = new PtyManager({
+        sink: this.broadcastSink,
+        source,
+      });
+    } else {
+      this.ptyManager.attachSource(source);
+    }
+  }
+
   dispose() {
     if (this.terminalNamePollTimer) {
       clearInterval(this.terminalNamePollTimer);
@@ -1113,6 +1133,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.pixelAgentsServer = null;
     this.hookEventHandler?.dispose();
     this.hookEventHandler = null;
+    this.ptyManager?.disposeAll();
+    this.ptyManager = null;
     this.layoutWatcher?.dispose();
     this.layoutWatcher = null;
     for (const id of [...this.agents.keys()]) {

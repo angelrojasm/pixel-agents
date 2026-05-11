@@ -98,6 +98,15 @@ export class PtyManager {
     this.subscription.dispose();
   }
 
+  /** Attach an additional inbound source (e.g. a newly-opened webview). The manager
+   *  will forward pty-shaped messages from this source to the existing workers,
+   *  in addition to messages from any sources already attached. The returned
+   *  disposable detaches just this attachment; the manager's primary source
+   *  subscription is unaffected. */
+  attachSource(source: MessageSource): { dispose(): void } {
+    return source.onMessage((m) => this.handleInbound(m));
+  }
+
   private emitData(agentId: number, chunk: string): void {
     if (Buffer.byteLength(chunk, 'utf8') <= PTY_MAX_CHUNK_BYTES) {
       void this.opts.sink.postMessage({ type: 'ptyData', agentId, data: chunk });
