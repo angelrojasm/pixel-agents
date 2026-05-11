@@ -71,3 +71,13 @@ export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
  *  tool_result block). Without this carve-out, the office ends up showing
  *  "Working…" while the user is actually being asked a question. */
 export const INTERACTIVE_USER_TOOLS = new Set(['AskUserQuestion']);
+
+// ── Pty Backend (D2 — Phase 2 backend pipeline) ────────────
+/** Maximum number of pty output chunks (lines or chunks) held in the per-agent
+ *  scrollback ring buffer. Replayed to late-mounting webviews so a freshly
+ *  opened panel shows recent terminal history. */
+export const PTY_SCROLLBACK_MAX_LINES = 2000;
+/** Hard cap on a single pty output chunk forwarded to the webview. Pathological
+ *  output (massive single writes) is split or truncated to protect the
+ *  postMessage channel from a runaway producer. */
+export const PTY_MAX_CHUNK_BYTES = 1_048_576; // 1 MiB
