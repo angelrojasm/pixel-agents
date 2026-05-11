@@ -15,6 +15,10 @@ export const WANDER_PAUSE_MIN_SEC = 2.0;
 export const WANDER_PAUSE_MAX_SEC = 20.0;
 export const WANDER_MOVES_BEFORE_REST_MIN = 3;
 export const WANDER_MOVES_BEFORE_REST_MAX = 6;
+// Short pause used immediately after leaving a seat so the character steps off
+// the chair tile quickly instead of standing on it for WANDER_PAUSE_MAX_SEC.
+export const STEP_OFF_PAUSE_MIN_SEC = 0.3;
+export const STEP_OFF_PAUSE_MAX_SEC = 0.8;
 export const SEAT_REST_MIN_SEC = 120.0;
 export const SEAT_REST_MAX_SEC = 240.0;
 
@@ -149,18 +153,37 @@ export const FUEL_GAUGE_BG = '#222';
 export const TEAM_LEAD_COLOR = '#ffd700';
 export const TEAM_ROLE_COLOR = '#66aaff';
 
-// ── Bottom Drawer (Phase 2 UX shell) ─────────────────────────
-export const DRAWER_HEIGHT_RATIO = 0.4; // fraction of viewport when open
-export const DRAWER_HEIGHT_MAX_PX = 320; // upper bound on drawer height
-export const RAIL_HEIGHT_PX = 28; // lite-rail band height
-export const PEEK_HEIGHT_PX = 6; // edge-hug peek tab height
-export const MIN_DRAWER_VIEWPORT_PX = 360; // below this, drawer force-collapses to rail
-export const DRAWER_HEADER_HEIGHT_PX = 22;
-// Colors (centralized here — this file is exempt from no-inline-colors)
-export const DRAWER_BG_CHROME = '#0a0a14';
-export const DRAWER_BG_CELL = '#1e1e2e';
-export const DRAWER_BORDER = '#4a4a6e';
-export const DRAWER_ACCENT = '#4ade80';
-export const DRAWER_MUTED = '#6b7280';
-export const DRAWER_WAITING = '#f59e0b';
-export const DRAWER_SPRITE_PLACEHOLDER = '#f5c2a7';
+// ── Office Panel (Phase 2 UX shell, configurable position) ───
+/** Bottom panel sizing. */
+export const PANEL_BOTTOM_OPEN_RATIO = 0.4; // fraction of viewport height
+export const PANEL_BOTTOM_OPEN_MAX_PX = 320;
+export const PANEL_BOTTOM_RAIL_PX = 28;
+export const PANEL_BOTTOM_PEEK_PX = 6;
+/** Side (left/right) panel sizing. */
+export const PANEL_SIDE_OPEN_RATIO = 0.4; // fraction of viewport width
+export const PANEL_SIDE_OPEN_MAX_PX = 360;
+export const PANEL_SIDE_RAIL_PX = 32;
+export const PANEL_SIDE_PEEK_PX = 6;
+/** Viewport-floor checks per axis. */
+export const MIN_PANEL_VIEWPORT_PX_VERTICAL = 360; // bottom panel needs this much height
+export const MIN_PANEL_VIEWPORT_PX_HORIZONTAL = 480; // side panel needs this much width
+/** Panel header (focused-agent frame + tab strip + actions) thickness. */
+export const PANEL_HEADER_THICKNESS_PX = 22;
+
+/** Terminal font size (xterm.js will consume the same value once D2 lands). */
+export const TERMINAL_FONT_SIZE_DEFAULT = 14;
+export const TERMINAL_FONT_SIZE_MIN = 10;
+export const TERMINAL_FONT_SIZE_MAX = 24;
+
+// Panel chrome colors (centralized — file is exempt from no-inline-colors).
+export const PANEL_BG_CHROME = '#0a0a14';
+export const PANEL_BG_CELL = '#1e1e2e';
+export const PANEL_BORDER = '#4a4a6e';
+export const PANEL_ACCENT = '#4ade80';
+export const PANEL_MUTED = '#6b7280';
+export const PANEL_WAITING = '#f59e0b';
+export const PANEL_SPRITE_PLACEHOLDER = '#f5c2a7';
+
+// ── Character Nameplate ──────────────────────────────────────
+export const NAMEPLATE_TEXT_COLOR = '#dcd6ec';
+export const NAMEPLATE_TEXT_OUTLINE = '0 0 2px #000, 0 0 4px rgba(0, 0, 0, 0.8)';

@@ -1,5 +1,6 @@
 import type { ColorValue } from '../../components/ui/types.js';
 import { getColorizedSprite } from '../colorize.js';
+import { collectElectronicsTiles, facesComputer } from '../engine/seatAdjacency.js';
 import type {
   FurnitureInstance,
   OfficeLayout,
@@ -161,11 +162,13 @@ function orientationToFacing(orientation: string): Direction {
 }
 
 /** Generate seats from chair furniture.
- *  Facing priority: 1) chair orientation, 2) adjacent desk, 3) forward (DOWN). */
+ *  Facing priority: 1) chair orientation, 2) adjacent desk, 3) forward (DOWN).
+ *  Each seat is classified 'work' or 'rest' based on whether it faces an
+ *  electronics-category item on a desk tile within the auto-state adjacency window. */
 export function layoutToSeats(furniture: PlacedFurniture[]): Map<string, Seat> {
   const seats = new Map<string, Seat>();
 
-  // Build set of all desk tiles
+  // Build set of all desk tiles (for facing-direction fallback)
   const deskTiles = new Set<string>();
   for (const item of furniture) {
     const entry = getCatalogEntry(item.type);
@@ -177,15 +180,23 @@ export function layoutToSeats(furniture: PlacedFurniture[]): Map<string, Seat> {
     }
   }
 
+  // Build set of all electronics tiles (for work/rest classification)
+  const electronicsTiles = collectElectronicsTiles(
+    furniture,
+    (type) => getCatalogEntry(type)?.category,
+    (type) => {
+      const e = getCatalogEntry(type);
+      return e ? { footprintW: e.footprintW, footprintH: e.footprintH } : null;
+    },
+  );
+
   const dirs: Array<{ dc: number; dr: number; facing: Direction }> = [
-    { dc: 0, dr: -1, facing: Direction.UP }, // desk is above chair → face UP
-    { dc: 0, dr: 1, facing: Direction.DOWN }, // desk is below chair → face DOWN
-    { dc: -1, dr: 0, facing: Direction.LEFT }, // desk is left of chair → face LEFT
-    { dc: 1, dr: 0, facing: Direction.RIGHT }, // desk is right of chair → face RIGHT
+    { dc: 0, dr: -1, facing: Direction.UP },
+    { dc: 0, dr: 1, facing: Direction.DOWN },
+    { dc: -1, dr: 0, facing: Direction.LEFT },
+    { dc: 1, dr: 0, facing: Direction.RIGHT },
   ];
 
-  // For each chair, every footprint tile becomes a seat.
-  // Multi-tile chairs (e.g. 2-tile couches) produce multiple seats.
   for (const item of furniture) {
     const entry = getCatalogEntry(item.type);
     if (!entry || entry.category !== 'chairs') continue;
@@ -197,10 +208,6 @@ export function layoutToSeats(furniture: PlacedFurniture[]): Map<string, Seat> {
         const tileCol = item.col + dc;
         const tileRow = item.row + dr;
 
-        // Determine facing direction:
-        // 1) Chair orientation takes priority
-        // 2) Adjacent desk direction
-        // 3) Default forward (DOWN)
         let facingDir: Direction = Direction.DOWN;
         if (entry.orientation) {
           facingDir = orientationToFacing(entry.orientation);
@@ -213,13 +220,17 @@ export function layoutToSeats(furniture: PlacedFurniture[]): Map<string, Seat> {
           }
         }
 
-        // First seat uses chair uid (backward compat), subsequent use uid:N
+        const role: 'work' | 'rest' = facesComputer(tileCol, tileRow, facingDir, electronicsTiles)
+          ? 'work'
+          : 'rest';
+
         const seatUid = seatCount === 0 ? item.uid : `${item.uid}:${seatCount}`;
         seats.set(seatUid, {
           uid: seatUid,
           seatCol: tileCol,
           seatRow: tileRow,
           facingDir,
+          role,
           assigned: false,
         });
         seatCount++;

@@ -7,7 +7,6 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
 
 import { CHAR_COUNT, CHAR_FRAMES_PER_ROW, WALL_BITMASK_COUNT } from '../shared/assets/constants.js';
 import type {
@@ -27,6 +26,7 @@ import type { CharacterDirectionSprites } from '../shared/assets/types.js';
 export type { CharacterDirectionSprites } from '../shared/assets/types.js';
 
 import { LAYOUT_REVISION_KEY } from './constants.js';
+import type { MessageSink } from './types.js';
 
 export type { FurnitureAsset };
 
@@ -301,7 +301,7 @@ export async function loadWallTiles(assetsRoot: string): Promise<LoadedWallTiles
 /**
  * Send wall tiles to webview
  */
-export function sendWallTilesToWebview(webview: vscode.Webview, wallTiles: LoadedWallTiles): void {
+export function sendWallTilesToWebview(webview: MessageSink, wallTiles: LoadedWallTiles): void {
   webview.postMessage({
     type: 'wallTilesLoaded',
     sets: wallTiles.sets,
@@ -366,10 +366,7 @@ export async function loadFloorTiles(assetsRoot: string): Promise<LoadedFloorTil
 /**
  * Send floor tiles to webview
  */
-export function sendFloorTilesToWebview(
-  webview: vscode.Webview,
-  floorTiles: LoadedFloorTiles,
-): void {
+export function sendFloorTilesToWebview(webview: MessageSink, floorTiles: LoadedFloorTiles): void {
   webview.postMessage({
     type: 'floorTilesLoaded',
     sprites: floorTiles.sprites,
@@ -493,7 +490,7 @@ export async function loadExternalCharacterSprites(
  * Send character sprites to webview
  */
 export function sendCharacterSpritesToWebview(
-  webview: vscode.Webview,
+  webview: MessageSink,
   charSprites: LoadedCharacterSprites,
 ): void {
   webview.postMessage({
@@ -506,7 +503,7 @@ export function sendCharacterSpritesToWebview(
 /**
  * Send loaded assets to webview
  */
-export function sendAssetsToWebview(webview: vscode.Webview, assets: LoadedAssets): void {
+export function sendAssetsToWebview(webview: MessageSink, assets: LoadedAssets): void {
   if (!assets) {
     console.log('[AssetLoader] ⚠️  No assets to send');
     return;

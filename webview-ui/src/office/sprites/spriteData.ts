@@ -3,6 +3,7 @@ import { PALETTE_COUNT } from '../../constants.js';
 import { adjustSprite } from '../colorize.js';
 import type { Direction, SpriteData } from '../types.js';
 import { Direction as Dir } from '../types.js';
+import bubbleAwaitingUserData from './bubble-awaiting-user.json';
 import bubblePermissionData from './bubble-permission.json';
 import bubbleWaitingData from './bubble-waiting.json';
 
@@ -22,6 +23,12 @@ export const BUBBLE_PERMISSION_SPRITE: SpriteData = resolveBubbleSprite(bubblePe
 
 /** Waiting bubble: white square with green checkmark, and a tail pointer (11x13) */
 export const BUBBLE_WAITING_SPRITE: SpriteData = resolveBubbleSprite(bubbleWaitingData);
+
+/** Awaiting-user bubble: white square with amber "?", and a tail pointer (11x13).
+ *  Persistent (no fade) — shown when an agent has been waiting past the grace window
+ *  for the user to respond. Distinct from permission-request to avoid the two being
+ *  confused at a glance. */
+export const BUBBLE_AWAITING_USER_SPRITE: SpriteData = resolveBubbleSprite(bubbleAwaitingUserData);
 
 // ════════════════════════════════════════════════════════════════
 // Loaded character sprites (from PNG assets)

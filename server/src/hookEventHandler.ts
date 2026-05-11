@@ -1,11 +1,14 @@
-// TODO(Standalone version): Replace vscode.Webview with MessageSender interface from core/src/messages.ts
 // TODO(Standalone version): Move timerManager and types to server/src/ to eliminate cross-boundary imports
 import * as path from 'path';
-import type * as vscode from 'vscode';
 
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../src/timerManager.js';
-import type { AgentState } from '../../src/types.js';
-import { HOOK_EVENT_BUFFER_MS, SESSION_END_GRACE_MS } from './constants.js';
+import type { AgentState, MessageSink } from '../../src/types.js';
+import {
+  AWAITING_USER_GRACE_MS,
+  HOOK_EVENT_BUFFER_MS,
+  INTERACTIVE_USER_TOOLS,
+  SESSION_END_GRACE_MS,
+} from './constants.js';
 import type { AgentEvent, HookProvider } from './provider.js';
 import { getInlineTeammates, hasInlineTeammates } from './teamUtils.js';
 
@@ -81,14 +84,55 @@ export class HookEventHandler {
   /** Pending external sessions waiting for a confirmation event (Stop, Notification, etc.). */
   private pendingExternalSessions = new Map<string, PendingExternalSession>();
 
+  private awaitingUserTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
   constructor(
     private agents: Map<number, AgentState>,
     private waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
     private permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-    private getWebview: () => vscode.Webview | undefined,
+    private getWebview: () => MessageSink | undefined,
     private provider: HookProvider,
     private watchAllSessionsRef?: { current: boolean },
   ) {}
+
+  /** Cancel the awaiting-user escalation timer for an agent, if any. */
+  private cancelAwaitingUserTimer(agentId: number): void {
+    const t = this.awaitingUserTimers.get(agentId);
+    if (t) {
+      clearTimeout(t);
+      this.awaitingUserTimers.delete(agentId);
+    }
+  }
+
+  /** Schedule escalation to `awaitingUser` state after the grace window.
+   *  Called from markAgentWaiting. Any subsequent active-state transition
+   *  (tool use, user prompt, etc.) must cancel via cancelAwaitingUserTimer. */
+  private scheduleAwaitingUserTimer(agentId: number): void {
+    this.cancelAwaitingUserTimer(agentId);
+    const timer = setTimeout(() => {
+      this.awaitingUserTimers.delete(agentId);
+      const agent = this.agents.get(agentId);
+      if (!agent) return;
+      agent.awaitingSince = Date.now();
+      this.getWebview()?.postMessage({
+        type: 'agentStatus',
+        id: agentId,
+        status: 'awaitingUser',
+        since: agent.awaitingSince,
+      });
+    }, AWAITING_USER_GRACE_MS);
+    this.awaitingUserTimers.set(agentId, timer);
+  }
+
+  /** Clear the awaiting-user state on an agent (active transition or dismissal).
+   *  Cancels any pending escalation timer and resets the timestamp. */
+  clearAwaitingUser(agentId: number): void {
+    this.cancelAwaitingUserTimer(agentId);
+    const agent = this.agents.get(agentId);
+    if (agent) {
+      agent.awaitingSince = null;
+    }
+  }
 
   /** Merged set of tool names that spawn subagents (teammates + within-turn subagents
    *  when a team provider is attached, or the base HookProvider set otherwise). */
@@ -347,6 +391,9 @@ export class HookEventHandler {
         }
         return this.handleTeammateIdle(event, agent, agentId, webview);
       case 'userTurn':
+        this.clearAwaitingUser(agentId);
+        webview?.postMessage({ type: 'agentStatus', id: agentId, status: 'active' });
+        return;
       case 'progress':
         // Not yet consumed by the office visualization. Silently drop.
         return;
@@ -361,7 +408,7 @@ export class HookEventHandler {
     normEvent: Extract<AgentEvent, { kind: 'sessionEnd' }>,
     agent: AgentState,
     agentId: number,
-    webview: vscode.Webview | undefined,
+    webview: MessageSink | undefined,
   ): void {
     const reason = normEvent.reason;
     if (debug)
@@ -404,7 +451,7 @@ export class HookEventHandler {
     normEvent: Extract<AgentEvent, { kind: 'toolStart' }>,
     agent: AgentState,
     agentId: number,
-    webview: vscode.Webview | undefined,
+    webview: MessageSink | undefined,
   ): void {
     const toolName = normEvent.toolName;
     const toolInput = (normEvent.input as Record<string, unknown> | undefined) ?? {};
@@ -426,6 +473,7 @@ export class HookEventHandler {
 
     // Cancel waiting, mark active
     cancelWaitingTimer(agentId, this.waitingTimers);
+    this.clearAwaitingUser(agentId);
     agent.isWaiting = false;
     agent.permissionSent = false;
     agent.hadToolsInTurn = true;
@@ -459,19 +507,30 @@ export class HookEventHandler {
   private handlePostToolUse(
     agent: AgentState,
     agentId: number,
-    webview: vscode.Webview | undefined,
+    webview: MessageSink | undefined,
   ): void {
     if (agent.currentHookToolId) {
-      // Suppress tool display when lead has inline teammates (see handlePreToolUse)
-      if (!hasInlineTeammates(agentId, this.agents)) {
+      const isInteractive =
+        agent.currentHookToolName !== undefined &&
+        INTERACTIVE_USER_TOOLS.has(agent.currentHookToolName);
+      // Suppress tool display when lead has inline teammates (see handlePreToolUse).
+      // Also skip for interactive (user-question) tools — Claude Code may fire
+      // PostToolUse the moment it shows the UI, but the tool is "done" only after
+      // the user actually answers (tool_result arrives via JSONL). Without this
+      // carve-out the agent reads as Working… while it's really waiting on you.
+      if (!hasInlineTeammates(agentId, this.agents) && !isInteractive) {
         webview?.postMessage({
           type: 'agentToolDone',
           id: agentId,
           toolId: agent.currentHookToolId,
         });
       }
-      agent.currentHookToolId = undefined;
-      agent.currentHookToolName = undefined;
+      // For interactive tools, keep currentHookToolId set so the eventual JSONL
+      // tool_result can still correlate; clear it for everything else as before.
+      if (!isInteractive) {
+        agent.currentHookToolId = undefined;
+        agent.currentHookToolName = undefined;
+      }
     }
   }
 
@@ -493,7 +552,7 @@ export class HookEventHandler {
     event: HookEvent,
     agent: AgentState,
     agentId: number,
-    webview: vscode.Webview | undefined,
+    webview: MessageSink | undefined,
   ): void {
     const agentType = this.provider.team?.extractTeammateNameFromEvent(event) ?? 'unknown';
 
@@ -566,7 +625,7 @@ export class HookEventHandler {
   private handleSubagentStop(
     agent: AgentState,
     agentId: number,
-    webview: vscode.Webview | undefined,
+    webview: MessageSink | undefined,
   ): void {
     // Check if this agent has inline teammates (independent agents with leadAgentId).
     // Just mark them waiting -- SubagentStop fires per-task-iteration; teammates may
@@ -614,7 +673,7 @@ export class HookEventHandler {
   private handlePermissionRequest(
     agent: AgentState,
     agentId: number,
-    webview: vscode.Webview | undefined,
+    webview: MessageSink | undefined,
   ): void {
     // When lead has inline teammates, route permission to the teammates instead.
     // The hook fires on the lead's session_id but the permission is for a teammate.
@@ -645,11 +704,7 @@ export class HookEventHandler {
   }
 
   /** Handle Stop: Claude finished responding, mark agent as waiting. */
-  private handleStop(
-    agent: AgentState,
-    agentId: number,
-    webview: vscode.Webview | undefined,
-  ): void {
+  private handleStop(agent: AgentState, agentId: number, webview: MessageSink | undefined): void {
     this.markAgentWaiting(agent, agentId, webview);
   }
 
@@ -663,7 +718,7 @@ export class HookEventHandler {
     event: HookEvent,
     agent: AgentState,
     agentId: number,
-    webview: vscode.Webview | undefined,
+    webview: MessageSink | undefined,
   ): void {
     const agentType = this.provider.team?.extractTeammateNameFromEvent(event);
     const inlineTeammates = getInlineTeammates(agentId, this.agents);
@@ -735,21 +790,29 @@ export class HookEventHandler {
   private markAgentWaiting(
     agent: AgentState,
     agentId: number,
-    webview: vscode.Webview | undefined,
+    webview: MessageSink | undefined,
   ): void {
     cancelWaitingTimer(agentId, this.waitingTimers);
     cancelPermissionTimer(agentId, this.permissionTimers);
 
     // Clear foreground tools, preserve background agents (same logic as turn_duration handler).
+    // Also preserve interactive (user-question) tools — they're not done until the user
+    // answers, even though Claude Code may have signalled a turn boundary in the meantime.
     // ALWAYS send agentToolsClear at turn end -- even when activeToolIds is empty by now
     // (because tool_results already processed and removed them). Without this, stale
     // sub-agent characters and permission bubbles from the turn would never clear.
     const parentTools = this.getSubagentToolSet();
+    const preservedInteractive: Array<{ toolId: string; status: string }> = [];
     for (const toolId of [...agent.activeToolIds]) {
       if (agent.backgroundAgentToolIds.has(toolId)) continue;
+      const toolName = agent.activeToolNames.get(toolId);
+      if (toolName && INTERACTIVE_USER_TOOLS.has(toolName)) {
+        const status = agent.activeToolStatuses.get(toolId);
+        if (status) preservedInteractive.push({ toolId, status });
+        continue;
+      }
       agent.activeToolIds.delete(toolId);
       agent.activeToolStatuses.delete(toolId);
-      const toolName = agent.activeToolNames.get(toolId);
       agent.activeToolNames.delete(toolId);
       if (toolName && parentTools.has(toolName)) {
         agent.activeSubagentToolIds.delete(toolId);
@@ -757,7 +820,7 @@ export class HookEventHandler {
       }
     }
     webview?.postMessage({ type: 'agentToolsClear', id: agentId });
-    // Re-send background agent tools to restore them after the clear
+    // Re-send background agent tools so the webview keeps their sub-agents alive.
     for (const toolId of agent.backgroundAgentToolIds) {
       const status = agent.activeToolStatuses.get(toolId);
       if (status) {
@@ -769,6 +832,16 @@ export class HookEventHandler {
         });
       }
     }
+    // Re-send interactive (user-question) tools so the office keeps showing
+    // "Waiting for your answer" while the user picks.
+    for (const { toolId, status } of preservedInteractive) {
+      webview?.postMessage({
+        type: 'agentToolStart',
+        id: agentId,
+        toolId,
+        status,
+      });
+    }
 
     agent.isWaiting = true;
     agent.permissionSent = false;
@@ -778,6 +851,9 @@ export class HookEventHandler {
       id: agentId,
       status: 'waiting',
     });
+
+    // Tier 2: schedule escalation to persistent awaitingUser state after the grace window.
+    this.scheduleAwaitingUserTimer(agentId);
   }
 
   /** Buffer an event for later delivery when the agent registers. */

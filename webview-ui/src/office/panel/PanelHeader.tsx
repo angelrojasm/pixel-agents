@@ -1,41 +1,59 @@
 import {
-  DRAWER_ACCENT,
-  DRAWER_BG_CELL,
-  DRAWER_BG_CHROME,
-  DRAWER_BORDER,
-  DRAWER_HEADER_HEIGHT_PX,
-  DRAWER_MUTED,
-  DRAWER_SPRITE_PLACEHOLDER,
+  PANEL_ACCENT,
+  PANEL_BG_CELL,
+  PANEL_BG_CHROME,
+  PANEL_BORDER,
+  PANEL_HEADER_THICKNESS_PX,
+  PANEL_MUTED,
+  PANEL_SPRITE_PLACEHOLDER,
 } from '../../constants.js';
 import { AgentCell } from './AgentCell.js';
-import type { AgentSummary } from './drawerTypes.js';
+import type { AgentSummary, PanelPosition } from './panelTypes.js';
+import { isHorizontalAxis } from './panelTypes.js';
 
-interface DrawerHeaderProps {
+interface PanelHeaderProps {
   agents: AgentSummary[];
   focusedAgentId: number | null;
+  panelPosition: PanelPosition;
   onFocusAgent: (id: number) => void;
   onCollapse: () => void;
 }
 
-export function DrawerHeader({
+export function PanelHeader({
   agents,
   focusedAgentId,
+  panelPosition,
   onFocusAgent,
   onCollapse,
-}: DrawerHeaderProps) {
+}: PanelHeaderProps) {
   const focused = agents.find((a) => a.id === focusedAgentId) ?? null;
   const others = agents.filter((a) => a.id !== focusedAgentId);
+  const horizontal = isHorizontalAxis(panelPosition);
+  const collapseLabel = horizontal
+    ? '[↓ hide]'
+    : panelPosition === 'left'
+      ? '[← hide]'
+      : '[→ hide]';
 
   return (
     <div
       style={{
-        height: DRAWER_HEADER_HEIGHT_PX,
-        background: DRAWER_BG_CHROME,
-        borderTop: `2px solid ${DRAWER_BORDER}`,
+        ...(horizontal
+          ? {
+              height: PANEL_HEADER_THICKNESS_PX,
+              flexDirection: 'row',
+              borderTop: `2px solid ${PANEL_BORDER}`,
+            }
+          : {
+              width: '100%',
+              flexDirection: 'column',
+              borderBottom: `2px solid ${PANEL_BORDER}`,
+            }),
+        background: PANEL_BG_CHROME,
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        padding: '0 8px',
+        padding: '4px 8px',
       }}
     >
       {focused && (
@@ -45,9 +63,9 @@ export function DrawerHeader({
             alignItems: 'center',
             gap: 6,
             padding: '0 6px',
-            border: `1px solid ${DRAWER_ACCENT}`,
+            border: `1px solid ${PANEL_ACCENT}`,
             height: 16,
-            background: DRAWER_BG_CELL,
+            background: PANEL_BG_CELL,
           }}
         >
           <span
@@ -55,16 +73,17 @@ export function DrawerHeader({
             style={{
               width: 8,
               height: 10,
-              background: DRAWER_SPRITE_PLACEHOLDER,
+              background: PANEL_SPRITE_PLACEHOLDER,
               flex: '0 0 auto',
             }}
           />
-          <span style={{ color: DRAWER_ACCENT, fontSize: 10 }}>{focused.name}</span>
+          <span style={{ color: PANEL_ACCENT, fontSize: 10 }}>{focused.name}</span>
         </div>
       )}
       <div
         style={{
           display: 'flex',
+          flexDirection: horizontal ? 'row' : 'column',
           alignItems: 'center',
           gap: 4,
           flex: '1 1 auto',
@@ -75,7 +94,7 @@ export function DrawerHeader({
           <AgentCell
             key={a.id}
             agent={a}
-            variant="tab"
+            variant={horizontal ? 'tab' : 'rail-side'}
             isFocused={false}
             onClick={() => onFocusAgent(a.id)}
           />
@@ -87,14 +106,14 @@ export function DrawerHeader({
         style={{
           background: 'transparent',
           border: 'none',
-          color: DRAWER_MUTED,
+          color: PANEL_MUTED,
           fontSize: 10,
           cursor: 'pointer',
           padding: '0 4px',
         }}
-        title="Hide drawer"
+        title="Hide panel"
       >
-        [↓ hide]
+        {collapseLabel}
       </button>
     </div>
   );

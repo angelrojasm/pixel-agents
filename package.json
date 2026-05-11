@@ -27,8 +27,22 @@
       {
         "command": "pixel-agents.exportDefaultLayout",
         "title": "Pixel Agents: Export Layout as Default"
+      },
+      {
+        "command": "pixel-agents.openFullScreen",
+        "title": "Pixel Agents: Open in Full Screen",
+        "icon": "$(screen-full)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "pixel-agents.openFullScreen",
+          "when": "view == pixel-agents.panelView",
+          "group": "navigation"
+        }
+      ]
+    },
     "viewsContainers": {
       "panel": [
         {

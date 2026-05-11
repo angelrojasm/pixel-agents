@@ -53,6 +53,9 @@ export interface Seat {
   seatRow: number;
   /** Direction character faces when sitting (toward adjacent desk) */
   facingDir: Direction;
+  /** 'work' if the chair faces a computer (electronics item on a desk tile within
+   *  the auto-state adjacency window); 'rest' otherwise. Set by layoutToSeats(). */
+  role: 'work' | 'rest';
   assigned: boolean;
 }
 
@@ -160,12 +163,19 @@ export interface Character {
   wanderLimit: number;
   /** Whether the agent is actively working */
   isActive: boolean;
-  /** Assigned seat uid, or null if no seat */
-  seatId: string | null;
+  /** Assigned work-seat uid (chair facing a computer), or null if none assignable.
+   *  Persistent across sessions. */
+  workSeatId: string | null;
+  /** Transient rest-seat uid the character currently occupies or is walking to.
+   *  Never persisted; cleared whenever the character leaves the rest seat or becomes active. */
+  restSeatId: string | null;
   /** Active speech bubble type, or null if none showing */
-  bubbleType: 'permission' | 'waiting' | null;
-  /** Countdown timer for bubble (waiting: 2→0, permission: unused) */
+  bubbleType: 'permission' | 'waiting' | 'awaiting-user' | null;
+  /** Countdown timer for bubble (waiting: 2→0, permission/awaiting-user: unused) */
   bubbleTimer: number;
+  /** Timestamp (ms since epoch) when the awaiting-user bubble latched. Used by the
+   *  overlay to render elapsed-time text. null when not awaiting. */
+  awaitingSince: number | null;
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
   seatTimer: number;
   /** Whether this character represents a sub-agent (spawned by Task tool) */
@@ -180,6 +190,8 @@ export interface Character {
   matrixEffectSeeds: number[];
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+  /** VS Code terminal tab name (e.g. "Copyrighter Frontend") */
+  terminalName?: string;
 
   // -- Agent Teams --
   /** Team name this agent belongs to */

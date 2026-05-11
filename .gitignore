@@ -30,8 +30,14 @@ playwright-report/
 !.env.example
 
 # Project-specific
-.claude/
+# Ignore personal Claude Code state (settings, agents, history, etc.)
+# but keep `.claude/skills/` tracked so project-scoped skills travel with the repo.
+.claude/*
+!.claude/skills/
 /sprites-export
 
 # Local notes (not for commit)
 /notes/
+
+# Superpowers brainstorm/session scratch state (per-session, not source)
+/.superpowers/

@@ -1,10 +1,10 @@
 import * as path from 'path';
-import type * as vscode from 'vscode';
 
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
 import {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
+  INTERACTIVE_USER_TOOLS,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
   TEXT_IDLE_DELAY_MS,
   TOOL_DONE_DELAY_MS,
@@ -14,10 +14,11 @@ import {
   cancelPermissionTimer,
   cancelWaitingTimer,
   clearAgentActivity,
+  clearAwaitingUser,
   startPermissionTimer,
   startWaitingTimer,
 } from './timerManager.js';
-import type { AgentState } from './types.js';
+import type { AgentState, MessageSink } from './types.js';
 
 const PERMISSION_EXEMPT_TOOLS = new Set(['Task', 'Agent', 'AskUserQuestion']);
 
@@ -92,7 +93,7 @@ export function processTranscriptLine(
   agents: Map<number, AgentState>,
   waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-  webview: vscode.Webview | undefined,
+  webview: MessageSink | undefined,
 ): void {
   const agent = agents.get(agentId);
   if (!agent) return;
@@ -162,6 +163,7 @@ export function processTranscriptLine(
 
       if (hasToolUse) {
         cancelWaitingTimer(agentId, waitingTimers);
+        clearAwaitingUser(agentId, agent);
         agent.isWaiting = false;
         agent.hadToolsInTurn = true;
         webview?.postMessage({ type: 'agentStatus', id: agentId, status: 'active' });
@@ -285,10 +287,16 @@ export function processTranscriptLine(
               agent.activeToolStatuses.delete(completedToolId);
               agent.activeToolNames.delete(completedToolId);
               // Send agentToolDone when hooks are off, or for Task/Agent tools
-              // (which always use JSONL path for consistent sub-agent lifecycle).
+              // (which always use JSONL path for consistent sub-agent lifecycle),
+              // or for interactive (user-question) tools — for those, the hook
+              // PostToolUse path was suppressed (Claude Code may fire it the moment
+              // it shows the UI, not when the user actually answers), so the JSONL
+              // tool_result is the authoritative completion signal.
               const isCompletedAgentTool =
                 completedToolName === 'Task' || completedToolName === 'Agent';
-              if (!agent.hookDelivered || isCompletedAgentTool) {
+              const isCompletedInteractiveTool =
+                completedToolName !== undefined && INTERACTIVE_USER_TOOLS.has(completedToolName);
+              if (!agent.hookDelivered || isCompletedAgentTool || isCompletedInteractiveTool) {
                 const toolId = completedToolId;
                 setTimeout(() => {
                   webview?.postMessage({
@@ -358,12 +366,20 @@ export function processTranscriptLine(
 
       // Definitive turn-end: clean up any stale tool state, but preserve background agents.
       // When hooks are active, the Stop hook already handled the status change,
-      // but we still perform state cleanup here as a safety net.
-      const hasForegroundTools = agent.activeToolIds.size > agent.backgroundAgentToolIds.size;
-      if (hasForegroundTools) {
-        // Remove only non-background tool state
-        for (const toolId of agent.activeToolIds) {
-          if (agent.backgroundAgentToolIds.has(toolId)) continue;
+      // but we still perform state cleanup here as a safety net. Interactive
+      // (user-question) tools are also preserved — they only complete when the
+      // user actually answers (tool_result), not at turn-duration emission.
+      const isPreservedTool = (toolId: string): boolean => {
+        if (agent.backgroundAgentToolIds.has(toolId)) return true;
+        const name = agent.activeToolNames.get(toolId);
+        return name !== undefined && INTERACTIVE_USER_TOOLS.has(name);
+      };
+
+      const hasForegroundNonPreserved = [...agent.activeToolIds].some((id) => !isPreservedTool(id));
+      if (hasForegroundNonPreserved) {
+        // Remove only non-preserved tool state
+        for (const toolId of [...agent.activeToolIds]) {
+          if (isPreservedTool(toolId)) continue;
           agent.activeToolIds.delete(toolId);
           agent.activeToolStatuses.delete(toolId);
           const toolName = agent.activeToolNames.get(toolId);
@@ -376,8 +392,8 @@ export function processTranscriptLine(
         if (!agent.hookDelivered) {
           webview?.postMessage({ type: 'agentToolsClear', id: agentId });
         }
-        // Re-send background agent tools so webview keeps their sub-agents alive
-        for (const toolId of agent.backgroundAgentToolIds) {
+        // Re-send background and interactive tools so webview keeps their state.
+        for (const toolId of agent.activeToolIds) {
           const status = agent.activeToolStatuses.get(toolId);
           if (status) {
             webview?.postMessage({
@@ -388,15 +404,8 @@ export function processTranscriptLine(
             });
           }
         }
-      } else if (agent.activeToolIds.size > 0 && agent.backgroundAgentToolIds.size === 0) {
-        agent.activeToolIds.clear();
-        agent.activeToolStatuses.clear();
-        agent.activeToolNames.clear();
-        agent.activeSubagentToolIds.clear();
-        agent.activeSubagentToolNames.clear();
-        if (!agent.hookDelivered) {
-          webview?.postMessage({ type: 'agentToolsClear', id: agentId });
-        }
+      } else if (agent.activeToolIds.size > 0 && !hasForegroundNonPreserved) {
+        // Only preserved tools remain — leave them alone.
       }
 
       agent.isWaiting = true;
@@ -436,7 +445,7 @@ function processProgressRecord(
   agents: Map<number, AgentState>,
   _waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-  webview: vscode.Webview | undefined,
+  webview: MessageSink | undefined,
 ): void {
   const agent = agents.get(agentId);
   if (!agent) return;

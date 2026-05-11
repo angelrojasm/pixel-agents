@@ -471,7 +471,11 @@ export function OfficeCanvas({
             const seat = officeState.seats.get(seatId);
             if (seat) {
               const selectedCh = officeState.characters.get(officeState.selectedAgentId);
-              if (!seat.assigned || (selectedCh && selectedCh.seatId === seatId)) {
+              // Cursor only indicates clickable for work seats (rest seats aren't user-assignable).
+              const clickable =
+                seat.role === 'work' &&
+                (!seat.assigned || (selectedCh && selectedCh.workSeatId === seatId));
+              if (clickable) {
                 cursor = 'pointer';
               }
             }
@@ -674,7 +678,15 @@ export function OfficeCanvas({
 
       const hitId = officeState.getCharacterAt(pos.worldX, pos.worldY);
       if (hitId !== null) {
-        // Dismiss any active bubble on click
+        // If the agent is in the persistent awaiting-user state, a click is a
+        // user acknowledgement — tell the extension so the server clears the
+        // latched state too (and the bubble doesn't re-materialize from the
+        // next webview re-render that may still carry the status).
+        const hitCh = officeState.characters.get(hitId);
+        if (hitCh?.bubbleType === 'awaiting-user') {
+          vscode.postMessage({ type: 'dismissAwaitingUser', id: hitId });
+        }
+        // Dismiss any active bubble on click (local visual clear)
         officeState.dismissBubble(hitId);
         // Toggle selection: click same agent deselects, different agent selects
         if (officeState.selectedAgentId === hitId) {
@@ -699,22 +711,22 @@ export function OfficeCanvas({
             if (seatId) {
               const seat = officeState.seats.get(seatId);
               if (seat && selectedCh) {
-                if (selectedCh.seatId === seatId) {
-                  // Clicked own seat — send agent back to it
+                if (selectedCh.workSeatId === seatId) {
+                  // Clicked own work seat — send agent back to it
                   officeState.sendToSeat(officeState.selectedAgentId);
                   officeState.selectedAgentId = null;
                   officeState.cameraFollowId = null;
                   return;
-                } else if (!seat.assigned) {
-                  // Clicked available seat — reassign
+                } else if (!seat.assigned && seat.role === 'work') {
+                  // Clicked an available work seat — reassign. Rest seats are no-ops.
                   officeState.reassignSeat(officeState.selectedAgentId, seatId);
                   officeState.selectedAgentId = null;
                   officeState.cameraFollowId = null;
                   // Persist seat assignments (exclude sub-agents)
-                  const seats: Record<number, { palette: number; seatId: string | null }> = {};
+                  const seats: Record<number, { palette: number; workSeatId: string | null }> = {};
                   for (const ch of officeState.characters.values()) {
                     if (ch.isSubagent) continue;
-                    seats[ch.id] = { palette: ch.palette, seatId: ch.seatId };
+                    seats[ch.id] = { palette: ch.palette, workSeatId: ch.workSeatId };
                   }
                   vscode.postMessage({ type: 'saveAgentSeats', seats });
                   return;

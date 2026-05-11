@@ -36,6 +36,7 @@ import {
 import { getColorizedFloorSprite, hasFloorSprites, WALL_COLOR } from '../floorTiles.js';
 import { getCachedSprite, getOutlineSprite } from '../sprites/spriteCache.js';
 import {
+  BUBBLE_AWAITING_USER_SPRITE,
   BUBBLE_PERMISSION_SPRITE,
   BUBBLE_WAITING_SPRITE,
   getCharacterSprites,
@@ -236,14 +237,17 @@ function renderSeatIndicators(
     const x = offsetX + seat.seatCol * s;
     const y = offsetY + seat.seatRow * s;
 
-    if (selectedChar.seatId === uid) {
-      // Selected agent's own seat — blue
+    if (selectedChar.workSeatId === uid) {
+      // Selected agent's own work seat — blue
       ctx.fillStyle = SEAT_OWN_COLOR;
+    } else if (seat.role === 'rest') {
+      // Rest seats aren't user-assignable; hide the indicator entirely.
+      continue;
     } else if (!seat.assigned) {
-      // Available seat — green
+      // Available work seat — green
       ctx.fillStyle = SEAT_AVAILABLE_COLOR;
     } else {
-      // Busy (assigned to another agent) — red
+      // Busy work seat (assigned to another agent) — red
       ctx.fillStyle = SEAT_BUSY_COLOR;
     }
     ctx.fillRect(x, y, s, s);
@@ -497,9 +501,14 @@ function renderBubbles(
     if (!ch.bubbleType) continue;
 
     const sprite =
-      ch.bubbleType === 'permission' ? BUBBLE_PERMISSION_SPRITE : BUBBLE_WAITING_SPRITE;
+      ch.bubbleType === 'permission'
+        ? BUBBLE_PERMISSION_SPRITE
+        : ch.bubbleType === 'awaiting-user'
+          ? BUBBLE_AWAITING_USER_SPRITE
+          : BUBBLE_WAITING_SPRITE;
 
-    // Compute opacity: permission = full, waiting = fade in last 0.5s
+    // Compute opacity: permission/awaiting-user = full (persistent),
+    // waiting = fade in the last 0.5s before auto-clear.
     let alpha = 1.0;
     if (ch.bubbleType === 'waiting' && ch.bubbleTimer < BUBBLE_FADE_DURATION_SEC) {
       alpha = ch.bubbleTimer / BUBBLE_FADE_DURATION_SEC;

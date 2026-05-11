@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
 import {
@@ -11,6 +11,8 @@ import {
   FUEL_GAUGE_HEIGHT_PX,
   FUEL_GAUGE_WIDTH_PX,
   MAX_CONTEXT_TOKENS,
+  NAMEPLATE_TEXT_COLOR,
+  NAMEPLATE_TEXT_OUTLINE,
   TEAM_LEAD_COLOR,
   TEAM_ROLE_COLOR,
   TOKEN_CRITICAL_THRESHOLD,
@@ -33,6 +35,22 @@ interface ToolOverlayProps {
   panRef: React.RefObject<{ x: number; y: number }>;
   onCloseAgent: (id: number) => void;
   alwaysShowOverlay: boolean;
+  showTerminalNames: boolean;
+}
+
+/** Format an elapsed duration (ms) as a terse human-readable string.
+ *  Examples: 45s · 5m · 2h · 1d 3h. Below 10 seconds rounds to "just now". */
+function formatElapsed(ms: number): string {
+  if (ms < 10_000) return 'just now';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  const remH = h - d * 24;
+  return remH > 0 ? `${d}d ${remH}h` : `${d}d`;
 }
 
 /** Derive a short human-readable activity string from tools/status */
@@ -40,7 +58,13 @@ function getActivityText(
   agentId: number,
   agentTools: Record<number, ToolActivity[]>,
   isActive: boolean,
+  awaitingSince: number | null,
 ): string {
+  // Tier-2 awaiting-user state: overrides everything else. Short, persistent.
+  if (awaitingSince !== null) {
+    return `Awaiting reply — ${formatElapsed(Date.now() - awaitingSince)}`;
+  }
+
   const tools = agentTools[agentId];
   if (tools && tools.length > 0) {
     // Find the latest non-done tool
@@ -49,13 +73,12 @@ function getActivityText(
       if (activeTool.permissionWait) return 'Needs approval';
       return activeTool.status;
     }
-    // All tools done but agent still active (mid-turn) — keep showing last tool status
-    if (isActive) {
-      const lastTool = tools[tools.length - 1];
-      if (lastTool) return lastTool.status;
-    }
+    // All tools done but agent still active (mid-turn) — working between tools
+    if (isActive) return 'Working…';
   }
 
+  // Active with no tool yet (pre-first-tool gap, or text-only turn) — working
+  if (isActive) return 'Working…';
   return 'Idle';
 }
 
@@ -76,6 +99,7 @@ export function ToolOverlay({
   panRef,
   onCloseAgent,
   alwaysShowOverlay,
+  showTerminalNames,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -116,8 +140,11 @@ export function ToolOverlay({
         const isHovered = hoveredId === id;
         const isSub = ch.isSubagent;
 
-        // Only show for hovered or selected agents (unless always-show is on)
-        if (!alwaysShowOverlay && !isSelected && !isHovered) return null;
+        // Awaiting-user agents always show their label (the whole point: so the
+        // user notices across a glance, without hovering). Otherwise, only show
+        // for hovered or selected agents unless always-show is on.
+        const isAwaitingUser = ch.awaitingSince != null;
+        if (!alwaysShowOverlay && !isSelected && !isHovered && !isAwaitingUser) return null;
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
@@ -136,7 +163,7 @@ export function ToolOverlay({
             activityText = sub ? sub.label : 'Subtask';
           }
         } else {
-          activityText = getActivityText(id, agentTools, ch.isActive);
+          activityText = getActivityText(id, agentTools, ch.isActive, ch.awaitingSince);
         }
 
         // Determine dot color
@@ -146,7 +173,9 @@ export function ToolOverlay({
         const isActive = ch.isActive;
 
         let dotColor: string | null = null;
-        if (hasPermission) {
+        if (isAwaitingUser) {
+          dotColor = 'var(--color-status-permission)';
+        } else if (hasPermission) {
           dotColor = 'var(--color-status-permission)';
         } else if (isActive && hasActiveTools) {
           dotColor = 'var(--color-status-active)';
@@ -158,89 +187,113 @@ export function ToolOverlay({
         const totalTokens = ch.inputTokens + ch.outputTokens;
         const tokenRatio = totalTokens / MAX_CONTEXT_TOKENS;
         const hasExtraLines = !!(ch.folderName || teamRoleLabel);
+        const showNameplate = showTerminalNames && !!ch.terminalName && !isSub;
+        const nameplateScreenY = (deviceOffsetY + (ch.y + sittingOffset) * zoom) / dpr;
 
         return (
-          <div
-            key={id}
-            className="absolute flex flex-col items-center -translate-x-1/2"
-            style={{
-              left: screenX,
-              top: screenY - (hasExtraLines ? 34 : 28),
-              pointerEvents: isSelected ? 'auto' : 'none',
-              opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
-              zIndex: isSelected ? 42 : 41,
-            }}
-          >
-            <div className="flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
-              {dotColor && (
-                <span
-                  className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission ? 'pixel-pulse' : ''}`}
-                  style={{ background: dotColor }}
-                />
-              )}
-              <div className="flex flex-col gap-0 overflow-hidden">
-                {teamRoleLabel && (
+          <Fragment key={id}>
+            <div
+              className="absolute flex flex-col items-center -translate-x-1/2"
+              style={{
+                left: screenX,
+                top: screenY - (hasExtraLines ? 34 : 28),
+                pointerEvents: isSelected ? 'auto' : 'none',
+                opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
+                zIndex: isSelected ? 42 : 41,
+              }}
+            >
+              <div className="flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
+                {dotColor && (
+                  <span
+                    className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission ? 'pixel-pulse' : ''}`}
+                    style={{ background: dotColor }}
+                  />
+                )}
+                <div className="flex flex-col gap-0 overflow-hidden">
+                  {teamRoleLabel && (
+                    <span
+                      className="overflow-hidden text-ellipsis block leading-none"
+                      style={{
+                        fontSize: '18px',
+                        color: ch.isTeamLead ? TEAM_LEAD_COLOR : TEAM_ROLE_COLOR,
+                        fontWeight: ch.isTeamLead ? 'bold' : undefined,
+                      }}
+                    >
+                      {teamRoleLabel}
+                    </span>
+                  )}
                   <span
                     className="overflow-hidden text-ellipsis block leading-none"
                     style={{
-                      fontSize: '18px',
-                      color: ch.isTeamLead ? TEAM_LEAD_COLOR : TEAM_ROLE_COLOR,
-                      fontWeight: ch.isTeamLead ? 'bold' : undefined,
+                      fontSize: isSub ? '20px' : '22px',
+                      fontStyle: isSub ? 'italic' : undefined,
                     }}
                   >
-                    {teamRoleLabel}
+                    {activityText}
                   </span>
-                )}
-                <span
-                  className="overflow-hidden text-ellipsis block leading-none"
-                  style={{
-                    fontSize: isSub ? '20px' : '22px',
-                    fontStyle: isSub ? 'italic' : undefined,
-                  }}
-                >
-                  {activityText}
-                </span>
-                {ch.folderName && (
-                  <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
-                    {ch.folderName}
-                  </span>
+                  {ch.folderName && (
+                    <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
+                      {ch.folderName}
+                    </span>
+                  )}
+                </div>
+                {isSelected && !isSub && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCloseAgent(id);
+                    }}
+                    title="Close agent"
+                    className="ml-2 shrink-0 leading-none"
+                  >
+                    ×
+                  </Button>
                 )}
               </div>
-              {isSelected && !isSub && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCloseAgent(id);
-                  }}
-                  title="Close agent"
-                  className="ml-2 shrink-0 leading-none"
-                >
-                  ×
-                </Button>
-              )}
-            </div>
-            {isTeamAgent && totalTokens > 0 && (
-              <div
-                style={{
-                  width: FUEL_GAUGE_WIDTH_PX,
-                  height: FUEL_GAUGE_HEIGHT_PX,
-                  background: FUEL_GAUGE_BG,
-                  marginTop: 2,
-                }}
-                title={`${Math.round(tokenRatio * 100)}% context used (${(totalTokens / 1000).toFixed(0)}k tokens)`}
-              >
+              {isTeamAgent && totalTokens > 0 && (
                 <div
                   style={{
-                    width: `${Math.min(tokenRatio * 100, 100)}%`,
-                    height: '100%',
-                    background: getFuelColor(tokenRatio),
+                    width: FUEL_GAUGE_WIDTH_PX,
+                    height: FUEL_GAUGE_HEIGHT_PX,
+                    background: FUEL_GAUGE_BG,
+                    marginTop: 2,
                   }}
-                />
+                  title={`${Math.round(tokenRatio * 100)}% context used (${(totalTokens / 1000).toFixed(0)}k tokens)`}
+                >
+                  <div
+                    style={{
+                      width: `${Math.min(tokenRatio * 100, 100)}%`,
+                      height: '100%',
+                      background: getFuelColor(tokenRatio),
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+            {showNameplate && (
+              <div
+                className="absolute flex justify-center -translate-x-1/2"
+                style={{
+                  left: screenX,
+                  top: nameplateScreenY,
+                  pointerEvents: 'none',
+                  zIndex: 41,
+                }}
+              >
+                <span
+                  className="text-2xs leading-none whitespace-nowrap max-w-2xs overflow-hidden text-ellipsis"
+                  style={{
+                    color: NAMEPLATE_TEXT_COLOR,
+                    textShadow: NAMEPLATE_TEXT_OUTLINE,
+                  }}
+                >
+                  {ch.terminalName}
+                </span>
               </div>
             )}
-          </div>
+          </Fragment>
         );
       })}
     </>

@@ -63,16 +63,20 @@ interface ExtensionMessageState {
   watchAllSessions: boolean;
   setWatchAllSessions: (v: boolean) => void;
   alwaysShowLabels: boolean;
+  showTerminalNames: boolean;
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
   hooksInfoShown: boolean;
+  defaultCwd: string;
+  setDefaultCwd: (v: string) => void;
 }
 
 function saveAgentSeats(os: OfficeState): void {
-  const seats: Record<number, { palette: number; hueShift: number; seatId: string | null }> = {};
+  const seats: Record<number, { palette: number; hueShift: number; workSeatId: string | null }> =
+    {};
   for (const ch of os.characters.values()) {
     if (ch.isSubagent) continue;
-    seats[ch.id] = { palette: ch.palette, hueShift: ch.hueShift, seatId: ch.seatId };
+    seats[ch.id] = { palette: ch.palette, hueShift: ch.hueShift, workSeatId: ch.workSeatId };
   }
   vscode.postMessage({ type: 'saveAgentSeats', seats });
 }
@@ -101,8 +105,15 @@ export function useExtensionMessages(
   const [extensionVersion, setExtensionVersion] = useState('');
   const [watchAllSessions, setWatchAllSessions] = useState(false);
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
+  const [showTerminalNames, setShowTerminalNames] = useState(true);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
+  const [defaultCwd, setDefaultCwdState] = useState('');
+
+  const setDefaultCwd = (v: string): void => {
+    setDefaultCwdState(v);
+    vscode.postMessage({ type: 'setDefaultCwd', value: v });
+  };
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
@@ -115,6 +126,7 @@ export function useExtensionMessages(
       hueShift?: number;
       seatId?: string;
       folderName?: string;
+      terminalName?: string;
     }> = [];
 
     const handler = (e: MessageEvent) => {
@@ -138,7 +150,7 @@ export function useExtensionMessages(
         }
         // Add buffered agents now that layout (and seats) are correct
         for (const p of pendingAgents) {
-          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
+          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName, p.terminalName);
         }
         pendingAgents = [];
         layoutReadyRef.current = true;
@@ -152,6 +164,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentCreated') {
         const id = msg.id as number;
         const folderName = msg.folderName as string | undefined;
+        const terminalName = msg.terminalName as string | undefined;
         const isTeammate = msg.isTeammate as boolean | undefined;
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
@@ -176,7 +189,7 @@ export function useExtensionMessages(
             ch.agentName = teammateName;
           }
         } else {
-          os.addAgent(id, undefined, undefined, undefined, undefined, folderName);
+          os.addAgent(id, undefined, undefined, undefined, undefined, folderName, terminalName);
         }
         saveAgentSeats(os);
       } else if (msg.type === 'agentClosed') {
@@ -205,13 +218,18 @@ export function useExtensionMessages(
         os.removeAllSubagents(id);
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id));
         os.removeAgent(id);
+      } else if (msg.type === 'agentTerminalNameChanged') {
+        const id = msg.id as number;
+        const terminalName = msg.terminalName as string;
+        os.setAgentTerminalName(id, terminalName);
       } else if (msg.type === 'existingAgents') {
         const incoming = msg.agents as number[];
         const meta = (msg.agentMeta || {}) as Record<
           number,
-          { palette?: number; hueShift?: number; seatId?: string }
+          { palette?: number; hueShift?: number; seatId?: string; workSeatId?: string }
         >;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
+        const terminalNames = (msg.terminalNames || {}) as Record<number, string>;
         // Buffer agents — they'll be added in layoutLoaded after seats are built
         for (const id of incoming) {
           const m = meta[id];
@@ -219,8 +237,9 @@ export function useExtensionMessages(
             id,
             palette: m?.palette,
             hueShift: m?.hueShift,
-            seatId: m?.seatId,
+            seatId: m?.workSeatId ?? m?.seatId,
             folderName: folderNames[id],
+            terminalName: terminalNames[id],
           });
         }
         setAgents((prev) => {
@@ -322,7 +341,7 @@ export function useExtensionMessages(
         const id = msg.id as number;
         const status = msg.status as string;
         setAgentStatuses((prev) => {
-          if (status === 'active') {
+          if (status === 'active' || status === 'idle') {
             if (!(id in prev)) return prev;
             const next = { ...prev };
             delete next[id];
@@ -334,6 +353,11 @@ export function useExtensionMessages(
         if (status === 'waiting') {
           os.showWaitingBubble(id);
           playDoneSound();
+        } else if (status === 'awaitingUser') {
+          const since = typeof msg.since === 'number' ? msg.since : Date.now();
+          os.showAwaitingUserBubble(id, since);
+        } else if (status === 'idle' || status === 'active') {
+          os.clearAwaitingUserBubble(id);
         }
       } else if (msg.type === 'agentToolPermission') {
         const id = msg.id as number;
@@ -463,11 +487,15 @@ export function useExtensionMessages(
         if (typeof msg.alwaysShowLabels === 'boolean') {
           setAlwaysShowLabels(msg.alwaysShowLabels as boolean);
         }
+        setShowTerminalNames(msg.showTerminalNames as boolean);
         if (typeof msg.hooksEnabled === 'boolean') {
           setHooksEnabled(msg.hooksEnabled as boolean);
         }
         if (typeof msg.hooksInfoShown === 'boolean') {
           setHooksInfoShown(msg.hooksInfoShown as boolean);
+        }
+        if (typeof msg.defaultCwd === 'string') {
+          setDefaultCwdState(msg.defaultCwd as string);
         }
         if (Array.isArray(msg.externalAssetDirectories)) {
           setExternalAssetDirectories(msg.externalAssetDirectories as string[]);
@@ -531,8 +559,11 @@ export function useExtensionMessages(
     watchAllSessions,
     setWatchAllSessions,
     alwaysShowLabels,
+    showTerminalNames,
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    defaultCwd,
+    setDefaultCwd,
   };
 }

@@ -16,13 +16,13 @@ import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
-import { BottomDrawer } from './office/drawer/BottomDrawer.js';
-import type { AgentSummary } from './office/drawer/drawerTypes.js';
-import { useDrawerState } from './office/drawer/useDrawerState.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
+import { OfficePanel } from './office/panel/OfficePanel.js';
+import type { AgentSummary } from './office/panel/panelTypes.js';
+import { usePanelState } from './office/panel/usePanelState.js';
 import { EditTool } from './office/types.js';
 import { isBrowserRuntime } from './runtime.js';
 import { vscode } from './vscodeApi.js';
@@ -71,9 +71,12 @@ function App() {
     watchAllSessions,
     setWatchAllSessions,
     alwaysShowLabels,
+    showTerminalNames,
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    defaultCwd,
+    setDefaultCwd,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -112,6 +115,20 @@ function App() {
     });
   }, []);
 
+  const [showTerminalNamesLocal, setShowTerminalNamesLocal] = useState(true);
+
+  useEffect(() => {
+    setShowTerminalNamesLocal(showTerminalNames);
+  }, [showTerminalNames]);
+
+  const handleToggleShowTerminalNames = useCallback(() => {
+    setShowTerminalNamesLocal((prev) => {
+      const newVal = !prev;
+      vscode.postMessage({ type: 'setShowTerminalNames', enabled: newVal });
+      return newVal;
+    });
+  }, []);
+
   const handleSelectAgent = useCallback((id: number) => {
     vscode.postMessage({ type: 'focusAgent', id });
   }, []);
@@ -134,17 +151,17 @@ function App() {
 
   const officeState = getOfficeState();
 
-  const drawer = useDrawerState(containerRef, editor.isEditMode);
+  const panel = usePanelState(containerRef, editor.isEditMode);
 
   const handleCloseAgent = useCallback(
     (id: number) => {
       // Pick the next agent to focus (most recent other agent id, if any)
       const others = agents.filter((a) => a !== id);
       const mostRecentOther = others.length > 0 ? Math.max(...others) : null;
-      drawer.closeAgent(id, mostRecentOther);
+      panel.closeAgent(id, mostRecentOther);
       vscode.postMessage({ type: 'closeAgent', id });
     },
-    [agents, drawer],
+    [agents, panel],
   );
 
   const agentSummaries = useMemo<AgentSummary[]>(() => {
@@ -175,11 +192,11 @@ function App() {
     const maxId = agents.reduce((m, a) => Math.max(m, a), -Infinity);
     if (maxId > seenMaxIdRef.current) {
       if (seenMaxIdRef.current > -Infinity) {
-        drawer.openForNewAgent(maxId);
+        panel.openForNewAgent(maxId);
       }
       seenMaxIdRef.current = maxId;
     }
-  }, [agents, drawer]);
+  }, [agents, panel]);
 
   const handleClick = useCallback(
     (agentId: number) => {
@@ -188,9 +205,9 @@ function App() {
       const meta = os.subagentMeta.get(agentId);
       const focusId = meta ? meta.parentAgentId : agentId;
       vscode.postMessage({ type: 'focusAgent', id: focusId });
-      drawer.focusOrToggle(focusId);
+      panel.focusOrToggle(focusId);
     },
-    [drawer],
+    [panel],
   );
 
   // Force dependency on editorTickForKeyboard to propagate keyboard-triggered re-renders
@@ -219,13 +236,32 @@ function App() {
     return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
   }
 
+  const panelPos = panel.state.panelPosition;
+  const outerFlexDirection: 'row' | 'column' = panelPos === 'bottom' ? 'column' : 'row';
+  const panelFirst = panelPos === 'left';
+
+  const panelEl = (
+    <OfficePanel
+      agents={agentSummaries}
+      state={panel.state}
+      band={panel.band}
+      onFocusAgent={handleClick}
+      onCollapse={panel.collapse}
+      onToggleRailHidden={panel.toggleRailHidden}
+    />
+  );
+
   return (
     <div
       ref={containerRef}
       className="w-full h-full overflow-hidden"
-      style={{ display: 'flex', flexDirection: 'column' }}
+      style={{ display: 'flex', flexDirection: outerFlexDirection }}
     >
-      <div ref={canvasAreaRef} style={{ flex: '1 1 auto', position: 'relative', minHeight: 0 }}>
+      {panelFirst && panelEl}
+      <div
+        ref={canvasAreaRef}
+        style={{ flex: '1 1 auto', position: 'relative', minWidth: 0, minHeight: 0 }}
+      >
         <OfficeCanvas
           officeState={officeState}
           onClick={handleClick}
@@ -304,6 +340,7 @@ function App() {
               panRef={editor.panRef}
               onCloseAgent={handleCloseAgent}
               alwaysShowOverlay={alwaysShowOverlay}
+              showTerminalNames={showTerminalNamesLocal}
             />
           </>
         ) : (
@@ -404,6 +441,8 @@ function App() {
           onToggleDebugMode={handleToggleDebugMode}
           alwaysShowOverlay={alwaysShowOverlay}
           onToggleAlwaysShowOverlay={handleToggleAlwaysShowOverlay}
+          showTerminalNames={showTerminalNamesLocal}
+          onToggleShowTerminalNames={handleToggleShowTerminalNames}
           externalAssetDirectories={externalAssetDirectories}
           watchAllSessions={watchAllSessions}
           onToggleWatchAllSessions={() => {
@@ -417,20 +456,19 @@ function App() {
             setHooksEnabled(newVal);
             vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
           }}
+          defaultCwd={defaultCwd}
+          onChangeDefaultCwd={setDefaultCwd}
+          panelPosition={panel.state.panelPosition}
+          onChangePanelPosition={panel.setPanelPosition}
+          terminalFontSize={panel.state.terminalFontSize}
+          onChangeTerminalFontSize={panel.setTerminalFontSize}
         />
 
         {showMigrationNotice && (
           <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
         )}
       </div>
-      <BottomDrawer
-        agents={agentSummaries}
-        state={drawer.state}
-        band={drawer.band}
-        onFocusAgent={handleClick}
-        onCollapse={drawer.collapse}
-        onToggleRailHidden={drawer.toggleRailHidden}
-      />
+      {!panelFirst && panelEl}
     </div>
   );
 }

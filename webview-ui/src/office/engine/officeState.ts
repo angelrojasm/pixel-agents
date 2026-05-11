@@ -91,13 +91,12 @@ export class OfficeState {
       seat.assigned = false;
     }
 
-    // First pass: try to keep characters at their existing seats
+    // First pass: try to keep characters at their existing work seats
     for (const ch of this.characters.values()) {
-      if (ch.seatId && this.seats.has(ch.seatId)) {
-        const seat = this.seats.get(ch.seatId)!;
-        if (!seat.assigned) {
+      if (ch.workSeatId && this.seats.has(ch.workSeatId)) {
+        const seat = this.seats.get(ch.workSeatId)!;
+        if (!seat.assigned && seat.role === 'work') {
           seat.assigned = true;
-          // Snap character to seat position
           ch.tileCol = seat.seatCol;
           ch.tileRow = seat.seatRow;
           const cx = seat.seatCol * TILE_SIZE + TILE_SIZE / 2;
@@ -108,16 +107,17 @@ export class OfficeState {
           continue;
         }
       }
-      ch.seatId = null; // will be reassigned below
+      ch.workSeatId = null; // will be reassigned below
+      ch.restSeatId = null; // rest seats never persist across rebuilds
     }
 
-    // Second pass: assign remaining characters to free seats
+    // Second pass: assign remaining characters to free work seats
     for (const ch of this.characters.values()) {
-      if (ch.seatId) continue;
-      const seatId = this.findFreeSeat();
+      if (ch.workSeatId) continue;
+      const seatId = this.findFreeWorkSeat();
       if (seatId) {
         this.seats.get(seatId)!.assigned = true;
-        ch.seatId = seatId;
+        ch.workSeatId = seatId;
         const seat = this.seats.get(seatId)!;
         ch.tileCol = seat.seatCol;
         ch.tileRow = seat.seatRow;
@@ -129,7 +129,7 @@ export class OfficeState {
 
     // Relocate any characters that ended up outside bounds or on non-walkable tiles
     for (const ch of this.characters.values()) {
-      if (ch.seatId) continue; // seated characters are fine
+      if (ch.workSeatId) continue;
       if (
         ch.tileCol < 0 ||
         ch.tileCol >= layout.cols ||
@@ -157,79 +157,38 @@ export class OfficeState {
     return this.layout;
   }
 
-  /** Get the blocked-tile key for a character's own seat, or null */
-  private ownSeatKey(ch: Character): string | null {
-    if (!ch.seatId) return null;
-    const seat = this.seats.get(ch.seatId);
-    if (!seat) return null;
-    return `${seat.seatCol},${seat.seatRow}`;
+  /** Get the blocked-tile keys for a character's own seats (work + currently-claimed rest). */
+  private ownSeatKeys(ch: Character): string[] {
+    const keys: string[] = [];
+    if (ch.workSeatId) {
+      const seat = this.seats.get(ch.workSeatId);
+      if (seat) keys.push(`${seat.seatCol},${seat.seatRow}`);
+    }
+    if (ch.restSeatId) {
+      const seat = this.seats.get(ch.restSeatId);
+      if (seat) keys.push(`${seat.seatCol},${seat.seatRow}`);
+    }
+    return keys;
   }
 
-  /** Temporarily unblock a character's own seat, run fn, then re-block */
+  /** Temporarily unblock a character's own seats (work + claimed rest), run fn, then re-block. */
   private withOwnSeatUnblocked<T>(ch: Character, fn: () => T): T {
-    const key = this.ownSeatKey(ch);
-    if (key) this.blockedTiles.delete(key);
+    const keys = this.ownSeatKeys(ch);
+    for (const key of keys) this.blockedTiles.delete(key);
     const result = fn();
-    if (key) this.blockedTiles.add(key);
+    for (const key of keys) this.blockedTiles.add(key);
     return result;
   }
 
-  private findFreeSeat(): string | null {
-    // Build set of tiles occupied by electronics (PCs, monitors, etc.)
-    const electronicsTiles = new Set<string>();
-    for (const item of this.layout.furniture) {
-      const entry = getCatalogEntry(item.type);
-      if (!entry || entry.category !== 'electronics') continue;
-      for (let dr = 0; dr < entry.footprintH; dr++) {
-        for (let dc = 0; dc < entry.footprintW; dc++) {
-          electronicsTiles.add(`${item.col + dc},${item.row + dr}`);
-        }
-      }
-    }
-
-    // Collect free seats, split into those facing electronics and the rest
-    const pcSeats: string[] = [];
-    const otherSeats: string[] = [];
+  private findFreeWorkSeat(): string | null {
+    const free: string[] = [];
     for (const [uid, seat] of this.seats) {
       if (seat.assigned) continue;
-
-      // Check if this seat faces electronics (same logic as auto-state detection)
-      let facesPC = false;
-      const dCol =
-        seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0;
-      const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0;
-      for (let d = 1; d <= AUTO_ON_FACING_DEPTH && !facesPC; d++) {
-        const tileCol = seat.seatCol + dCol * d;
-        const tileRow = seat.seatRow + dRow * d;
-        if (electronicsTiles.has(`${tileCol},${tileRow}`)) {
-          facesPC = true;
-          break;
-        }
-        if (dCol !== 0) {
-          if (
-            electronicsTiles.has(`${tileCol},${tileRow - 1}`) ||
-            electronicsTiles.has(`${tileCol},${tileRow + 1}`)
-          ) {
-            facesPC = true;
-            break;
-          }
-        } else {
-          if (
-            electronicsTiles.has(`${tileCol - 1},${tileRow}`) ||
-            electronicsTiles.has(`${tileCol + 1},${tileRow}`)
-          ) {
-            facesPC = true;
-            break;
-          }
-        }
-      }
-      (facesPC ? pcSeats : otherSeats).push(uid);
+      if (seat.role !== 'work') continue;
+      free.push(uid);
     }
-
-    // Pick randomly: prefer PC seats, then any seat
-    if (pcSeats.length > 0) return pcSeats[Math.floor(Math.random() * pcSeats.length)];
-    if (otherSeats.length > 0) return otherSeats[Math.floor(Math.random() * otherSeats.length)];
-    return null;
+    if (free.length === 0) return null;
+    return free[Math.floor(Math.random() * free.length)];
   }
 
   /**
@@ -267,6 +226,7 @@ export class OfficeState {
     preferredSeatId?: string,
     skipSpawnEffect?: boolean,
     folderName?: string,
+    terminalName?: string,
   ): void {
     if (this.characters.has(id)) return;
 
@@ -281,25 +241,25 @@ export class OfficeState {
       hueShift = pick.hueShift;
     }
 
-    // Try preferred seat first, then any free seat
-    let seatId: string | null = null;
+    // Try preferred seat first (must still be a work seat), then any free work seat.
+    let workSeatId: string | null = null;
     if (preferredSeatId && this.seats.has(preferredSeatId)) {
       const seat = this.seats.get(preferredSeatId)!;
-      if (!seat.assigned) {
-        seatId = preferredSeatId;
+      if (!seat.assigned && seat.role === 'work') {
+        workSeatId = preferredSeatId;
       }
     }
-    if (!seatId) {
-      seatId = this.findFreeSeat();
+    if (!workSeatId) {
+      workSeatId = this.findFreeWorkSeat();
     }
 
     let ch: Character;
-    if (seatId) {
-      const seat = this.seats.get(seatId)!;
+    if (workSeatId) {
+      const seat = this.seats.get(workSeatId)!;
       seat.assigned = true;
-      ch = createCharacter(id, palette, seatId, seat, hueShift);
+      ch = createCharacter(id, palette, workSeatId, seat, hueShift);
     } else {
-      // No seats — spawn at random walkable tile
+      // No work seats — spawn at random walkable tile; character will wander.
       const spawn =
         this.walkableTiles.length > 0
           ? this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)]
@@ -314,6 +274,9 @@ export class OfficeState {
     if (folderName) {
       ch.folderName = folderName;
     }
+    if (terminalName) {
+      ch.terminalName = terminalName;
+    }
     if (!skipSpawnEffect) {
       ch.matrixEffect = 'spawn';
       ch.matrixEffectTimer = 0;
@@ -326,10 +289,13 @@ export class OfficeState {
     const ch = this.characters.get(id);
     if (!ch) return;
     if (ch.matrixEffect === 'despawn') return; // already despawning
-    // Free seat and clear selection immediately
-    if (ch.seatId) {
-      const seat = this.seats.get(ch.seatId);
+    if (ch.workSeatId) {
+      const seat = this.seats.get(ch.workSeatId);
       if (seat) seat.assigned = false;
+    }
+    if (ch.restSeatId) {
+      const rest = this.seats.get(ch.restSeatId);
+      if (rest) rest.assigned = false;
     }
     if (this.selectedAgentId === id) this.selectedAgentId = null;
     if (this.cameraFollowId === id) this.cameraFollowId = null;
@@ -348,21 +314,22 @@ export class OfficeState {
     return null;
   }
 
-  /** Reassign an agent from their current seat to a new seat */
+  /** Reassign an agent's work seat. Rest seats are not user-assignable. */
   reassignSeat(agentId: number, seatId: string): void {
     const ch = this.characters.get(agentId);
     if (!ch) return;
-    // Unassign old seat
-    if (ch.seatId) {
-      const old = this.seats.get(ch.seatId);
-      if (old) old.assigned = false;
-    }
-    // Assign new seat
     const seat = this.seats.get(seatId);
     if (!seat || seat.assigned) return;
+    // Only work seats can be user-assigned; clicking a rest seat is a no-op.
+    if (seat.role !== 'work') return;
+
+    if (ch.workSeatId) {
+      const old = this.seats.get(ch.workSeatId);
+      if (old) old.assigned = false;
+    }
     seat.assigned = true;
-    ch.seatId = seatId;
-    // Pathfind to new seat (unblock own seat tile for this query)
+    ch.workSeatId = seatId;
+
     const path = this.withOwnSeatUnblocked(ch, () =>
       findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, this.tileMap, this.blockedTiles),
     );
@@ -373,7 +340,6 @@ export class OfficeState {
       ch.frame = 0;
       ch.frameTimer = 0;
     } else {
-      // Already at seat or no path — sit down
       ch.state = CharacterState.TYPE;
       ch.dir = seat.facingDir;
       ch.frame = 0;
@@ -384,11 +350,11 @@ export class OfficeState {
     }
   }
 
-  /** Send an agent back to their currently assigned seat */
+  /** Send an agent back to their currently assigned work seat */
   sendToSeat(agentId: number): void {
     const ch = this.characters.get(agentId);
-    if (!ch || !ch.seatId) return;
-    const seat = this.seats.get(ch.seatId);
+    if (!ch || !ch.workSeatId) return;
+    const seat = this.seats.get(ch.workSeatId);
     if (!seat) return;
     const path = this.withOwnSeatUnblocked(ch, () =>
       findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, this.tileMap, this.blockedTiles),
@@ -417,8 +383,9 @@ export class OfficeState {
     if (!ch || ch.isSubagent) return false;
     if (!isWalkable(col, row, this.tileMap, this.blockedTiles)) {
       // Also allow walking to own seat tile (blocked for others but not self)
-      const key = this.ownSeatKey(ch);
-      if (!key || key !== `${col},${row}`) return false;
+      const keys = this.ownSeatKeys(ch);
+      const target = `${col},${row}`;
+      if (!keys.includes(target)) return false;
     }
     const path = this.withOwnSeatUnblocked(ch, () =>
       findPath(ch.tileCol, ch.tileRow, col, row, this.tileMap, this.blockedTiles),
@@ -477,6 +444,9 @@ export class OfficeState {
     if (parentCh) ch.dir = parentCh.dir;
     ch.isSubagent = true;
     ch.parentAgentId = parentAgentId;
+    // Sub-agents are born active (the Task/Agent tool is already running).
+    // createCharacter defaults to isActive:false for regular agents; override here.
+    ch.isActive = true;
     ch.matrixEffect = 'spawn';
     ch.matrixEffectTimer = 0;
     ch.matrixEffectSeeds = matrixEffectSeeds();
@@ -501,8 +471,8 @@ export class OfficeState {
         this.subagentMeta.delete(id);
         return;
       }
-      if (ch.seatId) {
-        const seat = this.seats.get(ch.seatId);
+      if (ch.workSeatId) {
+        const seat = this.seats.get(ch.workSeatId);
         if (seat) seat.assigned = false;
       }
       // Start despawn animation — keep character in map for rendering
@@ -532,8 +502,8 @@ export class OfficeState {
             toRemove.push(key);
             continue;
           }
-          if (ch.seatId) {
-            const seat = this.seats.get(ch.seatId);
+          if (ch.workSeatId) {
+            const seat = this.seats.get(ch.workSeatId);
             if (seat) seat.assigned = false;
           }
           // Start despawn animation
@@ -578,8 +548,8 @@ export class OfficeState {
     // Collect tiles where active agents face desks
     const autoOnTiles = new Set<string>();
     for (const ch of this.characters.values()) {
-      if (!ch.isActive || !ch.seatId) continue;
-      const seat = this.seats.get(ch.seatId);
+      if (!ch.isActive || !ch.workSeatId) continue;
+      const seat = this.seats.get(ch.workSeatId);
       if (!seat) continue;
       // Find the desk tile(s) the agent faces from their seat
       const dCol =
@@ -672,13 +642,38 @@ export class OfficeState {
     }
   }
 
-  /** Dismiss bubble on click — permission: instant, waiting: quick fade */
+  /** Latch the persistent awaiting-user bubble. The character will also return to
+   *  its work seat via the character FSM (awaitingSince is read there). */
+  showAwaitingUserBubble(id: number, since: number): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.bubbleType = 'awaiting-user';
+    ch.bubbleTimer = 0;
+    ch.awaitingSince = since;
+  }
+
+  /** Clear the awaiting-user state (dismissal, user prompt, or active transition). */
+  clearAwaitingUserBubble(id: number): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    if (ch.bubbleType === 'awaiting-user') {
+      ch.bubbleType = null;
+      ch.bubbleTimer = 0;
+    }
+    ch.awaitingSince = null;
+  }
+
+  /** Dismiss bubble on click — permission & awaiting-user: instant, waiting: quick fade */
   dismissBubble(id: number): void {
     const ch = this.characters.get(id);
     if (!ch || !ch.bubbleType) return;
     if (ch.bubbleType === 'permission') {
       ch.bubbleType = null;
       ch.bubbleTimer = 0;
+    } else if (ch.bubbleType === 'awaiting-user') {
+      ch.bubbleType = null;
+      ch.bubbleTimer = 0;
+      ch.awaitingSince = null;
     } else if (ch.bubbleType === 'waiting') {
       // Trigger immediate fade (0.3s remaining)
       ch.bubbleTimer = Math.min(ch.bubbleTimer, DISMISS_BUBBLE_FAST_FADE_SEC);
@@ -702,6 +697,12 @@ export class OfficeState {
     if (teamUsesTmux !== undefined) {
       ch.teamUsesTmux = teamUsesTmux;
     }
+  }
+
+  setAgentTerminalName(id: number, terminalName: string): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.terminalName = terminalName;
   }
 
   setAgentTokens(id: number, inputTokens: number, outputTokens: number): void {

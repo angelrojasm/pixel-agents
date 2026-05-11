@@ -17,7 +17,7 @@ import {
 } from './fileWatcher.js';
 import { migrateAndLoadLayout } from './layoutPersistence.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
-import type { AgentState, PersistedAgent } from './types.js';
+import type { AgentState, MessageSink, PersistedAgent } from './types.js';
 
 export function getProjectDirPath(cwd?: string): string {
   // Fall back to home directory when no workspace folder is open.
@@ -60,6 +60,22 @@ export function getProjectDirPath(cwd?: string): string {
   return projectDir;
 }
 
+/** Resolve a user-configured defaultCwd string into an absolute path, or undefined.
+ *  Expands leading `~` and validates the path exists on disk. Source-agnostic —
+ *  the extension reads from globalState and passes the raw string in. */
+export function resolveDefaultCwd(raw: string | undefined): string | undefined {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return undefined;
+  const expanded = trimmed.startsWith('~') ? path.join(os.homedir(), trimmed.slice(1)) : trimmed;
+  try {
+    if (fs.statSync(expanded).isDirectory()) return expanded;
+  } catch {
+    /* resolved path doesn't exist — ignore */
+  }
+  console.warn(`[Pixel Agents] Terminal: ignored defaultCwd "${raw}" — path not found`);
+  return undefined;
+}
+
 export async function launchNewTerminal(
   nextAgentIdRef: { current: number },
   nextTerminalIndexRef: { current: number },
@@ -72,16 +88,20 @@ export async function launchNewTerminal(
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
   projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
-  webview: vscode.Webview | undefined,
+  webview: MessageSink | undefined,
   persistAgents: () => void,
   folderPath?: string,
   bypassPermissions?: boolean,
+  defaultCwd?: string,
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
-  // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
-  // This ensures the terminal starts in a predictable location that matches the project
-  // dir hash Claude Code will use for JSONL transcript files.
-  const cwd = folderPath || folders?.[0]?.uri.fsPath || os.homedir();
+  // Resolution order:
+  //   1. explicit folderPath argument (e.g. multi-root folder picker)
+  //   2. first workspace folder, if any
+  //   3. user-configured defaultCwd (from the in-app Settings modal, supports `~`)
+  //   4. home directory
+  const cwd =
+    folderPath || folders?.[0]?.uri.fsPath || resolveDefaultCwd(defaultCwd) || os.homedir();
   const isMultiRoot = !!(folders && folders.length > 1);
   const idx = nextTerminalIndexRef.current++;
   const terminal = vscode.window.createTerminal({
@@ -123,6 +143,7 @@ export async function launchNewTerminal(
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
+    awaitingSince: null,
     lastDataAt: 0,
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
@@ -136,7 +157,12 @@ export async function launchNewTerminal(
   activeAgentIdRef.current = id;
   persistAgents();
   console.log(`[Pixel Agents] Terminal: Agent ${id} - created for terminal ${terminal.name}`);
-  webview?.postMessage({ type: 'agentCreated', id, folderName });
+  webview?.postMessage({
+    type: 'agentCreated',
+    id,
+    folderName,
+    terminalName: terminal.name,
+  });
 
   ensureProjectScan(
     projectDir,
@@ -317,7 +343,7 @@ export function restoreAgents(
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
   projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
   activeAgentIdRef: { current: number | null },
-  webview: vscode.Webview | undefined,
+  webview: MessageSink | undefined,
   doPersist: () => void,
 ): void {
   const persisted = context.workspaceState.get<PersistedAgent[]>(WORKSPACE_KEY_AGENTS, []);
@@ -370,6 +396,7 @@ export function restoreAgents(
       isWaiting: false,
       permissionSent: false,
       hadToolsInTurn: false,
+      awaitingSince: null,
       lastDataAt: 0,
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
@@ -517,7 +544,7 @@ export function restoreAgents(
 export function sendExistingAgents(
   agents: Map<number, AgentState>,
   context: vscode.ExtensionContext,
-  webview: vscode.Webview | undefined,
+  webview: MessageSink | undefined,
 ): void {
   if (!webview) return;
   const agentIds: number[] = [];
@@ -526,10 +553,20 @@ export function sendExistingAgents(
   }
   agentIds.sort((a, b) => a - b);
 
-  // Include persisted palette/seatId from separate key
-  const agentMeta = context.workspaceState.get<
-    Record<string, { palette?: number; seatId?: string }>
+  // Include persisted palette + work-seat from separate key.
+  // Legacy records may still carry a `seatId` field from before the workSeatId split.
+  const rawAgentMeta = context.workspaceState.get<
+    Record<string, { palette?: number; hueShift?: number; seatId?: string; workSeatId?: string }>
   >(WORKSPACE_KEY_AGENT_SEATS, {});
+  const agentMeta: Record<string, { palette?: number; hueShift?: number; workSeatId?: string }> =
+    {};
+  for (const [id, m] of Object.entries(rawAgentMeta)) {
+    agentMeta[id] = {
+      palette: m.palette,
+      hueShift: m.hueShift,
+      workSeatId: m.workSeatId ?? m.seatId,
+    };
+  }
 
   // Include folderName and isExternal per agent
   const folderNames: Record<number, string> = {};
@@ -542,6 +579,14 @@ export function sendExistingAgents(
       externalAgents[id] = true;
     }
   }
+
+  const terminalNames: Record<number, string> = {};
+  for (const [id, agent] of agents) {
+    if (agent.terminalRef?.name) {
+      terminalNames[id] = agent.terminalRef.name;
+    }
+  }
+
   console.log(
     `[Pixel Agents] sendExistingAgents: agents=${JSON.stringify(agentIds)}, meta=${JSON.stringify(agentMeta)}`,
   );
@@ -552,6 +597,7 @@ export function sendExistingAgents(
     agentMeta,
     folderNames,
     externalAgents,
+    terminalNames,
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
   // so that agentStatus/agentToolStart messages arrive after characters are created.
@@ -559,7 +605,7 @@ export function sendExistingAgents(
 
 export function sendCurrentAgentStatuses(
   agents: Map<number, AgentState>,
-  webview: vscode.Webview | undefined,
+  webview: MessageSink | undefined,
 ): void {
   if (!webview) return;
   for (const [agentId, agent] of agents) {
@@ -608,7 +654,7 @@ export function sendCurrentAgentStatuses(
 
 export function sendLayout(
   context: vscode.ExtensionContext,
-  webview: vscode.Webview | undefined,
+  webview: MessageSink | undefined,
   defaultLayout?: Record<string, unknown> | null,
 ): void {
   if (!webview) return;

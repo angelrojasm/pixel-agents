@@ -15,6 +15,12 @@ export const TOOL_DONE_DELAY_MS = 300;
 export const PERMISSION_TIMER_DELAY_MS = 7000;
 /** Heuristic: silence duration before marking a text-only turn as complete */
 export const TEXT_IDLE_DELAY_MS = 5000;
+/** Grace window after a turn ends before escalating to a persistent "awaiting user" state.
+ *  During this window the agent behaves normally (can wander/rest). After it elapses with
+ *  no UserPromptSubmit or tool use, the agent is marked as awaiting-user and returns to
+ *  its work seat with a persistent bubble. Prevents the "came back a day later and didn't
+ *  realize an agent paused on a question" case. */
+export const AWAITING_USER_GRACE_MS = 5 * 60 * 1000;
 /** Heuristic: idle threshold for per-agent /clear detection (content check prevents stealing) */
 export const CLEAR_IDLE_THRESHOLD_MS = 2000;
 
@@ -57,3 +63,11 @@ export const HOOK_EVENT_BUFFER_MS = 5_000;
  *  the agent is cleaned up instead of staying as a zombie with pendingClear forever. */
 export const SESSION_END_GRACE_MS = 2000;
 export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
+
+/** Tools that pause Claude waiting for the user (not for compute or for an external
+ *  service). For these, PostToolUse / turn_duration must NOT mark the tool as "done"
+ *  — Claude Code may fire those events the moment it shows the UI, but the tool is
+ *  truly complete only when the user picks an answer (the next user message's
+ *  tool_result block). Without this carve-out, the office ends up showing
+ *  "Working…" while the user is actually being asked a question. */
+export const INTERACTIVE_USER_TOOLS = new Set(['AskUserQuestion']);

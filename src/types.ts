@@ -1,5 +1,20 @@
 import type * as vscode from 'vscode';
 
+/**
+ * Narrow abstraction over `vscode.Webview` for modules that only need to post
+ * messages. In single-webview setups this is just the one webview; in
+ * multi-webview setups (side panel + full-screen tab) it's a broadcast sink
+ * implemented by PixelAgentsViewProvider.
+ *
+ * The downstream modules (agentManager, fileWatcher, transcriptParser,
+ * assetLoader, timerManager, hookEventHandler) never touch `asWebviewUri`,
+ * `options`, or `onDidReceiveMessage` — they only post. So we pass this
+ * instead of the full `vscode.Webview`.
+ */
+export interface MessageSink {
+  postMessage(message: unknown): Thenable<boolean>;
+}
+
 export interface AgentState {
   id: number;
   sessionId: string;
@@ -20,6 +35,11 @@ export interface AgentState {
   isWaiting: boolean;
   permissionSent: boolean;
   hadToolsInTurn: boolean;
+  /** Timestamp (ms since epoch) when the agent escalated to the persistent awaiting-user
+   *  state (after AWAITING_USER_GRACE_MS past turn end with no user prompt or tool use).
+   *  null while in the grace window or during active/normal-idle. Cleared on active
+   *  transitions and user dismissal. */
+  awaitingSince: number | null;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */

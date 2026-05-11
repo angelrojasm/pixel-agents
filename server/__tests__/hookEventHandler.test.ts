@@ -113,6 +113,36 @@ describe('HookEventHandler', () => {
     expect(subMsg?.parentToolId).toBe('tool-parent');
   });
 
+  // ── UserPromptSubmit (thinking presence) ───────────────────────
+
+  it('UserPromptSubmit sends agentStatus:active', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'sess-1',
+    });
+
+    const msg = mockWebview.messages.find((m) => m.type === 'agentStatus' && m.status === 'active');
+    expect(msg).toBeTruthy();
+    expect(msg?.id).toBe(1);
+  });
+
+  it('UserPromptSubmit sets hookDelivered on the agent', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'sess-1',
+    });
+
+    expect(agent.hookDelivered).toBe(true);
+  });
+
   // ── Notification ────────────────────────────────────────────
 
   it('Notification permission_prompt sends agentToolPermission', () => {

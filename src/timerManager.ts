@@ -1,13 +1,52 @@
-import type * as vscode from 'vscode';
+import { AWAITING_USER_GRACE_MS, PERMISSION_TIMER_DELAY_MS } from '../server/src/constants.js';
+import type { AgentState, MessageSink } from './types.js';
 
-import { PERMISSION_TIMER_DELAY_MS } from '../server/src/constants.js';
-import type { AgentState } from './types.js';
+/** Module-scoped awaiting-user escalation timers, one per agent. Kept here rather
+ *  than threaded through call sites because the timer is purely an internal escalation
+ *  of the "waiting" state — its lifecycle mirrors waitingTimers but at a longer delay. */
+const awaitingUserTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+function cancelAwaitingUserTimer(agentId: number): void {
+  const t = awaitingUserTimers.get(agentId);
+  if (t) {
+    clearTimeout(t);
+    awaitingUserTimers.delete(agentId);
+  }
+}
+
+/** Cancel any pending awaiting-user escalation AND clear the latched timestamp
+ *  on the agent. Called whenever the agent transitions to an active state. */
+export function clearAwaitingUser(agentId: number, agent: AgentState | undefined): void {
+  cancelAwaitingUserTimer(agentId);
+  if (agent) agent.awaitingSince = null;
+}
+
+function scheduleAwaitingUserTimer(
+  agentId: number,
+  agents: Map<number, AgentState>,
+  webview: MessageSink | undefined,
+): void {
+  cancelAwaitingUserTimer(agentId);
+  const timer = setTimeout(() => {
+    awaitingUserTimers.delete(agentId);
+    const agent = agents.get(agentId);
+    if (!agent) return;
+    agent.awaitingSince = Date.now();
+    webview?.postMessage({
+      type: 'agentStatus',
+      id: agentId,
+      status: 'awaitingUser',
+      since: agent.awaitingSince,
+    });
+  }, AWAITING_USER_GRACE_MS);
+  awaitingUserTimers.set(agentId, timer);
+}
 
 export function clearAgentActivity(
   agent: AgentState | undefined,
   agentId: number,
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-  webview: vscode.Webview | undefined,
+  webview: MessageSink | undefined,
 ): void {
   if (!agent) return;
 
@@ -35,6 +74,7 @@ export function clearAgentActivity(
   agent.isWaiting = false;
   agent.permissionSent = false;
   cancelPermissionTimer(agentId, permissionTimers);
+  clearAwaitingUser(agentId, agent);
   webview?.postMessage({ type: 'agentToolsClear', id: agentId });
   // Re-send background agent tools so webview re-creates their sub-agents
   for (const toolId of agent.backgroundAgentToolIds) {
@@ -67,7 +107,7 @@ export function startWaitingTimer(
   delayMs: number,
   agents: Map<number, AgentState>,
   waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-  webview: vscode.Webview | undefined,
+  webview: MessageSink | undefined,
 ): void {
   cancelWaitingTimer(agentId, waitingTimers);
   const timer = setTimeout(() => {
@@ -81,6 +121,8 @@ export function startWaitingTimer(
       id: agentId,
       status: 'waiting',
     });
+    // Tier 2: escalate to persistent awaitingUser after the grace window.
+    scheduleAwaitingUserTimer(agentId, agents, webview);
   }, delayMs);
   waitingTimers.set(agentId, timer);
 }
@@ -101,7 +143,7 @@ export function startPermissionTimer(
   agents: Map<number, AgentState>,
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
   permissionExemptTools: Set<string>,
-  webview: vscode.Webview | undefined,
+  webview: MessageSink | undefined,
 ): void {
   cancelPermissionTimer(agentId, permissionTimers);
   const timer = setTimeout(() => {

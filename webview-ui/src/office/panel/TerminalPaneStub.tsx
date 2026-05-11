@@ -1,19 +1,20 @@
-import { DRAWER_ACCENT, DRAWER_BG_CHROME, DRAWER_MUTED } from '../../constants.js';
+import { PANEL_ACCENT, PANEL_BG_CHROME, PANEL_MUTED } from '../../constants.js';
 
 interface TerminalPaneStubProps {
   agentId: number | null;
   agentName: string | null;
+  fontSize: number;
 }
 
-export function TerminalPaneStub({ agentId, agentName }: TerminalPaneStubProps) {
+export function TerminalPaneStub({ agentId, agentName, fontSize }: TerminalPaneStubProps) {
   if (agentId == null) {
     return (
       <div
         style={{
           flex: '1 1 auto',
-          background: DRAWER_BG_CHROME,
-          color: DRAWER_MUTED,
-          fontSize: 11,
+          background: PANEL_BG_CHROME,
+          color: PANEL_MUTED,
+          fontSize,
           padding: 12,
         }}
       >
@@ -25,9 +26,9 @@ export function TerminalPaneStub({ agentId, agentName }: TerminalPaneStubProps) 
     <div
       style={{
         flex: '1 1 auto',
-        background: DRAWER_BG_CHROME,
-        color: DRAWER_ACCENT,
-        fontSize: 11,
+        background: PANEL_BG_CHROME,
+        color: PANEL_ACCENT,
+        fontSize,
         padding: 12,
         overflow: 'auto',
       }}
@@ -35,7 +36,7 @@ export function TerminalPaneStub({ agentId, agentName }: TerminalPaneStubProps) 
       <div>
         [ terminal stub — agent #{agentId} ({agentName ?? 'unknown'}) ]
       </div>
-      <div style={{ color: DRAWER_MUTED, marginTop: 4 }}>
+      <div style={{ color: PANEL_MUTED, marginTop: 4 }}>
         xterm.js will replace this stub once the pty backend (D2) lands. For now, the terminal still
         runs in VS Code&apos;s native terminal strip.
       </div>

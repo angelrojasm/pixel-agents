@@ -1,0 +1,233 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Nameplate mockup</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 40px;
+        background: #2a2538;
+        color: #e6e2f0;
+        font-family: -apple-system, sans-serif;
+        min-height: 100vh;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 24px;
+        opacity: 0.7;
+        font-weight: 400;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 40px;
+      }
+      .cell {
+        background: #3a3450;
+        padding: 24px 16px;
+        border-radius: 4px;
+      }
+      .cell-title {
+        font-size: 12px;
+        opacity: 0.6;
+        margin-bottom: 16px;
+        text-align: center;
+        font-family: monospace;
+      }
+      .stage {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        height: 120px;
+        justify-content: flex-start;
+        padding-top: 8px;
+      }
+      .character {
+        width: 64px;
+        height: 96px;
+        background-image: url('../../../webview-ui/public/assets/characters/char_0.png');
+        background-position: -16px 0; /* second frame, standing */
+        background-size: 448px 288px; /* 7 frames * 16 * 4 (zoom), 3 rows * 32 * 3 */
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        background-repeat: no-repeat;
+      }
+      /* NOTE: char PNGs are 112x96 (7 frames x 16 wide, 3 rows x 32 tall).
+         At 4x zoom that's 448x384. We show frame index 1 (walk2 idle pose)
+         so offset x = -64. Row 0 is "down" at y 0, so y 0 is fine. */
+
+      /* Override: correct sprite rendering at 4x zoom, frame 1 (idle/standing), row 0 (facing down) */
+      .character {
+        width: 64px; /* 16 * 4 */
+        height: 128px; /* 32 * 4 */
+        background-image: url('../../../webview-ui/public/assets/characters/char_0.png');
+        background-repeat: no-repeat;
+        background-position: -64px 0; /* frame 1 = x offset 16*4 = 64 */
+        background-size: 448px 384px; /* 112*4  96*4 wait: 96*3=288 nope, sheet is 112x96; at 4x = 448x384 */
+      }
+
+      /* v1: no border, directly below feet */
+      .v1 {
+        position: absolute;
+        top: 8px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        pointer-events: none;
+        /* sprite 32px tall * 4 zoom = 128px; 8px padding => 128+8 = 136px from top of stage
+           but we show char starting at top:8, so name goes at 8 + 128 + ~4 = 140 */
+      }
+      .v1-text {
+        display: inline-block;
+        margin-top: 132px; /* fine-tuned */
+        font-size: 11px;
+        color: #e6e2f0;
+        text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000;
+        font-family: 'FS Pixel Sans', monospace;
+      }
+
+      /* v2: no border, subtle dark glow */
+      .v2-text {
+        display: inline-block;
+        margin-top: 132px;
+        font-size: 11px;
+        color: #e6e2f0;
+        text-shadow:
+          0 0 2px #000,
+          0 0 4px rgba(0, 0, 0, 0.8);
+        font-family: 'FS Pixel Sans', monospace;
+      }
+
+      /* v3: no border, muted color */
+      .v3-text {
+        display: inline-block;
+        margin-top: 132px;
+        font-size: 11px;
+        color: #a09ab0;
+        text-shadow: 0 1px 0 #1a1625;
+        font-family: 'FS Pixel Sans', monospace;
+      }
+
+      /* v4: larger font, white with dark outline */
+      .v4-text {
+        display: inline-block;
+        margin-top: 130px;
+        font-size: 13px;
+        color: #ffffff;
+        text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000;
+        font-family: 'FS Pixel Sans', monospace;
+        font-weight: 400;
+      }
+
+      /* v5: semi-transparent background, very subtle */
+      .v5-text {
+        display: inline-block;
+        margin-top: 132px;
+        padding: 2px 6px;
+        font-size: 11px;
+        color: #e6e2f0;
+        background: rgba(0, 0, 0, 0.4);
+        font-family: 'FS Pixel Sans', monospace;
+      }
+
+      /* v7: v1 style (hard black outline) with v3's muted color, tighter to feet */
+      .v7-text {
+        display: inline-block;
+        margin-top: 124px;
+        font-size: 11px;
+        color: #c8c3d8;
+        text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000;
+        font-family: 'FS Pixel Sans', monospace;
+      }
+
+      /* v6: current (with pixel panel border) — for reference */
+      .v6-text {
+        display: inline-block;
+        margin-top: 132px;
+        padding: 2px 6px;
+        font-size: 11px;
+        color: #e6e2f0;
+        background: #1e1e2e;
+        border: 2px solid #7a6fa5;
+        box-shadow: 2px 2px 0 #0a0a14;
+        font-family: 'FS Pixel Sans', monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Nameplate style comparison — "Copyrighter Frontend" below character</h1>
+    <div class="grid">
+      <div class="cell">
+        <div class="cell-title">v1 — plain text, hard 1px outline</div>
+        <div class="stage">
+          <div class="character"></div>
+          <div class="v1">
+            <div class="v1-text">Copyrighter Frontend</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-title">v2 — text with soft dark glow</div>
+        <div class="stage">
+          <div class="character"></div>
+          <div class="v1">
+            <div class="v2-text">Copyrighter Frontend</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-title">v3 — muted color, subtle shadow</div>
+        <div class="stage">
+          <div class="character"></div>
+          <div class="v1">
+            <div class="v3-text">Copyrighter Frontend</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-title">v4 — larger white text, hard outline</div>
+        <div class="stage">
+          <div class="character"></div>
+          <div class="v1">
+            <div class="v4-text">Copyrighter Frontend</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-title">v5 — semi-transparent dark bg</div>
+        <div class="stage">
+          <div class="character"></div>
+          <div class="v1">
+            <div class="v5-text">Copyrighter Frontend</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-title">v6 — current (pill with border)</div>
+        <div class="stage">
+          <div class="character"></div>
+          <div class="v1">
+            <div class="v6-text">Copyrighter Frontend</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cell" style="grid-column: 1 / span 3; background: #3a3450; padding: 32px; margin-top: 24px;">
+        <div class="cell-title" style="color: #c8c3d8;">v7 — proposed: v1 outline + v3 muted color + tighter spacing</div>
+        <div class="stage">
+          <div class="character"></div>
+          <div class="v1">
+            <div class="v7-text">Copyrighter Frontend</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
