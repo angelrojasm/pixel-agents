@@ -73,6 +73,7 @@
     "package": "npm run check-types && npm run lint && node esbuild.js --production && npm run build:webview",
     "check-types": "tsc --noEmit && tsc --noEmit -p server/tsconfig.test.json",
     "prepare": "husky",
+    "postinstall": "node -e \"const fs=require('fs'),p=require('path');try{const d='node_modules/node-pty/prebuilds';for(const e of fs.readdirSync(d)){const s=p.join(d,e,'spawn-helper');if(fs.existsSync(s))fs.chmodSync(s,0o755);}}catch{}\"",
     "lint": "eslint src server shared && cd webview-ui && eslint .",
     "lint:fix": "eslint src server shared --fix && cd webview-ui && eslint . --fix",
     "import-tileset": "tsx scripts/import-tileset-cli.ts",
