@@ -80,7 +80,8 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"server/**/*.ts\" \"shared/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx,css}\" \"*.{js,mjs}\" \"webview-ui/*.{js,ts}\"",
     "test:webview": "cd webview-ui && npm test",
     "test:server": "cd server && npm test",
-    "test": "npm run test:webview && npm run test:server",
+    "test:extension": "vitest run src/__tests__",
+    "test": "npm run test:webview && npm run test:server && npm run test:extension",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "e2e:debug": "playwright test --config e2e/playwright.config.ts --debug",
     "knip": "knip"
@@ -103,7 +104,8 @@
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.54.0"
+    "typescript-eslint": "^8.54.0",
+    "vitest": "^4.1.6"
   },
   "lint-staged": {
     "src/**/*.ts": "eslint --fix",
