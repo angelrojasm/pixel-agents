@@ -1,4 +1,4 @@
-import * as pty from 'node-pty';
+import type * as pty from 'node-pty';
 
 import { RingBuffer } from './ringBuffer.js';
 
@@ -28,6 +28,10 @@ export class PtyWorker {
   private alive = true;
 
   constructor(opts: PtyWorkerOptions) {
+    // Deferred require so simply importing PtyManager / PtyWorker doesn't
+    // pay the native-binding load cost. Only consumers that actually spawn
+    // a worker (i.e. pty-backed agents starting) trigger the load.
+    const ptyModule: typeof pty = require('node-pty');
     this.buffer = new RingBuffer<string>(opts.scrollbackCapacity);
     // node-pty wants string-only env values; drop undefined entries.
     const env: Record<string, string> = {};
@@ -35,7 +39,7 @@ export class PtyWorker {
       if (typeof v === 'string') env[k] = v;
     }
 
-    this.child = pty.spawn(opts.shell, opts.args, {
+    this.child = ptyModule.spawn(opts.shell, opts.args, {
       name: 'xterm-256color',
       cols: opts.cols,
       rows: opts.rows,

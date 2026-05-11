@@ -1,4 +1,4 @@
-import { PTY_MAX_CHUNK_BYTES } from '../../server/src/constants.js';
+import { PTY_MAX_CHUNK_BYTES, PTY_SCROLLBACK_MAX_LINES } from '../../server/src/constants.js';
 import type { MessageSink, MessageSource } from '../types.js';
 import {
   isPtyInputMessage,
@@ -23,11 +23,9 @@ export interface PtyStartOptions {
   env: Record<string, string | undefined>;
   cols: number;
   rows: number;
-  /** Per-agent scrollback cap. Defaults to DEFAULT_SCROLLBACK at call sites. */
+  /** Per-agent scrollback cap. Defaults to PTY_SCROLLBACK_MAX_LINES at call sites. */
   scrollbackCapacity?: number;
 }
-
-const DEFAULT_SCROLLBACK = 2000;
 
 /**
  * Bridges PtyWorkers to the extension's existing MessageSink/MessageSource
@@ -61,7 +59,7 @@ export class PtyManager {
       env: startOpts.env,
       cols: startOpts.cols,
       rows: startOpts.rows,
-      scrollbackCapacity: startOpts.scrollbackCapacity ?? DEFAULT_SCROLLBACK,
+      scrollbackCapacity: startOpts.scrollbackCapacity ?? PTY_SCROLLBACK_MAX_LINES,
     });
 
     worker.onData((chunk) => this.emitData(agentId, chunk));
