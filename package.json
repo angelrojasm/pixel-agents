@@ -80,7 +80,7 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"server/**/*.ts\" \"shared/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx,css}\" \"*.{js,mjs}\" \"webview-ui/*.{js,ts}\"",
     "test:webview": "cd webview-ui && npm test",
     "test:server": "cd server && npm test",
-    "test:extension": "vitest run src/__tests__",
+    "test:extension": "vitest run src/__tests__ src/pty/__tests__",
     "test": "npm run test:webview && npm run test:server && npm run test:extension",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "e2e:debug": "playwright test --config e2e/playwright.config.ts --debug",
