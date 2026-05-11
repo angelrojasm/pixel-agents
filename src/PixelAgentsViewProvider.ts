@@ -65,6 +65,7 @@ import {
 } from './fileWatcher.js';
 import type { LayoutWatcher } from './layoutPersistence.js';
 import { readLayoutFromFile, watchLayoutFile, writeLayoutToFile } from './layoutPersistence.js';
+import { webviewMessageSource } from './messageSource.js';
 import { clearAwaitingUser } from './timerManager.js';
 import { setHookProvider } from './transcriptParser.js';
 import type { AgentState, MessageSink } from './types.js';
@@ -364,7 +365,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       if (this.webviewView === webviewView) this.webviewView = undefined;
     });
 
-    webviewView.webview.onDidReceiveMessage((message) => this.handleWebviewMessage(message));
+    // Inbound messages flow through the MessageSource abstraction so the Phase-3
+    // WebSocket transport can swap in without touching the provider's dispatch logic.
+    webviewMessageSource(webviewView.webview).onMessage((message) =>
+      this.handleWebviewMessage(message),
+    );
   }
 
   /**
@@ -400,7 +405,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       if (this.fullScreenPanel === panel) this.fullScreenPanel = undefined;
     });
 
-    panel.webview.onDidReceiveMessage((message) => this.handleWebviewMessage(message));
+    webviewMessageSource(panel.webview).onMessage((message) => this.handleWebviewMessage(message));
   }
 
   /** Dispatch an incoming message from any registered webview. */
