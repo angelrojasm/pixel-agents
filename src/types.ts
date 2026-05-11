@@ -15,6 +15,21 @@ export interface MessageSink {
   postMessage(message: unknown): Thenable<boolean>;
 }
 
+/**
+ * Inbound counterpart to MessageSink. Abstracts the path that delivers messages
+ * FROM a webview (or a future WebSocket transport) into the extension. Matches
+ * the shape used by `vscode.Webview.onDidReceiveMessage` so wiring stays small.
+ *
+ * Today's implementation wraps `vscode.Webview` (see `webviewMessageSource`).
+ * Phase 3 will swap in a WebSocket-backed source for the same handler.
+ *
+ * The interface returns `vscode.Disposable` rather than a custom shape so
+ * consumers can register the result into `context.subscriptions`.
+ */
+export interface MessageSource {
+  onMessage(handler: (message: Record<string, unknown>) => unknown): vscode.Disposable;
+}
+
 export interface AgentState {
   id: number;
   sessionId: string;
