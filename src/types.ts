@@ -55,6 +55,11 @@ export interface AgentState {
    *  null while in the grace window or during active/normal-idle. Cleared on active
    *  transitions and user dismissal. */
   awaitingSince: number | null;
+  /** When true, this agent's terminal is backed by a node-pty worker (see PtyManager)
+   *  and routes I/O through the webview xterm.js pane. When false (current default),
+   *  the agent uses `vscode.window.createTerminal` (legacy). Gates the pty pipeline
+   *  during rollout; removed once xterm.js integration is stable. */
+  ptyBacked?: boolean;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */
