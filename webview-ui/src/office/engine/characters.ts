@@ -410,6 +410,17 @@ function randomInt(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
+/** Resolve the display label for a character, in priority order:
+ *  customTitle (user /name) → agentName (team role) → terminalName → "Agent #id" */
+export function characterLabel(ch: {
+  customTitle?: string;
+  agentName?: string;
+  terminalName?: string;
+  id: number;
+}): string {
+  return ch.customTitle ?? ch.agentName ?? ch.terminalName ?? `Agent #${ch.id}`;
+}
+
 function findNearestFreeRestSeat(ch: Character, seats: Map<string, Seat>): string | null {
   let best: string | null = null;
   let bestDist = Infinity;

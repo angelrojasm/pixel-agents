@@ -555,6 +555,13 @@ export function useExtensionMessages(
         } catch (err) {
           console.error(`❌ Webview: Error processing furnitureAssetsLoaded:`, err);
         }
+      } else if (msg.type === 'agentRenamed') {
+        const id = msg.id as number;
+        const customTitle = msg.customTitle as string;
+        const ch = os.characters.get(id);
+        if (ch) {
+          ch.customTitle = customTitle;
+        }
       } else if (msg.type === 'agentTeamInfo') {
         const id = msg.id as number;
         os.setTeamInfo(

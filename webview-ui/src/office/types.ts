@@ -192,6 +192,8 @@ export interface Character {
   folderName?: string;
   /** VS Code terminal tab name (e.g. "Copyrighter Frontend") */
   terminalName?: string;
+  /** User-assigned custom display name (via /name command). Overrides all auto-derived labels. */
+  customTitle?: string;
 
   // -- Agent Teams --
   /** Team name this agent belongs to */

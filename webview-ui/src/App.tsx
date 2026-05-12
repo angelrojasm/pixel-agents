@@ -18,6 +18,7 @@ import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
+import { characterLabel } from './office/engine/characters.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { OfficePanel } from './office/panel/OfficePanel.js';
@@ -181,7 +182,7 @@ function App() {
           statusStr === 'waiting' ? 'waiting' : toolList && toolList.length > 0 ? 'active' : 'idle';
         return {
           id: ch.id,
-          name: ch.folderName ?? `Agent ${ch.id}`,
+          name: characterLabel(ch),
           palette: ch.palette,
           hueShift: ch.hueShift,
           status: uiStatus,

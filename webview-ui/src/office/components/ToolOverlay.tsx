@@ -21,6 +21,7 @@ import {
   TOOL_OVERLAY_VERTICAL_OFFSET,
 } from '../../constants.js';
 import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
+import { characterLabel } from '../engine/characters.js';
 import type { OfficeState } from '../engine/officeState.js';
 import type { ToolActivity } from '../types.js';
 import { CharacterState, TILE_SIZE } from '../types.js';
@@ -183,7 +184,12 @@ export function ToolOverlay({
 
         // Team info
         const isTeamAgent = !!ch.teamName;
-        const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
+        // customTitle always wins; otherwise fall back to team-role badge logic.
+        const teamRoleLabel = ch.customTitle
+          ? characterLabel(ch)
+          : ch.isTeamLead
+            ? 'LEAD'
+            : ch.agentName || null;
         const totalTokens = ch.inputTokens + ch.outputTokens;
         const tokenRatio = totalTokens / MAX_CONTEXT_TOKENS;
         const hasExtraLines = !!(ch.folderName || teamRoleLabel);
