@@ -479,7 +479,24 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     } else if (message.type === 'closeAgent') {
       const agent = this.agents.get(message.id as number);
       if (agent) {
-        if (agent.terminalRef) {
+        if (agent.ptyBacked) {
+          // Pty-backed agent — kill the pty worker, then remove from tracking
+          // and dismiss the JSONL file so scanners don't re-adopt it. No VS Code
+          // terminal close event will fire, so cleanup is explicit here.
+          this.ptyManager?.stop(agent.id);
+          dismissedJsonlFiles.set(agent.jsonlFile, Date.now());
+          removeAgent(
+            message.id as number,
+            this.agents,
+            this.fileWatchers,
+            this.pollingTimers,
+            this.waitingTimers,
+            this.permissionTimers,
+            this.jsonlPollTimers,
+            this.persistAgents,
+          );
+          this.broadcastSink.postMessage({ type: 'agentClosed', id: message.id });
+        } else if (agent.terminalRef) {
           agent.terminalRef.dispose();
         } else {
           // External agent — remove from tracking and dismiss the file
