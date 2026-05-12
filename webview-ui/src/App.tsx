@@ -193,6 +193,8 @@ function App() {
           status: uiStatus,
         };
       });
+    // agentRenameSeq is an intentional re-render trigger (not consumed inside body)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agents, agentStatuses, agentTools, agentRenameSeq]);
 
   // Auto-open the drawer when a new agent is spawned (+ Agent click).
