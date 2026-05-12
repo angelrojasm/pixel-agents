@@ -419,6 +419,13 @@ export function processTranscriptLine(
           status: 'waiting',
         });
       }
+    } else if (record.type === 'custom-title' && typeof record.customTitle === 'string') {
+      agent.customTitle = record.customTitle;
+      webview?.postMessage({
+        type: 'agentRenamed',
+        id: agentId,
+        customTitle: record.customTitle,
+      });
     } else if (record.type && !agent.seenUnknownRecordTypes.has(record.type)) {
       // Log first occurrence of unrecognized record types to help diagnose issues
       // where Claude Code changes JSONL format. Known types we intentionally skip:
