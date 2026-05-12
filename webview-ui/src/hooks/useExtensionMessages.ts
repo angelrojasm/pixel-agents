@@ -5,6 +5,7 @@ import type { OfficeState } from '../office/engine/officeState.js';
 import { setFloorSprites } from '../office/floorTiles.js';
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js';
+import { PtyEventBus } from '../office/panel/ptyEventBus.js';
 import { setCharacterTemplates } from '../office/sprites/spriteData.js';
 import { extractToolName } from '../office/toolUtils.js';
 import type { OfficeLayout, ToolActivity } from '../office/types.js';
@@ -69,6 +70,7 @@ interface ExtensionMessageState {
   hooksInfoShown: boolean;
   defaultCwd: string;
   setDefaultCwd: (v: string) => void;
+  ptyEventBus: PtyEventBus;
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -117,6 +119,8 @@ export function useExtensionMessages(
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
+
+  const ptyEventBusRef = useRef<PtyEventBus>(new PtyEventBus());
 
   useEffect(() => {
     // Buffer agents from existingAgents until layout is loaded
@@ -534,6 +538,19 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentTokenUsage') {
         const id = msg.id as number;
         os.setAgentTokens(id, msg.inputTokens as number, msg.outputTokens as number);
+      } else if (msg.type === 'ptyData') {
+        const id = msg.agentId as number;
+        const data = msg.data as string;
+        ptyEventBusRef.current.emitData(id, data);
+      } else if (msg.type === 'ptyExit') {
+        const id = msg.agentId as number;
+        const code = msg.code as number;
+        const signal = typeof msg.signal === 'string' ? msg.signal : undefined;
+        ptyEventBusRef.current.emitExit(id, { code, signal });
+      } else if (msg.type === 'ptyScrollback') {
+        const id = msg.agentId as number;
+        const lines = Array.isArray(msg.lines) ? (msg.lines as string[]) : [];
+        ptyEventBusRef.current.emitScrollback(id, lines);
       }
     };
     window.addEventListener('message', handler);
@@ -565,5 +582,6 @@ export function useExtensionMessages(
     hooksInfoShown,
     defaultCwd,
     setDefaultCwd,
+    ptyEventBus: ptyEventBusRef.current,
   };
 }
