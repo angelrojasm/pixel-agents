@@ -163,6 +163,7 @@ export async function launchNewTerminal(
     id,
     folderName,
     terminalName: terminal.name,
+    ptyBacked: agent.ptyBacked === true,
   });
 
   ensureProjectScan(
@@ -573,12 +574,16 @@ export function sendExistingAgents(
   // Include folderName and isExternal per agent
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
+  const ptyBackedAgents: Record<number, boolean> = {};
   for (const [id, agent] of agents) {
     if (agent.folderName) {
       folderNames[id] = agent.folderName;
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
+    }
+    if (agent.ptyBacked === true) {
+      ptyBackedAgents[id] = true;
     }
   }
 
@@ -600,6 +605,7 @@ export function sendExistingAgents(
     folderNames,
     externalAgents,
     terminalNames,
+    ptyBackedAgents,
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
   // so that agentStatus/agentToolStart messages arrive after characters are created.

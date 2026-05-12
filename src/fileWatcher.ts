@@ -516,7 +516,7 @@ function adoptTerminalForFile(
   console.log(
     `[Pixel Agents] Watcher: Agent ${id} - adopted terminal "${terminal.name}" for ${path.basename(jsonlFile)}`,
   );
-  webview?.postMessage({ type: 'agentCreated', id });
+  webview?.postMessage({ type: 'agentCreated', id, ptyBacked: agent.ptyBacked === true });
 
   startFileWatching(
     id,
@@ -712,6 +712,7 @@ export function scanForTeammateFiles(
       teammateName,
       parentAgentId,
       teamName: parentAgent?.teamName,
+      ptyBacked: agent.ptyBacked === true,
     });
 
     onAgentCreated?.(agent);
@@ -916,7 +917,12 @@ export function adoptExternalSessionFromHook(
         `[Pixel Agents] Hook: Agent ${id} - detected hooks-only external session${folderName ? ` (${folderName})` : ''}`,
       );
     }
-    webview?.postMessage({ type: 'agentCreated', id, folderName });
+    webview?.postMessage({
+      type: 'agentCreated',
+      id,
+      folderName,
+      ptyBacked: agent.ptyBacked === true,
+    });
     onAgentCreated?.(agent);
   }
 }
@@ -977,7 +983,13 @@ function adoptExternalSession(
 
   // Log is emitted by the caller (adoptExternalSessionFromHook or scanExternalDir)
   // to use the correct prefix (Hook: vs Watcher:).
-  webview?.postMessage({ type: 'agentCreated', id, isExternal: true, folderName });
+  webview?.postMessage({
+    type: 'agentCreated',
+    id,
+    isExternal: true,
+    folderName,
+    ptyBacked: agent.ptyBacked === true,
+  });
 
   startFileWatching(
     id,

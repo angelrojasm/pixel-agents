@@ -3,7 +3,9 @@ import { PanelHeader } from './PanelHeader.js';
 import type { Band } from './panelLayout.js';
 import type { AgentSummary, PanelState } from './panelTypes.js';
 import { isHorizontalAxis, PanelMode } from './panelTypes.js';
+import type { PtyEventBus } from './ptyEventBus.js';
 import { RailPeek } from './RailPeek.js';
+import { TerminalPane } from './TerminalPane.js';
 import { TerminalPaneStub } from './TerminalPaneStub.js';
 
 interface OfficePanelProps {
@@ -13,6 +15,8 @@ interface OfficePanelProps {
   onFocusAgent: (id: number) => void;
   onCollapse: () => void;
   onToggleRailHidden: () => void;
+  ptyBackedByAgent: Record<number, boolean>;
+  ptyEventBus: PtyEventBus;
 }
 
 export function OfficePanel({
@@ -22,6 +26,8 @@ export function OfficePanel({
   onFocusAgent,
   onCollapse,
   onToggleRailHidden,
+  ptyBackedByAgent,
+  ptyEventBus,
 }: OfficePanelProps) {
   const focused = agents.find((a) => a.id === state.focusedAgentId) ?? null;
   const horizontal = isHorizontalAxis(state.panelPosition);
@@ -77,11 +83,20 @@ export function OfficePanel({
           flexDirection: 'column',
         }}
       >
-        <TerminalPaneStub
-          agentId={state.focusedAgentId}
-          agentName={focused?.name ?? null}
-          fontSize={state.terminalFontSize}
-        />
+        {state.focusedAgentId !== null && ptyBackedByAgent[state.focusedAgentId] ? (
+          <TerminalPane
+            agentId={state.focusedAgentId}
+            agentName={focused?.name ?? null}
+            fontSize={state.terminalFontSize}
+            bus={ptyEventBus}
+          />
+        ) : (
+          <TerminalPaneStub
+            agentId={state.focusedAgentId}
+            agentName={focused?.name ?? null}
+            fontSize={state.terminalFontSize}
+          />
+        )}
       </div>
     </div>
   );

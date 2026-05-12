@@ -71,6 +71,7 @@ interface ExtensionMessageState {
   defaultCwd: string;
   setDefaultCwd: (v: string) => void;
   ptyEventBus: PtyEventBus;
+  ptyBackedByAgent: Record<number, boolean>;
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -111,6 +112,7 @@ export function useExtensionMessages(
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
   const [defaultCwd, setDefaultCwdState] = useState('');
+  const [ptyBackedByAgent, setPtyBackedByAgent] = useState<Record<number, boolean>>({});
 
   const setDefaultCwd = (v: string): void => {
     setDefaultCwdState(v);
@@ -174,6 +176,9 @@ export function useExtensionMessages(
         const teammateParentId = msg.parentAgentId as number | undefined;
         const teamName = msg.teamName as string | undefined;
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        if (msg.ptyBacked === true) {
+          setPtyBackedByAgent((prev) => ({ ...prev, [id]: true }));
+        }
         // Don't auto-select teammates (keep focus on lead)
         if (!isTeammate) {
           setSelectedAgent(id);
@@ -200,6 +205,12 @@ export function useExtensionMessages(
         const id = msg.id as number;
         setAgents((prev) => prev.filter((a) => a !== id));
         setSelectedAgent((prev) => (prev === id ? null : prev));
+        setPtyBackedByAgent((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
         setAgentTools((prev) => {
           if (!(id in prev)) return prev;
           const next = { ...prev };
@@ -234,6 +245,7 @@ export function useExtensionMessages(
         >;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
         const terminalNames = (msg.terminalNames || {}) as Record<number, string>;
+        const ptyBackedAgents = (msg.ptyBackedAgents || {}) as Record<number, boolean>;
         // Buffer agents — they'll be added in layoutLoaded after seats are built
         for (const id of incoming) {
           const m = meta[id];
@@ -256,6 +268,11 @@ export function useExtensionMessages(
           }
           return merged.sort((a, b) => a - b);
         });
+        const ptyMap: Record<number, boolean> = {};
+        for (const id of incoming) {
+          if (ptyBackedAgents[id] === true) ptyMap[id] = true;
+        }
+        setPtyBackedByAgent(ptyMap);
       } else if (msg.type === 'agentToolStart') {
         const id = msg.id as number;
         const toolId = msg.toolId as string;
@@ -583,5 +600,6 @@ export function useExtensionMessages(
     defaultCwd,
     setDefaultCwd,
     ptyEventBus: ptyEventBusRef.current,
+    ptyBackedByAgent,
   };
 }

@@ -77,6 +77,8 @@ function App() {
     hooksInfoShown,
     defaultCwd,
     setDefaultCwd,
+    ptyBackedByAgent,
+    ptyEventBus,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -248,6 +250,8 @@ function App() {
       onFocusAgent={handleClick}
       onCollapse={panel.collapse}
       onToggleRailHidden={panel.toggleRailHidden}
+      ptyBackedByAgent={ptyBackedByAgent}
+      ptyEventBus={ptyEventBus}
     />
   );
 
