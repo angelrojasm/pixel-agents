@@ -265,6 +265,7 @@ export function useExtensionMessages(
         const id = msg.id as number;
         const terminalName = msg.terminalName as string;
         os.setAgentTerminalName(id, terminalName);
+        setAgentRenameSeq((n) => n + 1);
       } else if (msg.type === 'existingAgents') {
         const incoming = msg.agents as number[];
         const meta = (msg.agentMeta || {}) as Record<
@@ -600,6 +601,7 @@ export function useExtensionMessages(
           msg.leadAgentId as number | undefined,
           msg.teamUsesTmux as boolean | undefined,
         );
+        setAgentRenameSeq((n) => n + 1);
       } else if (msg.type === 'agentTokenUsage') {
         const id = msg.id as number;
         os.setAgentTokens(id, msg.inputTokens as number, msg.outputTokens as number);
