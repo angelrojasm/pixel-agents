@@ -72,6 +72,10 @@ interface ExtensionMessageState {
   setDefaultCwd: (v: string) => void;
   usePtyTerminal: boolean;
   setUsePtyTerminal: (v: boolean) => void;
+  terminalFontFamily: string;
+  terminalLineHeight: number;
+  setTerminalFontFamily: (v: string) => void;
+  setTerminalLineHeight: (v: number) => void;
   ptyEventBus: PtyEventBus;
   ptyBackedByAgent: Record<number, boolean>;
 }
@@ -115,6 +119,10 @@ export function useExtensionMessages(
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
   const [defaultCwd, setDefaultCwdState] = useState('');
   const [usePtyTerminal, setUsePtyTerminalState] = useState(false);
+  const [terminalFontFamily, setTerminalFontFamilyState] = useState(
+    'Menlo, Monaco, "Courier New", monospace',
+  );
+  const [terminalLineHeight, setTerminalLineHeightState] = useState(1.0);
   const [ptyBackedByAgent, setPtyBackedByAgent] = useState<Record<number, boolean>>({});
 
   const setDefaultCwd = (v: string): void => {
@@ -126,6 +134,16 @@ export function useExtensionMessages(
     setUsePtyTerminalState(v);
     vscode.postMessage({ type: 'setUsePtyTerminal', enabled: v });
   }, []);
+
+  const setTerminalFontFamily = (v: string): void => {
+    setTerminalFontFamilyState(v);
+    vscode.postMessage({ type: 'setTerminalFontFamily', value: v });
+  };
+
+  const setTerminalLineHeight = (v: number): void => {
+    setTerminalLineHeightState(v);
+    vscode.postMessage({ type: 'setTerminalLineHeight', value: v });
+  };
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
@@ -531,6 +549,12 @@ export function useExtensionMessages(
         if (typeof msg.usePtyTerminal === 'boolean') {
           setUsePtyTerminalState(msg.usePtyTerminal as boolean);
         }
+        if (typeof msg.terminalFontFamily === 'string') {
+          setTerminalFontFamilyState(msg.terminalFontFamily as string);
+        }
+        if (typeof msg.terminalLineHeight === 'number') {
+          setTerminalLineHeightState(msg.terminalLineHeight as number);
+        }
         if (Array.isArray(msg.externalAssetDirectories)) {
           setExternalAssetDirectories(msg.externalAssetDirectories as string[]);
         }
@@ -621,6 +645,10 @@ export function useExtensionMessages(
     setDefaultCwd,
     usePtyTerminal,
     setUsePtyTerminal,
+    terminalFontFamily,
+    terminalLineHeight,
+    setTerminalFontFamily,
+    setTerminalLineHeight,
     ptyEventBus: ptyEventBusRef.current,
     ptyBackedByAgent,
   };
