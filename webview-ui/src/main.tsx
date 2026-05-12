@@ -1,3 +1,4 @@
+import '@xterm/xterm/css/xterm.css';
 import './index.css';
 
 import { StrictMode } from 'react';
