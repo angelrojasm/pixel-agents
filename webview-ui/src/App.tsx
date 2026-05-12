@@ -86,6 +86,7 @@ function App() {
     setTerminalLineHeight,
     ptyBackedByAgent,
     ptyEventBus,
+    agentRenameSeq,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -192,7 +193,7 @@ function App() {
           status: uiStatus,
         };
       });
-  }, [agents, agentStatuses, agentTools]);
+  }, [agents, agentStatuses, agentTools, agentRenameSeq]);
 
   // Auto-open the drawer when a new agent is spawned (+ Agent click).
   // Skip the initial population to keep the "collapsed on first run" contract.

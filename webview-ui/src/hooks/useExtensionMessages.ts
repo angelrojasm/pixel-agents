@@ -78,6 +78,7 @@ interface ExtensionMessageState {
   setTerminalLineHeight: (v: number) => void;
   ptyEventBus: PtyEventBus;
   ptyBackedByAgent: Record<number, boolean>;
+  agentRenameSeq: number;
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -124,6 +125,7 @@ export function useExtensionMessages(
   );
   const [terminalLineHeight, setTerminalLineHeightState] = useState(1.0);
   const [ptyBackedByAgent, setPtyBackedByAgent] = useState<Record<number, boolean>>({});
+  const [agentRenameSeq, setAgentRenameSeq] = useState(0);
 
   const setDefaultCwd = (v: string): void => {
     setDefaultCwdState(v);
@@ -581,10 +583,12 @@ export function useExtensionMessages(
         }
       } else if (msg.type === 'agentRenamed') {
         const id = msg.id as number;
-        const customTitle = msg.customTitle as string;
+        if (typeof msg.customTitle !== 'string') return;
+        const customTitle = msg.customTitle;
         const ch = os.characters.get(id);
         if (ch) {
           ch.customTitle = customTitle;
+          setAgentRenameSeq((n) => n + 1);
         }
       } else if (msg.type === 'agentTeamInfo') {
         const id = msg.id as number;
@@ -651,5 +655,6 @@ export function useExtensionMessages(
     setTerminalLineHeight,
     ptyEventBus: ptyEventBusRef.current,
     ptyBackedByAgent,
+    agentRenameSeq,
   };
 }
