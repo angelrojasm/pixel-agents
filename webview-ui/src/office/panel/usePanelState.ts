@@ -9,6 +9,7 @@ import {
   setEditMode as setEditModeReducer,
   setPanelPosition as setPanelPositionReducer,
   setTerminalFontSize as setTerminalFontSizeReducer,
+  setUserBandSizePx as setUserBandSizePxReducer,
   setViewportHeight as setViewportHeightReducer,
   setViewportWidth as setViewportWidthReducer,
   toggleRailHidden as toggleRailHiddenReducer,
@@ -25,6 +26,7 @@ export interface PanelApi {
   collapse(): void;
   setPanelPosition(p: PanelPosition): void;
   setTerminalFontSize(n: number): void;
+  setUserBandSizePx(px: number | undefined): void;
 }
 
 /**
@@ -59,18 +61,26 @@ export function usePanelState(
     railHidden: initial.railHidden,
     panelPosition: initial.panelPosition,
     terminalFontSize: initial.terminalFontSize,
+    userBandSizePx: initial.userBandSizePx,
   });
   useEffect(() => {
-    const { panelOpen, railHidden, panelPosition, terminalFontSize } = state;
+    const { panelOpen, railHidden, panelPosition, terminalFontSize, userBandSizePx } = state;
     const last = lastPersistedRef.current;
     if (
       last.panelOpen !== panelOpen ||
       last.railHidden !== railHidden ||
       last.panelPosition !== panelPosition ||
-      last.terminalFontSize !== terminalFontSize
+      last.terminalFontSize !== terminalFontSize ||
+      last.userBandSizePx !== userBandSizePx
     ) {
-      savePanelState({ panelOpen, railHidden, panelPosition, terminalFontSize });
-      lastPersistedRef.current = { panelOpen, railHidden, panelPosition, terminalFontSize };
+      savePanelState({ panelOpen, railHidden, panelPosition, terminalFontSize, userBandSizePx });
+      lastPersistedRef.current = {
+        panelOpen,
+        railHidden,
+        panelPosition,
+        terminalFontSize,
+        userBandSizePx,
+      };
     }
   }, [state]);
 
@@ -127,6 +137,10 @@ export function usePanelState(
     setState((s) => setTerminalFontSizeReducer(s, n));
   }, []);
 
+  const setUserBandSizePx = useCallback((px: number | undefined) => {
+    setState((s) => setUserBandSizePxReducer(s, px));
+  }, []);
+
   const band = useMemo(() => computePanelBand(state), [state]);
 
   return {
@@ -139,5 +153,6 @@ export function usePanelState(
     collapse,
     setPanelPosition,
     setTerminalFontSize,
+    setUserBandSizePx,
   };
 }

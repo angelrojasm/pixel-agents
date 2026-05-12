@@ -5,6 +5,7 @@ import type { AgentSummary, PanelState } from './panelTypes.js';
 import { isHorizontalAxis, PanelMode } from './panelTypes.js';
 import type { PtyEventBus } from './ptyEventBus.js';
 import { RailPeek } from './RailPeek.js';
+import { Splitter } from './Splitter.js';
 import { TerminalPane } from './TerminalPane.js';
 import { TerminalPaneStub } from './TerminalPaneStub.js';
 
@@ -15,6 +16,7 @@ interface OfficePanelProps {
   onFocusAgent: (id: number) => void;
   onCollapse: () => void;
   onToggleRailHidden: () => void;
+  onSetUserBandSizePx: (px: number | undefined) => void;
   ptyBackedByAgent: Record<number, boolean>;
   ptyEventBus: PtyEventBus;
 }
@@ -26,6 +28,7 @@ export function OfficePanel({
   onFocusAgent,
   onCollapse,
   onToggleRailHidden,
+  onSetUserBandSizePx,
   ptyBackedByAgent,
   ptyEventBus,
 }: OfficePanelProps) {
@@ -66,8 +69,15 @@ export function OfficePanel({
         ...outerStyle,
         display: 'flex',
         flexDirection: 'column',
+        position: 'relative',
       }}
     >
+      <Splitter
+        panelPosition={state.panelPosition}
+        bandSize={band.bandSize}
+        onResize={(next) => onSetUserBandSizePx(next)}
+        onReset={() => onSetUserBandSizePx(undefined)}
+      />
       <PanelHeader
         agents={agents}
         focusedAgentId={state.focusedAgentId}

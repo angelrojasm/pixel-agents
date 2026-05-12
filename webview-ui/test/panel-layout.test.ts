@@ -8,13 +8,10 @@ import {
   PANEL_BOTTOM_OPEN_RATIO,
   PANEL_BOTTOM_PEEK_PX,
   PANEL_BOTTOM_RAIL_PX,
-  PANEL_BOTTOM_USER_MAX_RESERVE,
   PANEL_SIDE_OPEN_MAX_PX,
   PANEL_SIDE_OPEN_RATIO,
   PANEL_SIDE_PEEK_PX,
   PANEL_SIDE_RAIL_PX,
-  PANEL_SIDE_USER_MAX_RESERVE,
-  PANEL_USER_MIN_PX,
 } from '../src/constants.ts';
 import { computePanelBand } from '../src/office/panel/panelLayout.ts';
 import type { PanelState } from '../src/office/panel/panelTypes.ts';

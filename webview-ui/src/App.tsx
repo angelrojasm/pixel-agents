@@ -253,6 +253,7 @@ function App() {
       onFocusAgent={handleClick}
       onCollapse={panel.collapse}
       onToggleRailHidden={panel.toggleRailHidden}
+      onSetUserBandSizePx={panel.setUserBandSizePx}
       ptyBackedByAgent={ptyBackedByAgent}
       ptyEventBus={ptyEventBus}
     />

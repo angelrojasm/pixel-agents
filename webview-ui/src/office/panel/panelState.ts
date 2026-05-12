@@ -47,3 +47,7 @@ export function setTerminalFontSize(state: PanelState, size: number): PanelState
   );
   return state.terminalFontSize === clamped ? state : { ...state, terminalFontSize: clamped };
 }
+
+export function setUserBandSizePx(state: PanelState, px: number | undefined): PanelState {
+  return state.userBandSizePx === px ? state : { ...state, userBandSizePx: px };
+}
