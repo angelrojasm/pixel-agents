@@ -8,10 +8,13 @@ import {
   PANEL_BOTTOM_OPEN_RATIO,
   PANEL_BOTTOM_PEEK_PX,
   PANEL_BOTTOM_RAIL_PX,
+  PANEL_BOTTOM_USER_MAX_RESERVE,
   PANEL_SIDE_OPEN_MAX_PX,
   PANEL_SIDE_OPEN_RATIO,
   PANEL_SIDE_PEEK_PX,
   PANEL_SIDE_RAIL_PX,
+  PANEL_SIDE_USER_MAX_RESERVE,
+  PANEL_USER_MIN_PX,
 } from '../src/constants.ts';
 import { computePanelBand } from '../src/office/panel/panelLayout.ts';
 import type { PanelState } from '../src/office/panel/panelTypes.ts';
@@ -135,4 +138,42 @@ test('canvas dimensions never negative', () => {
   const b = computePanelBand(baseState({ viewportWidth: 0, viewportHeight: 0 }));
   assert.equal(b.canvasW >= 0, true);
   assert.equal(b.canvasH >= 0, true);
+});
+
+test('bottom open: userBandSizePx overrides default', () => {
+  const b = computePanelBand(baseState({ panelOpen: true, userBandSizePx: 350 }));
+  assert.equal(b.mode, PanelMode.OPEN);
+  assert.equal(b.bandSize, 350);
+});
+
+test('bottom open: userBandSizePx clamps to MIN', () => {
+  const b = computePanelBand(baseState({ panelOpen: true, userBandSizePx: 50 }));
+  assert.equal(b.bandSize, 240); // PANEL_USER_MIN_PX
+});
+
+test('bottom open: userBandSizePx clamps to max (viewportHeight - reserve)', () => {
+  const b = computePanelBand(
+    baseState({ panelOpen: true, userBandSizePx: 9999, viewportHeight: 800 }),
+  );
+  assert.equal(b.bandSize, 800 - 200); // viewportHeight - PANEL_BOTTOM_USER_MAX_RESERVE
+});
+
+test('right open: userBandSizePx applies on side panel', () => {
+  const b = computePanelBand(
+    baseState({ panelOpen: true, panelPosition: PanelPosition.RIGHT, userBandSizePx: 500 }),
+  );
+  assert.equal(b.bandSize, 500);
+  assert.equal(b.canvasW, 1280 - 500);
+});
+
+test('right open: userBandSizePx clamps to viewportWidth - side reserve', () => {
+  const b = computePanelBand(
+    baseState({
+      panelOpen: true,
+      panelPosition: PanelPosition.RIGHT,
+      userBandSizePx: 9999,
+      viewportWidth: 1280,
+    }),
+  );
+  assert.equal(b.bandSize, 1280 - 360); // viewportWidth - PANEL_SIDE_USER_MAX_RESERVE
 });
