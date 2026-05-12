@@ -175,6 +175,13 @@ export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 10;
 export const TERMINAL_FONT_SIZE_MAX = 24;
 
+/** User-resize bounds for the open panel band. Applied as a clamp on userBandSizePx. */
+export const PANEL_USER_MIN_PX = 240;
+/** Reserved canvas height when the panel is on the bottom (minimum room above the panel). */
+export const PANEL_BOTTOM_USER_MAX_RESERVE = 200;
+/** Reserved canvas width when the panel is on a side (minimum room next to the panel). */
+export const PANEL_SIDE_USER_MAX_RESERVE = 360;
+
 // Panel chrome colors (centralized — file is exempt from no-inline-colors).
 export const PANEL_BG_CHROME = '#0a0a14';
 export const PANEL_BG_CELL = '#1e1e2e';
