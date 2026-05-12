@@ -14,6 +14,10 @@ export const GLOBAL_KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 export const GLOBAL_KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 export const GLOBAL_KEY_SHOW_TERMINAL_NAMES = 'pixel-agents.showTerminalNames';
 export const GLOBAL_KEY_DEFAULT_CWD = 'pixel-agents.defaultCwd';
+/** When true, new agents spawn inside the office panel via node-pty + xterm.js.
+ *  When false (default), agents use vscode.window.createTerminal as before.
+ *  Experimental — off until users opt in. */
+export const GLOBAL_KEY_USE_PTY_TERMINAL = 'pixel-agents.usePtyTerminal';
 
 // ── VS Code Identifiers ─────────────────────────────────────
 export const VIEW_ID = 'pixel-agents.panelView';

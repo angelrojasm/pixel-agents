@@ -45,6 +45,7 @@ import {
   GLOBAL_KEY_LAST_SEEN_VERSION,
   GLOBAL_KEY_SHOW_TERMINAL_NAMES,
   GLOBAL_KEY_SOUND_ENABLED,
+  GLOBAL_KEY_USE_PTY_TERMINAL,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
   TERMINAL_NAME_POLL_INTERVAL_MS,
@@ -120,6 +121,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   watchAllSessions = { current: false };
   // Hooks enabled state (mutable ref for passing to scanners)
   hooksEnabled = { current: true };
+  // Experimental: when true, spawn agents inside the office panel via pty/xterm
+  // instead of vscode.window.createTerminal. Defaults to false (opt-in).
+  usePtyTerminal = { current: false };
   globalDismissedFiles = new Set<string>();
 
   // Bundled default layout (loaded from assets/default-layout.json)
@@ -521,6 +525,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         uninstallHooks();
         console.log('[Pixel Agents] Hooks disabled by user');
       }
+    } else if (message.type === 'setUsePtyTerminal') {
+      const enabled = !!message.enabled;
+      this.context.globalState.update(GLOBAL_KEY_USE_PTY_TERMINAL, enabled);
+      this.usePtyTerminal.current = enabled;
     } else if (message.type === 'setHooksInfoShown') {
       this.context.globalState.update(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
     } else if (message.type === 'setWatchAllSessions') {
@@ -619,6 +627,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         false,
       );
       const defaultCwd = this.context.globalState.get<string>(GLOBAL_KEY_DEFAULT_CWD, '');
+      this.usePtyTerminal.current = this.context.globalState.get<boolean>(
+        GLOBAL_KEY_USE_PTY_TERMINAL,
+        false,
+      );
       const config = readConfig();
       this.broadcastSink.postMessage({
         type: 'settingsLoaded',
@@ -632,6 +644,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         hooksInfoShown,
         defaultCwd,
         externalAssetDirectories: config.externalAssetDirectories,
+        usePtyTerminal: this.usePtyTerminal.current,
       });
 
       // Send workspace folders to webview (only when multi-root)
