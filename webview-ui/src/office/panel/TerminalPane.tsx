@@ -36,7 +36,7 @@ export function TerminalPane({
       fontSize,
       // xterm.js needs a true monospace font for cell-aligned terminal output;
       // FS Pixel Sans is a proportional UI font and is not suitable here.
-       
+
       fontFamily,
       lineHeight,
       theme: {
