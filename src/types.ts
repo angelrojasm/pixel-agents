@@ -93,6 +93,9 @@ export interface AgentState {
   // -- Agent Teams --
   teamName?: string;
   agentName?: string;
+  /** Display name set by Claude's /rename command (read from JSONL custom-title record).
+   *  Takes precedence over agentName and terminalName in the UI. */
+  customTitle?: string;
   isTeamLead?: boolean;
   leadAgentId?: number;
   /** True when lead spawns teammates via tmux (run_in_background Agent calls) */
@@ -114,6 +117,7 @@ export interface PersistedAgent {
   // -- Agent Teams --
   teamName?: string;
   agentName?: string;
+  customTitle?: string;
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
