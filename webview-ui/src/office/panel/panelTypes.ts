@@ -37,6 +37,8 @@ export interface PanelPersistedState {
   railHidden: boolean;
   panelPosition: PanelPosition;
   terminalFontSize: number;
+  /** When set, overrides the viewport-ratio default band size for OPEN mode. */
+  userBandSizePx?: number;
 }
 
 /** Full in-memory panel state. Only PanelPersistedState fields are persisted. */

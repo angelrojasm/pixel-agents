@@ -11,6 +11,7 @@ interface PersistedShape {
   railHidden?: boolean;
   panelPosition?: PanelPosition;
   terminalFontSize?: number;
+  userBandSizePx?: number;
 }
 
 interface RootShape {
@@ -22,6 +23,7 @@ const DEFAULT: PanelPersistedState = {
   railHidden: false,
   panelPosition: PanelPosition.BOTTOM,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
+  userBandSizePx: undefined,
 };
 
 function isPanelPosition(v: unknown): v is PanelPosition {
@@ -42,6 +44,10 @@ export function loadPanelState(): PanelPersistedState {
       typeof slice.terminalFontSize === 'number' && Number.isFinite(slice.terminalFontSize)
         ? slice.terminalFontSize
         : DEFAULT.terminalFontSize,
+    userBandSizePx:
+      typeof slice.userBandSizePx === 'number' && Number.isFinite(slice.userBandSizePx)
+        ? slice.userBandSizePx
+        : undefined,
   };
 }
 
@@ -52,6 +58,7 @@ export function savePanelState(state: PanelPersistedState): void {
     railHidden: state.railHidden,
     panelPosition: state.panelPosition,
     terminalFontSize: state.terminalFontSize,
+    userBandSizePx: state.userBandSizePx,
   };
   vscode.setState({ ...prev, [STATE_KEY]: slice });
 }
