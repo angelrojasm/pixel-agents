@@ -682,6 +682,14 @@ export function sendCurrentAgentStatuses(
         teamUsesTmux: agent.teamUsesTmux,
       });
     }
+    // Re-send custom title so renamed agents survive reload
+    if (agent.customTitle) {
+      webview.postMessage({
+        type: 'agentRenamed',
+        id: agentId,
+        customTitle: agent.customTitle,
+      });
+    }
     // Re-send token usage
     if (agent.inputTokens > 0 || agent.outputTokens > 0) {
       webview.postMessage({
