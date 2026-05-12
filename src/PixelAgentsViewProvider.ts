@@ -594,6 +594,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
       }
     } else if (message.type === 'webviewReady') {
+      // Note: pty-backed agents are runtime-only in v1 — they're filtered out of
+      // persistAgents() so restoreAgents never sees them. On reload, the user must
+      // re-spawn them with + Agent. Future: re-attach via `claude --resume <id>`.
       restoreAgents(
         this.context,
         this.nextAgentId,

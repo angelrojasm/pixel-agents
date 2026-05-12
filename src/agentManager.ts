@@ -342,6 +342,10 @@ export function persistAgents(
 ): void {
   const persisted: PersistedAgent[] = [];
   for (const agent of agents.values()) {
+    // Pty-backed agents are runtime-only in v1 — skip persistence so
+    // restoreAgents never tries to recreate them. The user re-spawns
+    // them manually with + Agent. Future: re-attach via `claude --resume <id>`.
+    if (agent.ptyBacked === true) continue;
     persisted.push({
       id: agent.id,
       sessionId: agent.sessionId,
