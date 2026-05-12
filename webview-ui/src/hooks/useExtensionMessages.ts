@@ -276,11 +276,13 @@ export function useExtensionMessages(
           }
           return merged.sort((a, b) => a - b);
         });
-        const ptyMap: Record<number, boolean> = {};
-        for (const id of incoming) {
-          if (ptyBackedAgents[id] === true) ptyMap[id] = true;
-        }
-        setPtyBackedByAgent(ptyMap);
+        setPtyBackedByAgent((prev) => {
+          const next = { ...prev };
+          for (const id of incoming) {
+            if (ptyBackedAgents[id] === true) next[id] = true;
+          }
+          return next;
+        });
       } else if (msg.type === 'agentToolStart') {
         const id = msg.id as number;
         const toolId = msg.toolId as string;
