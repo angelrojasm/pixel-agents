@@ -19,6 +19,8 @@ interface OfficePanelProps {
   onSetUserBandSizePx: (px: number | undefined) => void;
   ptyBackedByAgent: Record<number, boolean>;
   ptyEventBus: PtyEventBus;
+  terminalFontFamily: string;
+  terminalLineHeight: number;
 }
 
 export function OfficePanel({
@@ -31,6 +33,8 @@ export function OfficePanel({
   onSetUserBandSizePx,
   ptyBackedByAgent,
   ptyEventBus,
+  terminalFontFamily,
+  terminalLineHeight,
 }: OfficePanelProps) {
   const focused = agents.find((a) => a.id === state.focusedAgentId) ?? null;
   const horizontal = isHorizontalAxis(state.panelPosition);
@@ -98,6 +102,8 @@ export function OfficePanel({
             agentId={state.focusedAgentId}
             agentName={focused?.name ?? null}
             fontSize={state.terminalFontSize}
+            fontFamily={terminalFontFamily}
+            lineHeight={terminalLineHeight}
             bus={ptyEventBus}
           />
         ) : (

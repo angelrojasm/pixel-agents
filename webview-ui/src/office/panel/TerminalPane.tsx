@@ -10,10 +10,19 @@ interface TerminalPaneProps {
   agentId: number;
   agentName: string | null;
   fontSize: number;
+  fontFamily: string;
+  lineHeight: number;
   bus: PtyEventBus;
 }
 
-export function TerminalPane({ agentId, agentName, fontSize, bus }: TerminalPaneProps) {
+export function TerminalPane({
+  agentId,
+  agentName,
+  fontSize,
+  fontFamily,
+  lineHeight,
+  bus,
+}: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -27,8 +36,9 @@ export function TerminalPane({ agentId, agentName, fontSize, bus }: TerminalPane
       fontSize,
       // xterm.js needs a true monospace font for cell-aligned terminal output;
       // FS Pixel Sans is a proportional UI font and is not suitable here.
-      // eslint-disable-next-line pixel-agents/pixel-font
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+       
+      fontFamily,
+      lineHeight,
       theme: {
         background: PANEL_BG_CHROME,
       },
@@ -125,6 +135,23 @@ export function TerminalPane({ agentId, agentName, fontSize, bus }: TerminalPane
     const rows = term.rows;
     vscode.postMessage({ type: 'ptyResize', agentId, cols, rows });
   }, [fontSize, agentId]);
+
+  // Apply font-family and line-height changes without recreating the terminal.
+  useEffect(() => {
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit) return;
+    term.options.fontFamily = fontFamily;
+    term.options.lineHeight = lineHeight;
+    try {
+      fit.fit();
+    } catch {
+      /* container may be 0x0 mid-mount; ignore */
+    }
+    const cols = term.cols;
+    const rows = term.rows;
+    vscode.postMessage({ type: 'ptyResize', agentId, cols, rows });
+  }, [agentId, fontFamily, lineHeight]);
 
   return (
     <div

@@ -260,6 +260,8 @@ function App() {
       onSetUserBandSizePx={panel.setUserBandSizePx}
       ptyBackedByAgent={ptyBackedByAgent}
       ptyEventBus={ptyEventBus}
+      terminalFontFamily={terminalFontFamily}
+      terminalLineHeight={terminalLineHeight}
     />
   );
 
