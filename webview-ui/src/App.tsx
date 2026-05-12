@@ -80,6 +80,10 @@ function App() {
     setDefaultCwd,
     usePtyTerminal,
     setUsePtyTerminal,
+    terminalFontFamily,
+    setTerminalFontFamily,
+    terminalLineHeight,
+    setTerminalLineHeight,
     ptyBackedByAgent,
     ptyEventBus,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
@@ -472,6 +476,10 @@ function App() {
           onChangePanelPosition={panel.setPanelPosition}
           terminalFontSize={panel.state.terminalFontSize}
           onChangeTerminalFontSize={panel.setTerminalFontSize}
+          terminalFontFamily={terminalFontFamily}
+          onSetTerminalFontFamily={setTerminalFontFamily}
+          terminalLineHeight={terminalLineHeight}
+          onSetTerminalLineHeight={setTerminalLineHeight}
         />
 
         {showMigrationNotice && (

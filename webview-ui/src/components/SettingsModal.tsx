@@ -29,6 +29,10 @@ interface SettingsModalProps {
   onChangePanelPosition: (p: 'bottom' | 'left' | 'right') => void;
   terminalFontSize: number;
   onChangeTerminalFontSize: (n: number) => void;
+  terminalFontFamily: string;
+  onSetTerminalFontFamily: (v: string) => void;
+  terminalLineHeight: number;
+  onSetTerminalLineHeight: (v: number) => void;
 }
 
 export function SettingsModal({
@@ -53,6 +57,10 @@ export function SettingsModal({
   onChangePanelPosition,
   terminalFontSize,
   onChangeTerminalFontSize,
+  terminalFontFamily,
+  onSetTerminalFontFamily,
+  terminalLineHeight,
+  onSetTerminalLineHeight,
 }: SettingsModalProps) {
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
   const [cwdDraft, setCwdDraft] = useState(defaultCwd);
@@ -141,6 +149,59 @@ export function SettingsModal({
         checked={usePtyTerminal}
         onChange={onToggleUsePtyTerminal}
       />
+      <div className="flex flex-col gap-4 py-6 px-10">
+        <label className="text-xs" htmlFor="terminal-font-family-select">
+          Terminal font family
+        </label>
+        <select
+          id="terminal-font-family-select"
+          value={terminalFontFamily}
+          onChange={(e) => onSetTerminalFontFamily(e.target.value)}
+          className="bg-transparent border-2 border-white/30 rounded-none px-3 py-1 text-xs outline-none focus:border-accent cursor-pointer"
+        >
+          <option value='Menlo, Monaco, "Courier New", monospace'>System default (Menlo)</option>
+          <option value='"SF Mono", Menlo, monospace'>SF Mono</option>
+          <option value="Monaco, monospace">Monaco</option>
+          <option value='"Cascadia Mono", Consolas, monospace'>Cascadia Mono</option>
+          <option value='Consolas, "Courier New", monospace'>Consolas</option>
+          <option value='"Courier New", Courier, monospace'>Courier New</option>
+          <option value="monospace">Generic monospace</option>
+        </select>
+      </div>
+      <div className="flex flex-col gap-4 py-6 px-10">
+        <span className="text-xs">Terminal line height</span>
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              onSetTerminalLineHeight(
+                Math.max(0.8, Math.round((terminalLineHeight - 0.1) * 10) / 10),
+              )
+            }
+            disabled={terminalLineHeight <= 0.8}
+            className="shrink-0"
+          >
+            –
+          </Button>
+          <span className="w-16 text-xs text-center tabular-nums">
+            {terminalLineHeight.toFixed(1)}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              onSetTerminalLineHeight(
+                Math.min(2.0, Math.round((terminalLineHeight + 0.1) * 10) / 10),
+              )
+            }
+            disabled={terminalLineHeight >= 2.0}
+            className="shrink-0"
+          >
+            +
+          </Button>
+        </div>
+      </div>
       <Checkbox
         label="Always Show Labels"
         checked={alwaysShowOverlay}
