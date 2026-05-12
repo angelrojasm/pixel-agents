@@ -5,10 +5,13 @@ import {
   PANEL_BOTTOM_OPEN_RATIO,
   PANEL_BOTTOM_PEEK_PX,
   PANEL_BOTTOM_RAIL_PX,
+  PANEL_BOTTOM_USER_MAX_RESERVE,
   PANEL_SIDE_OPEN_MAX_PX,
   PANEL_SIDE_OPEN_RATIO,
   PANEL_SIDE_PEEK_PX,
   PANEL_SIDE_RAIL_PX,
+  PANEL_SIDE_USER_MAX_RESERVE,
+  PANEL_USER_MIN_PX,
 } from '../../constants.js';
 import type { PanelState } from './panelTypes.js';
 import { isHorizontalAxis, PanelMode } from './panelTypes.js';
@@ -43,6 +46,18 @@ function collapsedSide(railHidden: boolean): { mode: PanelMode; bandSize: number
     : { mode: PanelMode.RAIL, bandSize: PANEL_SIDE_RAIL_PX };
 }
 
+function userBandClamp(
+  userBandSizePx: number,
+  horizontal: boolean,
+  viewportWidth: number,
+  viewportHeight: number,
+): number {
+  const max = horizontal
+    ? viewportHeight - PANEL_BOTTOM_USER_MAX_RESERVE
+    : viewportWidth - PANEL_SIDE_USER_MAX_RESERVE;
+  return Math.max(PANEL_USER_MIN_PX, Math.min(userBandSizePx, max));
+}
+
 export function computePanelBand(state: PanelState): Band {
   const { panelOpen, railHidden, isEditMode, panelPosition, viewportWidth, viewportHeight } = state;
 
@@ -56,7 +71,11 @@ export function computePanelBand(state: PanelState): Band {
   let bandSize: number;
   if (effectivelyOpen) {
     mode = PanelMode.OPEN;
-    bandSize = horizontal ? bottomOpenSize(viewportHeight) : sideOpenSize(viewportWidth);
+    if (state.userBandSizePx != null) {
+      bandSize = userBandClamp(state.userBandSizePx, horizontal, viewportWidth, viewportHeight);
+    } else {
+      bandSize = horizontal ? bottomOpenSize(viewportHeight) : sideOpenSize(viewportWidth);
+    }
   } else {
     const collapsed = horizontal ? collapsedBottom(railHidden) : collapsedSide(railHidden);
     mode = collapsed.mode;
