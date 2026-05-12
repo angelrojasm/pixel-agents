@@ -52,9 +52,15 @@ function userBandClamp(
   viewportWidth: number,
   viewportHeight: number,
 ): number {
-  const max = horizontal
-    ? viewportHeight - PANEL_BOTTOM_USER_MAX_RESERVE
-    : viewportWidth - PANEL_SIDE_USER_MAX_RESERVE;
+  // Guard against tiny viewports where the reserve subtraction would put `max`
+  // below the floor: floor always wins (the panel won't collapse below MIN even
+  // if that causes the canvas to be smaller than the reserve).
+  const max = Math.max(
+    PANEL_USER_MIN_PX,
+    horizontal
+      ? viewportHeight - PANEL_BOTTOM_USER_MAX_RESERVE
+      : viewportWidth - PANEL_SIDE_USER_MAX_RESERVE,
+  );
   return Math.max(PANEL_USER_MIN_PX, Math.min(userBandSizePx, max));
 }
 

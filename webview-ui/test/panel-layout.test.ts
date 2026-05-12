@@ -174,3 +174,15 @@ test('right open: userBandSizePx clamps to viewportWidth - side reserve', () => 
   );
   assert.equal(b.bandSize, 1280 - 360); // viewportWidth - PANEL_SIDE_USER_MAX_RESERVE
 });
+
+test('tiny side viewport: userBandSizePx is held at PANEL_USER_MIN_PX even when reserve would drop max below it', () => {
+  const b = computePanelBand(
+    baseState({
+      panelOpen: true,
+      panelPosition: PanelPosition.RIGHT,
+      userBandSizePx: 500,
+      viewportWidth: 580, // 580 - 360 reserve = 220 < 240 floor
+    }),
+  );
+  assert.equal(b.bandSize, 240);
+});
