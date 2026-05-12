@@ -85,6 +85,11 @@ export const CAMERA_FOLLOW_SNAP_THRESHOLD = 0.5;
 // ── Zoom ─────────────────────────────────────────────────────
 export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 10;
+/** Valid zoom values in order. Half-steps allowed; the integer-DPR invariant
+ *  is intentionally relaxed at half-steps (may shimmer at DPR<2 — accepted tradeoff). */
+export const ZOOM_STEPS = [
+  1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10,
+] as const;
 export const ZOOM_DEFAULT_DPR_FACTOR = 2;
 export const ZOOM_LEVEL_FADE_DELAY_MS = 1500;
 export const ZOOM_LEVEL_HIDE_DELAY_MS = 2000;

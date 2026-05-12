@@ -4,8 +4,7 @@ import {
   ZOOM_LEVEL_FADE_DELAY_MS,
   ZOOM_LEVEL_FADE_DURATION_SEC,
   ZOOM_LEVEL_HIDE_DELAY_MS,
-  ZOOM_MAX,
-  ZOOM_MIN,
+  ZOOM_STEPS,
 } from '../constants.js';
 import { Button } from './ui/Button.js';
 
@@ -21,8 +20,8 @@ export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevZoomRef = useRef(zoom);
 
-  const minDisabled = zoom <= ZOOM_MIN;
-  const maxDisabled = zoom >= ZOOM_MAX;
+  const minDisabled = zoom <= ZOOM_STEPS[0];
+  const maxDisabled = zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1];
 
   // Show zoom level briefly when zoom changes
   useEffect(() => {
@@ -72,7 +71,14 @@ export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
       <div className="absolute top-8 left-8 z-10 flex flex-col gap-4">
         <Button
           size="icon_lg"
-          onClick={() => onZoomChange(zoom + 1)}
+          onClick={() => {
+            const idx = ZOOM_STEPS.findIndex((z) => z >= zoom);
+            const next =
+              idx === -1
+                ? ZOOM_STEPS[ZOOM_STEPS.length - 1]
+                : ZOOM_STEPS[Math.min(idx + 1, ZOOM_STEPS.length - 1)];
+            onZoomChange(next);
+          }}
           disabled={maxDisabled}
           className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
           title="Zoom in (Ctrl+Scroll)"
@@ -100,7 +106,15 @@ export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
         </Button>
         <Button
           size="icon_lg"
-          onClick={() => onZoomChange(zoom - 1)}
+          onClick={() => {
+            // largest step strictly less than current
+            let next: number = ZOOM_STEPS[0];
+            for (const z of ZOOM_STEPS) {
+              if (z < zoom) next = z;
+              else break;
+            }
+            onZoomChange(next);
+          }}
           disabled={minDisabled}
           className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
           title="Zoom out (Ctrl+Scroll)"

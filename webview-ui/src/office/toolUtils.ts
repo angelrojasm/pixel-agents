@@ -19,10 +19,20 @@ export function extractToolName(status: string): string | null {
   return first || null;
 }
 
-import { ZOOM_DEFAULT_DPR_FACTOR, ZOOM_MIN } from '../constants.js';
+import { ZOOM_DEFAULT_DPR_FACTOR, ZOOM_STEPS } from '../constants.js';
 
-/** Compute a default integer zoom level (device pixels per sprite pixel) */
+/** Compute a default zoom level snapped to the nearest ZOOM_STEPS value. */
 export function defaultZoom(): number {
-  const dpr = window.devicePixelRatio || 1;
-  return Math.max(ZOOM_MIN, Math.round(ZOOM_DEFAULT_DPR_FACTOR * dpr));
+  const raw = Math.round(ZOOM_DEFAULT_DPR_FACTOR * (window.devicePixelRatio || 1));
+  // Snap to nearest ZOOM_STEPS value.
+  let best: number = ZOOM_STEPS[0];
+  let bestDelta = Math.abs(raw - best);
+  for (const z of ZOOM_STEPS) {
+    const d = Math.abs(raw - z);
+    if (d < bestDelta) {
+      best = z;
+      bestDelta = d;
+    }
+  }
+  return best;
 }
