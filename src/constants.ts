@@ -18,6 +18,8 @@ export const GLOBAL_KEY_DEFAULT_CWD = 'pixel-agents.defaultCwd';
  *  When false (default), agents use vscode.window.createTerminal as before.
  *  Experimental — off until users opt in. */
 export const GLOBAL_KEY_USE_PTY_TERMINAL = 'pixel-agents.usePtyTerminal';
+export const GLOBAL_KEY_TERMINAL_FONT_FAMILY = 'pixel-agents.terminalFontFamily';
+export const GLOBAL_KEY_TERMINAL_LINE_HEIGHT = 'pixel-agents.terminalLineHeight';
 
 // ── VS Code Identifiers ─────────────────────────────────────
 export const VIEW_ID = 'pixel-agents.panelView';

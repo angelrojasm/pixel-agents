@@ -45,6 +45,8 @@ import {
   GLOBAL_KEY_LAST_SEEN_VERSION,
   GLOBAL_KEY_SHOW_TERMINAL_NAMES,
   GLOBAL_KEY_SOUND_ENABLED,
+  GLOBAL_KEY_TERMINAL_FONT_FAMILY,
+  GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
   GLOBAL_KEY_USE_PTY_TERMINAL,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
@@ -548,6 +550,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       const enabled = !!message.enabled;
       this.context.globalState.update(GLOBAL_KEY_USE_PTY_TERMINAL, enabled);
       this.usePtyTerminal.current = enabled;
+    } else if (message.type === 'setTerminalFontFamily') {
+      const value =
+        typeof message.value === 'string'
+          ? message.value
+          : 'Menlo, Monaco, "Courier New", monospace';
+      this.context.globalState.update(GLOBAL_KEY_TERMINAL_FONT_FAMILY, value);
+    } else if (message.type === 'setTerminalLineHeight') {
+      const value =
+        typeof message.value === 'number' && Number.isFinite(message.value) ? message.value : 1.0;
+      this.context.globalState.update(GLOBAL_KEY_TERMINAL_LINE_HEIGHT, value);
     } else if (message.type === 'setHooksInfoShown') {
       this.context.globalState.update(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
     } else if (message.type === 'setWatchAllSessions') {
@@ -667,6 +679,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         defaultCwd,
         externalAssetDirectories: config.externalAssetDirectories,
         usePtyTerminal: this.usePtyTerminal.current,
+        terminalFontFamily: this.context.globalState.get<string>(
+          GLOBAL_KEY_TERMINAL_FONT_FAMILY,
+          'Menlo, Monaco, "Courier New", monospace',
+        ),
+        terminalLineHeight: this.context.globalState.get<number>(
+          GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
+          1.0,
+        ),
       });
 
       // Send workspace folders to webview (only when multi-root)
