@@ -439,6 +439,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         message.folderPath as string | undefined,
         message.bypassPermissions as boolean | undefined,
         this.context.globalState.get<string>(GLOBAL_KEY_DEFAULT_CWD, ''),
+        this.usePtyTerminal.current,
+        this.ptyManager,
       );
       // Register newly created agent(s) with hook handler
       for (const [id, agent] of this.agents) {

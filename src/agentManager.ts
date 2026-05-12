@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-import { JSONL_POLL_INTERVAL_MS } from '../server/src/constants.js';
+import { JSONL_POLL_INTERVAL_MS, PTY_SCROLLBACK_MAX_LINES } from '../server/src/constants.js';
 import {
   TERMINAL_NAME_PREFIX,
   WORKSPACE_KEY_AGENT_SEATS,
@@ -16,6 +16,7 @@ import {
   startFileWatching,
 } from './fileWatcher.js';
 import { migrateAndLoadLayout } from './layoutPersistence.js';
+import type { PtyManager } from './pty/ptyManager.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
 import type { AgentState, MessageSink, PersistedAgent } from './types.js';
 
@@ -93,6 +94,8 @@ export async function launchNewTerminal(
   folderPath?: string,
   bypassPermissions?: boolean,
   defaultCwd?: string,
+  usePtyTerminal?: boolean,
+  ptyManager?: PtyManager | null,
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
   // Resolution order:
@@ -104,17 +107,41 @@ export async function launchNewTerminal(
     folderPath || folders?.[0]?.uri.fsPath || resolveDefaultCwd(defaultCwd) || os.homedir();
   const isMultiRoot = !!(folders && folders.length > 1);
   const idx = nextTerminalIndexRef.current++;
-  const terminal = vscode.window.createTerminal({
-    name: `${TERMINAL_NAME_PREFIX} #${idx}`,
-    cwd,
-  });
-  terminal.show();
 
   const sessionId = crypto.randomUUID();
-  const claudeCmd = bypassPermissions
-    ? `claude --session-id ${sessionId} --dangerously-skip-permissions`
-    : `claude --session-id ${sessionId}`;
-  terminal.sendText(claudeCmd);
+  const claudeArgs = bypassPermissions
+    ? ['--session-id', sessionId, '--dangerously-skip-permissions']
+    : ['--session-id', sessionId];
+
+  let terminal: vscode.Terminal | undefined;
+  let ptyBacked = false;
+  const ptyAgentId = nextAgentIdRef.current;
+
+  if (usePtyTerminal && ptyManager) {
+    // Spawn via node-pty so the terminal renders inside the office panel.
+    // Use a login shell so the user's PATH (where `claude` lives) is sourced.
+    const shell = process.env.SHELL ?? (process.platform === 'win32' ? 'cmd.exe' : '/bin/zsh');
+    ptyManager.start(ptyAgentId, {
+      shell,
+      args: ['-l', '-c', `claude ${claudeArgs.join(' ')}`],
+      cwd,
+      env: process.env as Record<string, string | undefined>,
+      cols: 80,
+      rows: 24,
+      scrollbackCapacity: PTY_SCROLLBACK_MAX_LINES,
+    });
+    ptyBacked = true;
+  } else {
+    terminal = vscode.window.createTerminal({
+      name: `${TERMINAL_NAME_PREFIX} #${idx}`,
+      cwd,
+    });
+    terminal.show();
+    const claudeCmd = bypassPermissions
+      ? `claude --session-id ${sessionId} --dangerously-skip-permissions`
+      : `claude --session-id ${sessionId}`;
+    terminal.sendText(claudeCmd);
+  }
 
   const projectDir = getProjectDirPath(cwd);
 
@@ -144,7 +171,7 @@ export async function launchNewTerminal(
     permissionSent: false,
     hadToolsInTurn: false,
     awaitingSince: null,
-    ptyBacked: false,
+    ptyBacked,
     lastDataAt: 0,
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
@@ -157,12 +184,13 @@ export async function launchNewTerminal(
   agents.set(id, agent);
   activeAgentIdRef.current = id;
   persistAgents();
-  console.log(`[Pixel Agents] Terminal: Agent ${id} - created for terminal ${terminal.name}`);
+  const terminalName = terminal?.name ?? `${TERMINAL_NAME_PREFIX} #${idx}`;
+  console.log(`[Pixel Agents] Terminal: Agent ${id} - created for terminal ${terminalName}`);
   webview?.postMessage({
     type: 'agentCreated',
     id,
     folderName,
-    terminalName: terminal.name,
+    terminalName,
     ptyBacked: agent.ptyBacked === true,
   });
 
