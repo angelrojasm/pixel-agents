@@ -184,12 +184,8 @@ export function ToolOverlay({
 
         // Team info
         const isTeamAgent = !!ch.teamName;
-        // customTitle always wins; otherwise fall back to team-role badge logic.
-        const teamRoleLabel = ch.customTitle
-          ? characterLabel(ch)
-          : ch.isTeamLead
-            ? 'LEAD'
-            : ch.agentName || null;
+        // Badge shows only for agents with a team role (LEAD or named member).
+        const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
         const totalTokens = ch.inputTokens + ch.outputTokens;
         const tokenRatio = totalTokens / MAX_CONTEXT_TOKENS;
         const hasExtraLines = !!(ch.folderName || teamRoleLabel);
@@ -295,7 +291,7 @@ export function ToolOverlay({
                     textShadow: NAMEPLATE_TEXT_OUTLINE,
                   }}
                 >
-                  {ch.terminalName}
+                  {characterLabel(ch)}
                 </span>
               </div>
             )}
