@@ -4,9 +4,8 @@ import {
   CAMERA_FOLLOW_LERP,
   CAMERA_FOLLOW_SNAP_THRESHOLD,
   PAN_MARGIN_FRACTION,
-  ZOOM_MAX,
-  ZOOM_MIN,
   ZOOM_SCROLL_THRESHOLD,
+  ZOOM_STEPS,
 } from '../../constants.js';
 import { unlockAudio } from '../../notificationSound.js';
 import { vscode } from '../../vscodeApi.js';
@@ -780,7 +779,19 @@ export function OfficeCanvas({
         if (Math.abs(zoomAccumulatorRef.current) >= ZOOM_SCROLL_THRESHOLD) {
           const delta = zoomAccumulatorRef.current < 0 ? 1 : -1;
           zoomAccumulatorRef.current = 0;
-          const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
+          // Step through ZOOM_STEPS so scroll and button zoom traverse the same values.
+          const steps = ZOOM_STEPS;
+          const currentIdx = steps.findIndex((z) => z >= zoom);
+          let nextIdx: number;
+          if (delta > 0) {
+            nextIdx =
+              currentIdx === -1 ? steps.length - 1 : Math.min(currentIdx + 1, steps.length - 1);
+          } else {
+            nextIdx = currentIdx === -1 ? steps.length - 1 : Math.max(currentIdx - 1, 0);
+            // If we landed on the current step or higher, walk back one more so '-' actually decreases.
+            if (steps[nextIdx] >= zoom && nextIdx > 0) nextIdx--;
+          }
+          const newZoom = steps[nextIdx];
           if (newZoom !== zoom) {
             onZoomChange(newZoom);
           }
