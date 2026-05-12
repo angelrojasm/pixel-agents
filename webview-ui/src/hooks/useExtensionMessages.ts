@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { OfficeState } from '../office/engine/officeState.js';
@@ -70,6 +70,8 @@ interface ExtensionMessageState {
   hooksInfoShown: boolean;
   defaultCwd: string;
   setDefaultCwd: (v: string) => void;
+  usePtyTerminal: boolean;
+  setUsePtyTerminal: (v: boolean) => void;
   ptyEventBus: PtyEventBus;
   ptyBackedByAgent: Record<number, boolean>;
 }
@@ -112,12 +114,18 @@ export function useExtensionMessages(
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
   const [defaultCwd, setDefaultCwdState] = useState('');
+  const [usePtyTerminal, setUsePtyTerminalState] = useState(false);
   const [ptyBackedByAgent, setPtyBackedByAgent] = useState<Record<number, boolean>>({});
 
   const setDefaultCwd = (v: string): void => {
     setDefaultCwdState(v);
     vscode.postMessage({ type: 'setDefaultCwd', value: v });
   };
+
+  const setUsePtyTerminal = useCallback((v: boolean) => {
+    setUsePtyTerminalState(v);
+    vscode.postMessage({ type: 'setUsePtyTerminal', enabled: v });
+  }, []);
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
@@ -518,6 +526,9 @@ export function useExtensionMessages(
         if (typeof msg.defaultCwd === 'string') {
           setDefaultCwdState(msg.defaultCwd as string);
         }
+        if (typeof msg.usePtyTerminal === 'boolean') {
+          setUsePtyTerminalState(msg.usePtyTerminal as boolean);
+        }
         if (Array.isArray(msg.externalAssetDirectories)) {
           setExternalAssetDirectories(msg.externalAssetDirectories as string[]);
         }
@@ -599,6 +610,8 @@ export function useExtensionMessages(
     hooksInfoShown,
     defaultCwd,
     setDefaultCwd,
+    usePtyTerminal,
+    setUsePtyTerminal,
     ptyEventBus: ptyEventBusRef.current,
     ptyBackedByAgent,
   };

@@ -21,6 +21,8 @@ interface SettingsModalProps {
   onToggleWatchAllSessions: () => void;
   hooksEnabled: boolean;
   onToggleHooksEnabled: () => void;
+  usePtyTerminal: boolean;
+  onToggleUsePtyTerminal: () => void;
   defaultCwd: string;
   onChangeDefaultCwd: (v: string) => void;
   panelPosition: 'bottom' | 'left' | 'right';
@@ -43,6 +45,8 @@ export function SettingsModal({
   onToggleWatchAllSessions,
   hooksEnabled,
   onToggleHooksEnabled,
+  usePtyTerminal,
+  onToggleUsePtyTerminal,
   defaultCwd,
   onChangeDefaultCwd,
   panelPosition,
@@ -131,6 +135,11 @@ export function SettingsModal({
         label="Instant Detection (Hooks)"
         checked={hooksEnabled}
         onChange={onToggleHooksEnabled}
+      />
+      <Checkbox
+        label="Use in-panel terminal (experimental)"
+        checked={usePtyTerminal}
+        onChange={onToggleUsePtyTerminal}
       />
       <Checkbox
         label="Always Show Labels"

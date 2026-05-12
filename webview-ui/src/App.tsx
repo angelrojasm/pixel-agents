@@ -77,6 +77,8 @@ function App() {
     hooksInfoShown,
     defaultCwd,
     setDefaultCwd,
+    usePtyTerminal,
+    setUsePtyTerminal,
     ptyBackedByAgent,
     ptyEventBus,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
@@ -460,6 +462,8 @@ function App() {
             setHooksEnabled(newVal);
             vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
           }}
+          usePtyTerminal={usePtyTerminal}
+          onToggleUsePtyTerminal={() => setUsePtyTerminal(!usePtyTerminal)}
           defaultCwd={defaultCwd}
           onChangeDefaultCwd={setDefaultCwd}
           panelPosition={panel.state.panelPosition}
