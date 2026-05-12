@@ -1,0 +1,248 @@
+# Settings Menu Redesign — Design
+
+## Purpose
+
+The Settings modal today is a single vertically-scrolling list of checkboxes plus a few inputs. With the terminal-polish work adding 3 new knobs (font family, size, line height) and more user-facing toggles queued for Phase 2, the flat list will become unreadable. Reorganize into a game-style **paneled** settings screen — sidebar of categories + content pane — using the existing brutalist pixel-art aesthetic (FS Pixel Sans, 2px hard borders, sharp corners, hard offset shadows, `#1e1e2e` backgrounds). This is a UI restructure, not a behavior change: every existing setting keeps its current semantics.
+
+## Decisions
+
+- **Sidebar + content pane** (not top tabs, not bento, not skeuomorphic). Cross-checked against `ui-ux-pro-max` §4 `style-match` / `consistency` / `effects-match-style`: a brutalist product should stay brutalist. Game-UI flavor comes from chrome details (chunky title strip per panel, accent left-bar on the active category), not from a different style family. Bento is wrong (it's a showcase grid pattern, not navigation). Skeuomorphic chunky beveled buttons would clash with the otherwise flat pixel-art surfaces.
+- **Live-apply throughout. No Apply / Cancel ceremony.** Every setting takes effect immediately, just like today. Risky/restart-required settings (e.g. `usePtyTerminal`) get an inline `applies to new agents` muted tag, not a staged-apply pattern. Justification: most settings here are cheap toggles; the cost of staged-apply (dirty tracking, confirm-on-close dialogs, unsaved-state bugs) outweighs the benefit. Game UIs use staged-apply for _expensive_ changes like graphics; we don't have those.
+- **Per-section Restore Defaults.** Each panel gets a `Restore Defaults` button in its title strip that resets only that category's values. Triggered via webview→extension message. No global "Reset All Settings" button in v1 — too easy to misfire.
+- **Keyboard-first navigation.** ESC closes; ↑/↓ moves between sidebar items; Tab cycles controls within the content pane; focus jumps to the first control when the category changes. No global "open settings" shortcut in v1 — the Settings button in the bottom toolbar is the canonical entry. (Cmd/Ctrl+, was considered and rejected: it's already bound to VS Code's own Settings, and intercepting it from the webview would surprise users who expect that shortcut to open VS Code's settings even when the office panel has focus.)
+- **Fixed-size centered modal at 720×520.** No resize handle. Settings doesn't need it. If a category ever overflows, the content pane scrolls; the chrome stays put.
+- **5 categories** (General / Agents / Terminal / Office / About). Derived from the existing settings inventory plus the queued terminal knobs. About is mostly inert (version, changelog link, hooks info, doc links).
+- **One canonical defaults table.** A `DEFAULT_SETTINGS` constant in `src/constants.ts` is the single source of truth used both by the `globalState.get(key, DEFAULT)` calls today and by the Restore Defaults handler. No defaults drift.
+
+## Style Cross-Check (ui-ux-pro-max guidance applied)
+
+- §4 `primary-action` — for live-apply there's no primary CTA, only a close button. ✓
+- §4 `state-clarity` — sidebar entries have distinct rest / hover / active / disabled states.
+- §9 `nav-state-active` — active category shows a 2px accent left-bar + bold label.
+- §9 `nav-label-icon` — each sidebar entry has a small SVG glyph + a text label (no emojis, per the "no-emoji icons" rule).
+- §1 `escape-routes` — ESC closes the modal.
+- §8 `focus-management` — after switching category, focus jumps to the first interactive element in the new panel.
+- §8 `input-helper-text` — each control row has a one-line helper below the label.
+- §8 `undo-support` — Restore Defaults shows an inline toast with a 5-second Undo affordance (one captured-state snapshot per click).
+- §1 `keyboard-nav` — full keyboard support, no mouse-required actions.
+- §6 `weight-hierarchy` — FS Pixel Sans at one size, with weight differentiating category headers (bold) from body labels (regular) from helper text (regular + 70% opacity).
+
+## Layout
+
+```
+┌─ Settings ─────────────────────────────────────────────────── × ─┐
+│┌──────────────┬────────────────────────────────────────────────┐│
+││▎● General    │ ━━ Terminal ━━━━━━━━━━━━━━ [Restore Defaults] ││
+││  Agents      │                                                ││
+││▎  Terminal   │ Use in-panel terminal      [✓]                ││
+││  Office      │   Renders the agent's terminal in the panel    ││
+││  About       │   instead of VS Code.                          ││
+││              │   applies to new agents                        ││
+││              │                                                ││
+││              │ Font family               [System default ▾]   ││
+││              │   Monospaced font used in the terminal pane.   ││
+││              │                                                ││
+││              │ Font size                 [-  13  +]           ││
+││              │                                                ││
+││              │ Line height               [- 1.0  +]           ││
+││              │                                                ││
+││              │ ─── Panel position ────────────────────────    ││
+││              │ ○ Bottom  ● Right  ○ Left                     ││
+│└──────────────┴────────────────────────────────────────────────┘│
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- Sidebar width: 160px.
+- Content pane: 560px wide, ~480px tall (modal minus header).
+- Title strip inside content pane: 32px tall, accent background, bold category name on the left, `Restore Defaults` button right-aligned.
+- Section dividers within a panel: 1px horizontal rule with a 10px gap on either side.
+
+## Categories
+
+Mapping from current settings → new homes:
+
+| Category     | Settings (existing)                                                                                      | Settings (added by terminal-polish) |
+| ------------ | -------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| **General**  | Sound notifications, Always show labels, Show terminal names, Debug view                                 | —                                   |
+| **Agents**   | Watch all sessions, Instant detection (hooks), Default terminal folder                                   | —                                   |
+| **Terminal** | Use in-panel terminal, Terminal panel position                                                           | Font family, font size, line height |
+| **Office**   | Sessions actions (clear dismissed, etc.), Layout actions (export/import), Asset directories (add/remove) | —                                   |
+| **About**    | Extension version, View changelog link, View hooks info link                                             | —                                   |
+
+Sub-agent / teammate naming (which uses `agentName`) is a function of behavior, not a setting — no entry needed.
+
+## Component Tree
+
+```
+webview-ui/src/components/
+  SettingsModal.tsx          — orchestrator: modal shell, sidebar, content pane, category state
+  settings/
+    SettingsSidebar.tsx      — vertical category list, keyboard handler
+    SettingsTitleStrip.tsx   — title + "Restore Defaults" button
+    SettingsRow.tsx          — generic <Label, Control, Helper> row (used by every panel)
+    panels/
+      GeneralPanel.tsx
+      AgentsPanel.tsx
+      TerminalPanel.tsx
+      OfficePanel.tsx
+      AboutPanel.tsx
+    controls/
+      Checkbox.tsx           — reused (already exists in current modal)
+      Dropdown.tsx           — NEW: brutalist styled <select> replacement
+      Stepper.tsx            — NEW: `[- N +]` numeric stepper (used for font size, line height)
+      RadioGroup.tsx         — NEW: horizontal radio with the pixel chrome (panel position uses this)
+      PathInput.tsx          — NEW: text input + browse button (default cwd uses this)
+      ListEditor.tsx         — NEW: add/remove list (asset directories uses this)
+
+src/
+  constants.ts               — DEFAULT_SETTINGS = { ... } single source of truth
+  PixelAgentsViewProvider.ts — handle `restoreCategoryDefaults` message
+```
+
+The existing `Checkbox` is reused. Everything else under `controls/` is new, but each is small (≤80 LOC) and styled consistently via the pixel CSS variables already in `index.css`.
+
+## State & Persistence
+
+- **Active category** lives only in component state (not persisted across modal opens — every open starts on `General`). Rationale: settings is rarely revisited, and starting at the top is more predictable than restoring last-viewed.
+- **All actual setting values** keep their existing persistence (extension `globalState` for user-wide, `workspaceState` for per-workspace). No schema change.
+- **`DEFAULT_SETTINGS` constant**: declared once in `src/constants.ts`, exported. The `globalState.get<T>(KEY, DEFAULT)` sites are updated to reference `DEFAULT_SETTINGS.<field>`. The webview gets the same constants via the shared types file. Restore Defaults pulls from this.
+
+  Scope: `DEFAULT_SETTINGS` only contains _user-facing_ settings (the ones surfaced in the modal). State-tracking flags like `hooksInfoShown` and `lastSeenVersion` stay where they are today and are not resettable by the Restore Defaults flow — they're not settings, they're UI state.
+
+```ts
+// src/constants.ts
+export const DEFAULT_SETTINGS = {
+  general: {
+    soundEnabled: true,
+    alwaysShowLabels: false,
+    showTerminalNames: true,
+    isDebugMode: false,
+  },
+  agents: {
+    watchAllSessions: false,
+    hooksEnabled: true,
+    defaultCwd: '',
+  },
+  terminal: {
+    usePtyTerminal: false,
+    panelPosition: 'bottom' as const,
+    fontFamily: 'monospace',
+    fontSize: 13,
+    lineHeight: 1.0,
+  },
+  office: {
+    externalAssetDirectories: [] as string[],
+  },
+} as const;
+```
+
+## Behavior
+
+### Opening / closing
+
+- Settings button in `BottomToolbar` opens the modal (existing behavior).
+- ESC closes. Click outside the modal panel closes. Click inside doesn't close.
+- Modal traps focus while open (verify the existing modal does this; if not, add a focus trap as part of step 1 scaffolding).
+
+### Category switching
+
+- Click sidebar entry → switches category.
+- ↑/↓ when sidebar has focus → moves selection and switches category.
+- After switch, focus jumps to the first interactive element in the new panel (per §8 `focus-management`).
+- Active category: 2px accent left-bar visible; label rendered bold.
+
+### Restore Defaults
+
+- Each panel's title strip has a `Restore Defaults` button.
+- On click: snapshot current values for this category → send `restoreCategoryDefaults { category }` message → extension writes defaults into globalState + emits `settingsLoaded` so the webview rerenders → inline toast appears at the bottom of the content pane: `"Defaults restored. [Undo]"` with a 5s timeout.
+- Undo: send `restoreCategoryDefaults { category, values: <snapshot> }` (same message, with the snapshot as override).
+- One snapshot at a time — clicking Restore Defaults twice replaces the snapshot; the second Undo only undoes the second click.
+
+### Live-apply
+
+Every control writes its value to the extension on change, just like today. No "dirty" state, no save button. The "applies to new agents" muted tag appears beside `usePtyTerminal` because flipping it doesn't migrate existing agents; that's informational, not a deferred-apply pattern.
+
+### Keyboard surface (full table)
+
+| Key             | Where            | Effect                                                                                                                      |
+| --------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Esc             | Modal            | Close                                                                                                                       |
+| ↑ / ↓           | Sidebar focused  | Move selection (auto-switches category)                                                                                     |
+| Tab / Shift+Tab | Anywhere         | Cycle interactive elements in order: close button → sidebar → content pane controls top-to-bottom → Restore Defaults button |
+| Space / Enter   | Checkbox         | Toggle                                                                                                                      |
+| Enter           | Restore Defaults | Trigger                                                                                                                     |
+| Enter           | Undo toast       | Trigger undo                                                                                                                |
+
+### A11y
+
+- Modal has `role="dialog"`, `aria-labelledby` pointing at the "Settings" header.
+- Sidebar has `role="tablist"`; each entry `role="tab"` with `aria-selected`.
+- Each panel has `role="tabpanel"` with `aria-labelledby` pointing at its sidebar entry.
+- Restore Defaults uses `aria-label="Restore <Category> defaults"`.
+- Undo toast uses `aria-live="polite"` (per `ui-ux-pro-max` §8 `toast-accessibility`).
+
+## Visual Tokens
+
+All from existing `:root` variables in `index.css`. Anything new gets added there, not inlined.
+
+| Token            | Use                                        | Value                                                                     |
+| ---------------- | ------------------------------------------ | ------------------------------------------------------------------------- |
+| `--pixel-bg`     | modal + panel backgrounds                  | `#1e1e2e`                                                                 |
+| `--pixel-border` | 2px borders                                | `#0a0a14`                                                                 |
+| `--pixel-accent` | active sidebar bar, title strip background | existing accent                                                           |
+| `--pixel-muted`  | helper text, "applies to new agents" tag   | existing muted                                                            |
+| `--pixel-shadow` | hard offset shadows                        | `2px 2px 0px var(--pixel-border)`                                         |
+| Border-radius    | everywhere                                 | `0`                                                                       |
+| Font             | everywhere                                 | `FS Pixel Sans` (terminal font is its own thing, configurable separately) |
+
+The Terminal _content_ (xterm) uses its own configurable font from the terminal-polish spec; the Settings UI itself stays on FS Pixel Sans regardless.
+
+## Out of Scope
+
+- Global "Reset all settings" button.
+- Search/filter within settings.
+- Settings export/import.
+- Per-workspace overrides of global settings.
+- Configurable category order or sidebar visibility.
+- Tablet/mobile layout — this is a desktop webview, no responsive variant needed.
+- Tooltips on settings (helper text under each label is the documentation surface).
+- Settings sync across machines.
+
+## Implementation Order
+
+1. **Scaffolding** — create `settings/` subfolder, declare `DEFAULT_SETTINGS`, build `SettingsModal` shell (sidebar + content pane, no real content yet, just placeholders for each category).
+2. **`SettingsRow` + reusable controls** — `Dropdown`, `Stepper`, `RadioGroup`. These are small and unit-testable on their own.
+3. **General panel + Debug panel migration** — move the simplest existing settings into the new layout. Verify live-apply still works end-to-end.
+4. **Agents panel** — `defaultCwd` is the trickiest existing input (text + validation). Migrate using `PathInput`.
+5. **Terminal panel** — depends on terminal-polish spec landing (it adds the font knobs). If terminal-polish hasn't shipped yet, only the existing `usePtyTerminal` + panel position move; add font knobs when terminal-polish ships.
+6. **Office panel** — migrate asset directories (`ListEditor`) + layout export/import buttons.
+7. **About panel** — last; lowest stakes. Wires up version, changelog modal, hooks info link.
+8. **Restore Defaults + Undo** — per-category messages + toast. Land after every panel is migrated so the message handler is generic.
+
+Each step is shippable on its own; the user can experience the new shell with old contents during the migration.
+
+## Testing
+
+- **Unit (webview, Node test runner):**
+  - `Stepper` — increment/decrement at min/max boundaries; respects step size.
+  - `Dropdown` — keyboard nav (↑/↓ in open state), Enter selects.
+  - `SettingsSidebar` — ↑/↓ wraps; Enter no-op (selection is on focus change); active state matches prop.
+- **Unit (extension, Vitest):**
+  - `restoreCategoryDefaults` message: with no `values` override → writes `DEFAULT_SETTINGS[category]`. With `values` override → writes those.
+  - `DEFAULT_SETTINGS` shape: every key referenced by the live `globalState.get(KEY, DEFAULT)` sites is present in the constant.
+- **Integration (manual):**
+  - Open settings → click each category → confirm panel switches, focus jumps.
+  - Toggle every control in every category → confirm value persists across modal close/reopen.
+  - Restore Defaults on each category → confirm reset; click Undo within 5s → confirm restore.
+  - ESC closes from any category. Cmd/Ctrl+, opens.
+  - Keyboard-only: open with the Settings button → focus enters the modal → ↓ to last category → Tab through every control → flip a checkbox with Space → Esc to close. No mouse after opening.
+
+## Compatibility With Phase 3
+
+- The redesign is a webview-internal change. No `MessageSink` schema change beyond adding `restoreCategoryDefaults`, which is a tiny additive message.
+- `DEFAULT_SETTINGS` is plain data; the future daemon can serve the same defaults to a remote web SPA without any port.
+
+## Resolved Choices Worth Noting
+
+- **Default-layout export stays command-palette-only.** It's a developer affordance for shipping a new bundled layout, not a user setting; including it in the Office panel would muddy "settings = preferences."
+- **Sidebar icons**: Lucide line icons (BSD-licensed, single stroke weight, fits the brutalist line-drawing feel). Exact icons per category get picked during implementation; not blocking.
