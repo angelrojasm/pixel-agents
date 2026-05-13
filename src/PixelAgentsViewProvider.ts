@@ -282,6 +282,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.pixelAgentsServer.onHookEvent((providerId, event) => {
       this.hookEventHandler?.handleEvent(providerId, event as HookEvent);
     });
+    this.pixelAgentsServer.onHealthChange((state) => {
+      this.broadcastSink.postMessage({
+        type: 'hookHealthChanged',
+        status: state.status,
+        reason: state.reason,
+        since: state.since,
+      });
+    });
 
     this.pixelAgentsServer
       .start()

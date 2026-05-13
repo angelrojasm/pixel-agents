@@ -6,10 +6,12 @@ import * as path from 'path';
 
 import {
   HOOK_API_PREFIX,
+  HOOK_HEARTBEAT_INTERVAL_MS,
   MAX_HOOK_BODY_SIZE,
   SERVER_JSON_DIR,
   SERVER_JSON_NAME,
 } from './constants.js';
+import { HealthMonitor, type HealthState } from './healthMonitor.js';
 
 /** Discovery file written to ~/.pixel-agents/server.json so hook scripts can find the server. */
 export interface ServerConfig {
@@ -45,10 +47,18 @@ export class PixelAgentsServer {
   private ownsServer = false;
   private callback: HookEventCallback | null = null;
   private startTime = Date.now();
+  private healthMonitor: HealthMonitor | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private healthListener: ((state: HealthState) => void) | null = null;
 
   /** Register a callback for incoming hook events from any provider. */
   onHookEvent(callback: HookEventCallback): void {
     this.callback = callback;
+  }
+
+  /** Register a listener that fires on every hook-health state change. */
+  onHealthChange(cb: (state: HealthState) => void): void {
+    this.healthListener = cb;
   }
 
   /**
@@ -72,6 +82,12 @@ export class PixelAgentsServer {
     // Start our own server
     const token = crypto.randomUUID();
     this.startTime = Date.now();
+    this.healthMonitor = new HealthMonitor({
+      onChange: (s) => this.healthListener?.(s),
+    });
+    this.heartbeatTimer = setInterval(() => {
+      this.healthMonitor?.tick();
+    }, HOOK_HEARTBEAT_INTERVAL_MS);
 
     return new Promise((resolve, reject) => {
       this.server = http.createServer((req, res) => {
@@ -116,6 +132,13 @@ export class PixelAgentsServer {
     if (this.ownsServer) {
       this.deleteServerJson();
     }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.healthMonitor?.dispose();
+    this.healthMonitor = null;
+    this.healthListener = null;
     this.config = null;
     this.ownsServer = false;
   }
@@ -168,6 +191,8 @@ export class PixelAgentsServer {
       res.end('unauthorized');
       return;
     }
+
+    this.healthMonitor?.heartbeat();
 
     // Extract and validate provider ID from URL: /api/hooks/claude -> "claude"
     const providerId = url.slice(HOOK_API_PREFIX.length + 1);
