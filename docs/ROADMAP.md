@@ -76,17 +76,22 @@ Resolved UX questions:
 - Multiple agents: the panel shows ONE focused terminal at a time; the rail/header lets the user pick which.
 - Copy/paste: deferred — relies on xterm.js defaults for now.
 
+Terminal QoL bundle (2026-05-13, same branch):
+
+- **WebLinksAddon** wired to an `openExternal` outbound message → `vscode.env.openExternal()` in the provider; Phase-3-safe via `isBrowserRuntime` fallback in `webLinkHandler.ts`.
+- **SearchAddon** + `useTerminalSearch` hook (pure reducer, unit-tested) + `TerminalSearchBar` overlay using the visual-chrome tokens. Cmd/Ctrl+F opens, Enter / Shift+Enter navigate, Esc closes. Custom-key handler in `TerminalPane` intercepts only Cmd/Ctrl+F and Esc-when-open so xterm passthrough is preserved.
+- `onDidChangeResults` lives on `TerminalPane` (not inside the hook) to avoid double-subscription churn; `resultIndex === -1` is mapped to `currentMatch=0`.
+
 Still open:
 
-- Terminal QoL: copy/paste polish, link handling, scrollback search, focus behavior, keybinding conflicts with the panel chrome.
 - **Terminal ↔ character interaction layer**: pty activity drives character animation/bubbles, click-character-focuses-pty, sub-agent/teammate representation when the parent is pty-backed, hook-error surfacing in the panel vs. character overlay.
 
 **Recommended sequence (decided 2026-05-13)**
 
 1. ~~**Visual chrome**~~ — **shipped 2026-05-13** (8 commits on `2026-05-12-terminal-polish`). Established pixel-art tokens (borders, accent strip, focus state, scrollbar) for the next two bundles.
-2. **Terminal QoL** — next. Mechanical xterm-addon work (search, links, copy/paste polish). Uses the new chrome for any visible UI (e.g. styled search bar). Independent of character-interaction.
-3. **Terminal ↔ character interaction** — third. Largest scope, most design decisions, biggest visual payoff. Sits on top of a fully-styled, fully-featured terminal so new bubbles / typing indicators can match the established aesthetic. Doing this last gives us the most context for the design choices.
-4. **Settings menu redesign** — last. By then there will be ~2–4 new settings from the Phase 2 bundles to migrate in one pass. Orthogonal to Phase 2 progress, so doing it last doesn't slow Phase 2. _Caveat_: promote to next-up if the existing flat-scroll modal gets visibly painful before then.
+2. ~~**Terminal QoL**~~ — **shipped 2026-05-13** (9 commits on `2026-05-12-terminal-polish`). Search bar, web links, focus return on close. Manual copy/paste QA folded into the Phase 2 final QA pass.
+3. **Terminal ↔ character interaction** — next. Largest scope, most design decisions, biggest visual payoff. Sits on top of a fully-styled, fully-featured terminal so new bubbles / typing indicators can match the established aesthetic.
+4. **Settings menu redesign** — last. By then there will be ~2–4 new settings from the Phase 2 bundles to migrate in one pass.
 
 Rationale: doing chrome before character-interaction prevents rework on bubbles/indicators that would otherwise be designed against un-styled chrome. Doing settings last lets it absorb a known set of new settings in one migration instead of evolving the modal continuously.
 
