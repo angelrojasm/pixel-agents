@@ -61,6 +61,15 @@ Polish bundle (2026-05-12, branch `2026-05-12-terminal-polish`):
 - **0.5 zoom increments** — `ZOOM_STEPS` array drives both `+/-` buttons and Ctrl+scroll.
 - **Terminal font customization** — family / size / line-height surfaced in Settings; system-installed mono fonts (Menlo, SF Mono, Monaco, Cascadia Mono, Consolas, Courier New, generic monospace). No fonts bundled.
 
+Visual chrome bundle (2026-05-13, same branch):
+
+- **Pixel border on the terminal pane** — 2px `PANEL_BORDER` on left/right/bottom of the xterm wrapper; inner padding tightened 4→2 to match the project's pixel-art density.
+- **Focused-agent identity strip in the header** — fills the full header thickness (`height: 100%` + `margin: '-4px 0'` in horizontal mode to absorb the outer padding), `PANEL_BG_CELL` background, accent text, 2px `PANEL_ACCENT` underline in bottom mode flush with the header/terminal boundary.
+- **Tab-style focus state on rail cells** — `AgentCell` gains required `panelPosition` + `focusDropEdge` helper; focused cell drops the border on the edge facing the canvas (top for bottom rail, right/left for side rail).
+- **Hover affordances** — `.panel-cell-hover` (80ms bg fade) on every agent cell, `.panel-icon-hover` (80ms color fade) on the panel + rail `[hide]` buttons.
+- **Pixel-art scrollbar** — `.pixel-scrollbar` utility (paired with a global `.xterm-viewport` selector) gives the rail overflow, the tab-strip overflow, and the xterm scrollback viewport a unified 8px sharp-cornered thumb.
+- **Splitter grip indicator** — 12×2 px centered bar fades in on hover (120ms) so the drag handle is discoverable without claiming permanent visual weight.
+
 Resolved UX questions:
 
 - Terminal anchors in the panel band (a drawer, user-resizable, user-positioned bottom/left/right). Not a per-character overlay.
@@ -69,14 +78,13 @@ Resolved UX questions:
 
 Still open:
 
-- Terminal pane visual chrome (pixel-art borders, colors, tab/header).
 - Terminal QoL: copy/paste polish, link handling, scrollback search, focus behavior, keybinding conflicts with the panel chrome.
 - **Terminal ↔ character interaction layer**: pty activity drives character animation/bubbles, click-character-focuses-pty, sub-agent/teammate representation when the parent is pty-backed, hook-error surfacing in the panel vs. character overlay.
 
 **Recommended sequence (decided 2026-05-13)**
 
-1. **Visual chrome** — first. Establishes pixel-art tokens (borders, accent strip, focus state, scrollbar) that the next two bundles consume. Smallest scope, quickest visible win, lowest risk. Touches `TerminalPane.tsx`, `PanelHeader.tsx`, and CSS only.
-2. **Terminal QoL** — second. Mechanical xterm-addon work (search, links, copy/paste polish). Uses the new chrome for any visible UI (e.g. styled search bar). Independent of character-interaction.
+1. ~~**Visual chrome**~~ — **shipped 2026-05-13** (8 commits on `2026-05-12-terminal-polish`). Established pixel-art tokens (borders, accent strip, focus state, scrollbar) for the next two bundles.
+2. **Terminal QoL** — next. Mechanical xterm-addon work (search, links, copy/paste polish). Uses the new chrome for any visible UI (e.g. styled search bar). Independent of character-interaction.
 3. **Terminal ↔ character interaction** — third. Largest scope, most design decisions, biggest visual payoff. Sits on top of a fully-styled, fully-featured terminal so new bubbles / typing indicators can match the established aesthetic. Doing this last gives us the most context for the design choices.
 4. **Settings menu redesign** — last. By then there will be ~2–4 new settings from the Phase 2 bundles to migrate in one pass. Orthogonal to Phase 2 progress, so doing it last doesn't slow Phase 2. _Caveat_: promote to next-up if the existing flat-scroll modal gets visibly painful before then.
 
