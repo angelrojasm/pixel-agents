@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-21
 **Status:** Approved design. Precedes Phase 2 implementation plan.
-**Parent:** [`2026-04-21-remote-office-vision.md`](./2026-04-21-remote-office-vision.md)
+**Parent:** [`docs/ROADMAP.md`](../../ROADMAP.md) (formerly `2026-04-21-remote-office-vision.md`)
 
 ## Purpose
 

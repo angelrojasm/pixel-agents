@@ -10,7 +10,7 @@
 
 **Parent specs:**
 
-- `docs/superpowers/specs/2026-04-21-remote-office-vision.md` — Phase 3 architectural intent (transport-agnostic everywhere).
+- `docs/ROADMAP.md` — Phase 3 architectural intent (transport-agnostic everywhere). (Formerly `docs/superpowers/specs/2026-04-21-remote-office-vision.md`.)
 - `docs/superpowers/specs/2026-04-21-phase-2-drawer-ux-design.md` — drawer + panel UX, "Replace `TerminalPaneStub` with a real `TerminalPane`" is in Implementation Order step 2 (D1 + D2 prereqs were the last plan).
 
 ---

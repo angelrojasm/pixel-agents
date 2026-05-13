@@ -5,7 +5,7 @@
 **Parents:**
 
 - [Phase 2 Drawer UX](./2026-04-21-phase-2-drawer-ux-design.md) — reopens decision #3
-- [Remote-Office Vision](./2026-04-21-remote-office-vision.md) — Phase-3 alignment
+- [Roadmap](../../ROADMAP.md) — Phase-3 alignment (formerly `2026-04-21-remote-office-vision.md`)
 
 ## Purpose
 

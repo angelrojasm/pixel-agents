@@ -206,26 +206,13 @@ Toggle via "Layout" button. Tools: SELECT (default), Floor paint, Wall paint, Er
 - **Mutating `OfficeState.characters` needs a React signal**: name fields (`customTitle`, `agentName`, `terminalName`) are mutated imperatively on the character object, but `PanelHeader` and `ToolOverlay` are React components that consume them via `agentSummaries`. Bump `agentRenameSeq` (in `useExtensionMessages.ts`) after any such mutation; the seq is in the `agentSummaries` useMemo deps, so the bump forces a re-derive. Applies to `agentRenamed`, `agentTeamInfo`, and `agentTerminalNameChanged` handlers
 - **`customTitle` doesn't ride in the `existingAgents` payload** — it's replayed via a follow-up `agentRenamed` emission for each restored agent inside `sendCurrentAgentStatuses` (`src/agentManager.ts`). Mirrors how `agentTeamInfo` is replayed for restored teams. Without this, renamed agents lose their labels across reload even though `customTitle` is persisted in `workspaceState`
 
-## Phased Roadmap
+## Roadmap
 
-The extension is on a path to become a **standalone, optionally-remote pixel-agent office**. Design decisions should keep compatibility with this trajectory — especially around message routing (`MessageSink`), persistence surfaces (webview-driven, not VS Code-setting-bound), and server boundaries.
+**Canonical location:** [`docs/ROADMAP.md`](docs/ROADMAP.md) — phase status, sequencing decisions, queued ideas, and Phase-3 architectural principles all live there. Update it (not this file) when phase state changes.
 
-**Phase 1 — Shipped**: Full-screen office tab (`pixel-agents.openFullScreen` command + side-panel toolbar button). Multi-webview broadcast via `MessageSink`. Side-panel and full-screen-panel coexist and stay in sync. User-controlled default terminal folder lives in the in-app Settings modal (not VS Code settings) so Phase 3 inherits it unchanged.
+**Current phase:** 2 — terminal inside the office. Foundations (D1 + D2 in vsix 1.3.0) and the 2026-05-12 polish bundle (rename / splitter / 0.5 zoom / terminal-font customization) shipped. Remaining Phase 2 work follows the sequence in `docs/ROADMAP.md` § Phase 2 — Recommended sequence: visual chrome → terminal QoL → terminal ↔ character interaction → settings menu redesign last.
 
-**Phase 2 — In progress**: Click an agent → terminal renders **inside the office** (xterm.js in the webview) instead of in VS Code's terminal strip. Extension spawns Claude via `node-pty` on the host, bridging stdin/stdout over `postMessage`. Gated by the in-app `usePtyTerminal` toggle (default off).
-
-- **Foundations shipped (vsix 1.3.0)**: D1 (`MessageSource` inbound abstraction) and D2 (`node-pty` backend + xterm.js pane in `TerminalPane.tsx`).
-- **Polish bundle shipped (2026-05-12)**: agent auto-rename from Claude's `/rename` (parses `custom-title` JSONL records; reload-safe via restore-time replay of `agentRenamed`); draggable panel-band splitter (`Splitter.tsx` + `userBandSizePx` on `PanelPersistedState`, clamped in `computePanelBand`); 0.5 zoom increments via `ZOOM_STEPS` (button + scroll wheel both use it); terminal font customization (family / size / line-height) via the existing Settings modal — system-installed fonts only (Menlo, SF Mono, Monaco, Cascadia Mono, Consolas, Courier New, generic monospace). No fonts bundled.
-- **Phase 2 follow-ups (rolling set, not one big plan)**: terminal pane visual chrome to match the pixel-art aesthetic (colors, borders, tab/header treatment); terminal QoL not yet done (copy/paste, link handling, scrollback search, focus behavior, keybinding conflicts with panel chrome); **terminal ↔ character interaction layer** (clicking the character focuses the pty, pty activity drives character animation/bubbles, sub-agent/teammate representation when the parent is pty-backed, hook-error surfacing in the panel vs. character overlay).
-- **Drafted but not executed**: settings menu redesign (spec + plan at `docs/superpowers/specs/2026-05-12-settings-redesign-design.md` and `docs/superpowers/plans/2026-05-12-settings-redesign.md`). Orthogonal to Phase 2 — a UI restructure into paneled categories that becomes increasingly load-bearing as Phase 2 adds more knobs (`DEFAULT_SETTINGS` constant is the planned single source of truth).
-
-**Phase 3 — Future**: The extension becomes optional. A daemon + relay pattern lets a web SPA connect remotely to a local daemon that still runs Claude with the user's auth (VS Code Tunnels / tmate-style). Eventually, if auth/TOS allows, a hosted shell option removes the laptop-on requirement. All extension↔webview messages already flow through `MessageSink`, making the WebSocket replacement straightforward.
-
-**Queued feature ideas** (not yet scoped):
-
-- Preselected agents / bookmarks: per-profile `{ name, cwd, resumeSessionId? }`. Click → terminal in that cwd running `claude --resume <id>` or `--session-id <uuid>`.
-- Multi-office layout: one "big house" with named rooms, or a toggle between separate offices (work / personal). Shapes the layout schema — defer until Phase 2 is concrete.
-- Terminal-auto-close investigation: the whole VS Code terminal sometimes closes after idle. Not caused by the extension; likely Claude CLI or VS Code shell-exit behavior. Revisit if it recurs with logs.
+**Design compatibility note (still load-bearing for new work):** Keep the WebSocket replacement straightforward. Messages flow through `MessageSink` (outbound) and `MessageSource` (inbound). Persistence is webview-driven, not VS Code-setting-bound. Server boundaries stay clean — Phase 3 daemon + relay must slot in by swapping transports, not refactoring the protocol.
 
 ## Build & Dev
 

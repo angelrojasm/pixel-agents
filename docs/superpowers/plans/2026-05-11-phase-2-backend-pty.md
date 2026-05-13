@@ -10,7 +10,7 @@
 
 **Parent specs:**
 
-- `docs/superpowers/specs/2026-04-21-remote-office-vision.md` (Phase-3 trajectory, principle #5 = `MessageSource`)
+- `docs/ROADMAP.md` (Phase-3 trajectory, principle #5 = `MessageSource`). Formerly `docs/superpowers/specs/2026-04-21-remote-office-vision.md`.
 - `docs/superpowers/specs/2026-04-21-phase-2-drawer-ux-design.md` (D1 + D2 listed as out-of-scope dependencies)
 
 ---

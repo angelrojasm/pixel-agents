@@ -1,7 +1,7 @@
-# Remote-Office Vision — Phased Spec
+# Pixel Agents — Roadmap
 
-**Date:** 2026-04-21
-**Status:** Living document. Phase 1 shipped; Phases 2–3 are directional.
+**Status:** Living document — canonical place for phase status, sequencing, and queued ideas. Update this file (not CLAUDE.md) whenever phase state changes.
+**Origin:** Formerly `docs/superpowers/specs/2026-04-21-remote-office-vision.md`. Renamed and promoted to repo root on 2026-05-13 to be the single source of truth for the roadmap.
 
 ## The Vision
 
@@ -72,6 +72,15 @@ Still open:
 - Terminal pane visual chrome (pixel-art borders, colors, tab/header).
 - Terminal QoL: copy/paste polish, link handling, scrollback search, focus behavior, keybinding conflicts with the panel chrome.
 - **Terminal ↔ character interaction layer**: pty activity drives character animation/bubbles, click-character-focuses-pty, sub-agent/teammate representation when the parent is pty-backed, hook-error surfacing in the panel vs. character overlay.
+
+**Recommended sequence (decided 2026-05-13)**
+
+1. **Visual chrome** — first. Establishes pixel-art tokens (borders, accent strip, focus state, scrollbar) that the next two bundles consume. Smallest scope, quickest visible win, lowest risk. Touches `TerminalPane.tsx`, `PanelHeader.tsx`, and CSS only.
+2. **Terminal QoL** — second. Mechanical xterm-addon work (search, links, copy/paste polish). Uses the new chrome for any visible UI (e.g. styled search bar). Independent of character-interaction.
+3. **Terminal ↔ character interaction** — third. Largest scope, most design decisions, biggest visual payoff. Sits on top of a fully-styled, fully-featured terminal so new bubbles / typing indicators can match the established aesthetic. Doing this last gives us the most context for the design choices.
+4. **Settings menu redesign** — last. By then there will be ~2–4 new settings from the Phase 2 bundles to migrate in one pass. Orthogonal to Phase 2 progress, so doing it last doesn't slow Phase 2. _Caveat_: promote to next-up if the existing flat-scroll modal gets visibly painful before then.
+
+Rationale: doing chrome before character-interaction prevents rework on bubbles/indicators that would otherwise be designed against un-styled chrome. Doing settings last lets it absorb a known set of new settings in one migration instead of evolving the modal continuously.
 
 **Known risks**
 
