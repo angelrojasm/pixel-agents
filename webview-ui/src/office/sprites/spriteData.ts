@@ -1,6 +1,7 @@
 import type { ColorValue } from '../../components/ui/types.js';
-import { PALETTE_COUNT } from '../../constants.js';
+import { CRASHED_DESATURATION_PCT, PALETTE_COUNT } from '../../constants.js';
 import { adjustSprite } from '../colorize.js';
+import { desaturateCharacterSprites } from '../engine/desaturateSprites.js';
 import type { Direction, SpriteData } from '../types.js';
 import { Direction as Dir } from '../types.js';
 import bubbleAwaitingUserData from './bubble-awaiting-user.json';
@@ -118,15 +119,18 @@ function emptySprite(w: number, h: number): SpriteData {
   return rows;
 }
 
-export function getCharacterSprites(paletteIndex: number, hueShift = 0): CharacterSprites {
-  const cacheKey = `${paletteIndex}:${hueShift}`;
+export function getCharacterSprites(
+  paletteIndex: number,
+  hueShift = 0,
+  crashed = false,
+): CharacterSprites {
+  const cacheKey = `${paletteIndex}:${hueShift}${crashed ? ':crashed' : ''}`;
   const cached = spriteCache.get(cacheKey);
   if (cached) return cached;
 
   let sprites: CharacterSprites;
 
   if (loadedCharacters) {
-    // Use pre-colored character sprites directly (no palette swapping)
     const char = loadedCharacters[paletteIndex % loadedCharacters.length];
     const d = char.down;
     const u = char.up;
@@ -154,7 +158,6 @@ export function getCharacterSprites(paletteIndex: number, hueShift = 0): Charact
       },
     };
   } else {
-    // Fallback: return transparent placeholder sprites (16×32)
     const e = emptySprite(16, 32);
     const walkSet: [SpriteData, SpriteData, SpriteData, SpriteData] = [e, e, e, e];
     const pairSet: [SpriteData, SpriteData] = [e, e];
@@ -180,9 +183,11 @@ export function getCharacterSprites(paletteIndex: number, hueShift = 0): Charact
     };
   }
 
-  // Apply hue shift if non-zero
   if (hueShift !== 0) {
     sprites = hueShiftSprites(sprites, hueShift);
+  }
+  if (crashed) {
+    sprites = desaturateCharacterSprites(sprites, CRASHED_DESATURATION_PCT);
   }
 
   spriteCache.set(cacheKey, sprites);
