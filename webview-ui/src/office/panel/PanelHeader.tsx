@@ -81,6 +81,7 @@ export function PanelHeader({
         </div>
       )}
       <div
+        className="pixel-scrollbar"
         style={{
           display: 'flex',
           flexDirection: horizontal ? 'row' : 'column',
