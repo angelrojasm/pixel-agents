@@ -2,9 +2,9 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { PANEL_BG_CHROME, PANEL_BORDER } from '../../constants.js';
+import { PANEL_BG_CHROME, PANEL_BORDER, PANEL_MUTED } from '../../constants.js';
 import { vscode } from '../../vscodeApi.js';
 import type { PtyEventBus } from './ptyEventBus.js';
 import { TerminalSearchBar } from './TerminalSearchBar.js';
@@ -30,12 +30,12 @@ export function TerminalPane({
   bus,
   onRestartAgent,
 }: TerminalPaneProps) {
-  // Consumed in Task 12 (restart button). Held here so OfficePanel can pass it through.
-  void onRestartAgent;
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
+
+  const [exitInfo, setExitInfo] = useState<{ code: number; signal?: string } | null>(null);
 
   const search = useTerminalSearch(searchRef);
   const searchHookRef = useRef(search);
@@ -112,6 +112,7 @@ export function TerminalPane({
         ? `\r\n[pty exited: signal ${signal}]\r\n`
         : `\r\n[pty exited: code ${code}]\r\n`;
       term.write(msg);
+      setExitInfo({ code, signal });
     });
     const scrollbackSub = bus.subscribe(agentId, 'ptyScrollback', (lines) => {
       for (const line of lines) term.write(line);
@@ -196,6 +197,11 @@ export function TerminalPane({
     vscode.postMessage({ type: 'ptyResize', agentId, cols, rows });
   }, [agentId, fontFamily, lineHeight]);
 
+  // Reset exit state when switching agents.
+  useEffect(() => {
+    setExitInfo(null);
+  }, [agentId]);
+
   return (
     <div
       style={{
@@ -211,6 +217,36 @@ export function TerminalPane({
       aria-label={agentName ? `Terminal for ${agentName}` : 'Terminal'}
     >
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      {exitInfo && (
+        <button
+          type="button"
+          onClick={() => {
+            setExitInfo(null);
+            onRestartAgent(agentId);
+          }}
+          className="panel-icon-hover"
+          style={{
+            position: 'absolute',
+            top: 4,
+            left: 4,
+            background: PANEL_BG_CHROME,
+            border: `1px solid ${PANEL_BORDER}`,
+            color: PANEL_MUTED,
+            fontSize: 10,
+            cursor: 'pointer',
+            padding: '2px 8px',
+            zIndex: 5,
+          }}
+          title={
+            exitInfo.signal
+              ? `Restart agent (exited: signal ${exitInfo.signal})`
+              : `Restart agent (exited: code ${exitInfo.code})`
+          }
+          aria-label="Restart agent"
+        >
+          ↻ Restart
+        </button>
+      )}
       {search.state.open && (
         <TerminalSearchBar
           query={search.state.query}
