@@ -65,7 +65,7 @@ export function PanelHeader({
             padding: '0 8px',
             height: '100%',
             background: PANEL_BG_CELL,
-            ...(horizontal ? { borderBottom: `2px solid ${PANEL_ACCENT}` } : {}),
+            ...(horizontal ? { margin: '-4px 0', borderBottom: `2px solid ${PANEL_ACCENT}` } : {}),
           }}
         >
           <span
