@@ -69,7 +69,7 @@ export function TerminalSearchBar({
           }
         }}
         placeholder="find"
-        aria-label="Search terminal"
+        aria-label="Find in terminal"
         style={{
           flex: '1 1 auto',
           minWidth: 0,
