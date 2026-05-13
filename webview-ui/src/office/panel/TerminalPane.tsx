@@ -2,7 +2,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import { useEffect, useRef } from 'react';
 
-import { PANEL_BG_CHROME } from '../../constants.js';
+import { PANEL_BG_CHROME, PANEL_BORDER } from '../../constants.js';
 import { vscode } from '../../vscodeApi.js';
 import type { PtyEventBus } from './ptyEventBus.js';
 
@@ -159,7 +159,10 @@ export function TerminalPane({
         flex: '1 1 auto',
         minHeight: 0,
         background: PANEL_BG_CHROME,
-        padding: 4,
+        padding: 2,
+        borderLeft: `2px solid ${PANEL_BORDER}`,
+        borderRight: `2px solid ${PANEL_BORDER}`,
+        borderBottom: `2px solid ${PANEL_BORDER}`,
       }}
       aria-label={agentName ? `Terminal for ${agentName}` : 'Terminal'}
     >
