@@ -305,6 +305,9 @@ function App() {
           onZoomChange={editor.handleZoomChange}
           panRef={editor.panRef}
           focusedAgentId={panel.state.focusedAgentId}
+          agentIds={agents}
+          onFocusAgent={handleClick}
+          onTogglePanel={panel.toggleRailHidden}
         />
 
         {!isDebugMode ? (

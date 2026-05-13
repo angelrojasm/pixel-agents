@@ -39,6 +39,9 @@ interface OfficeCanvasProps {
   onZoomChange: (zoom: number) => void;
   panRef: React.MutableRefObject<{ x: number; y: number }>;
   focusedAgentId: number | null;
+  agentIds: number[];
+  onFocusAgent: (id: number) => void;
+  onTogglePanel: () => void;
 }
 
 export function OfficeCanvas({
@@ -57,6 +60,9 @@ export function OfficeCanvas({
   onZoomChange,
   panRef,
   focusedAgentId,
+  agentIds,
+  onFocusAgent,
+  onTogglePanel,
 }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -820,6 +826,32 @@ export function OfficeCanvas({
   const handleAuxClick = useCallback((e: React.MouseEvent) => {
     if (e.button === 1) e.preventDefault();
   }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Bail if xterm or any text input has focus.
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.closest('.xterm'))) {
+        return;
+      }
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key >= '1' && e.key <= '9') {
+        const n = parseInt(e.key, 10) - 1;
+        const id = agentIds[n];
+        if (id !== undefined) {
+          e.preventDefault();
+          onFocusAgent(id);
+        }
+        return;
+      }
+      if (e.key === "'") {
+        e.preventDefault();
+        onTogglePanel();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [agentIds, onFocusAgent, onTogglePanel]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative overflow-hidden bg-bg">
