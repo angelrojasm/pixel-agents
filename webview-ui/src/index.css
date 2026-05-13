@@ -115,6 +115,57 @@
   .pixel-pulse {
     animation: pixel-pulse 1.5s ease-in-out infinite;
   }
+
+  /* Pixel-art scrollbar — applied to panel overflow regions and xterm's DOM viewport */
+  .pixel-scrollbar,
+  .xterm-viewport {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+  .pixel-scrollbar::-webkit-scrollbar,
+  .xterm-viewport::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .pixel-scrollbar::-webkit-scrollbar-track,
+  .xterm-viewport::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .pixel-scrollbar::-webkit-scrollbar-thumb,
+  .xterm-viewport::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 0;
+  }
+  .pixel-scrollbar::-webkit-scrollbar-thumb:hover,
+  .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background: var(--color-accent);
+  }
+
+  /* Hover affordances for panel chrome */
+  .panel-cell-hover {
+    transition: background-color 80ms ease-out;
+  }
+  .panel-cell-hover:hover {
+    background-color: var(--color-btn-hover) !important;
+  }
+
+  .panel-icon-hover {
+    transition: color 80ms ease-out;
+  }
+  .panel-icon-hover:hover {
+    color: var(--color-text) !important;
+  }
+
+  /* Splitter grip indicator — hidden until hover */
+  .panel-splitter span {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+  .panel-splitter:hover span {
+    opacity: 1;
+  }
 }
 
 @keyframes pixel-pulse {
