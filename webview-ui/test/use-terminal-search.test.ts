@@ -52,3 +52,9 @@ test('setQuery with empty string zeroes counters', () => {
   assert.equal(next.currentMatch, 0);
   assert.equal(next.totalMatches, 0);
 });
+
+test('setResults with resultIndex -1 maps to currentMatch 0', () => {
+  const next = reduce(initial, { type: 'setResults', currentMatch: 0, totalMatches: 0 });
+  assert.equal(next.currentMatch, 0);
+  assert.equal(next.totalMatches, 0);
+});

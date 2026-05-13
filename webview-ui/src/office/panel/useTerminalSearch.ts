@@ -1,5 +1,5 @@
 import type { SearchAddon } from '@xterm/addon-search';
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useReducer, useRef } from 'react';
 
 export interface SearchState {
   open: boolean;
@@ -44,6 +44,7 @@ export interface UseTerminalSearchResult {
   setQuery: (q: string) => void;
   next: () => void;
   previous: () => void;
+  setResultsFromAddon: (resultIndex: number, resultCount: number) => void;
 }
 
 /**
@@ -58,20 +59,6 @@ export function useTerminalSearch(
   const [state, dispatch] = useReducer(searchReducer, INITIAL);
   const stateRef = useRef(state);
   stateRef.current = state;
-
-  // Subscribe to addon result events to update counters.
-  useEffect(() => {
-    const addon = searchAddonRef.current;
-    if (!addon) return;
-    const sub = addon.onDidChangeResults((e) => {
-      dispatch({
-        type: 'setResults',
-        currentMatch: e.resultIndex >= 0 ? e.resultIndex + 1 : 0,
-        totalMatches: e.resultCount,
-      });
-    });
-    return () => sub.dispose();
-  }, [searchAddonRef]);
 
   const open = useCallback(() => dispatch({ type: 'open' }), []);
   const close = useCallback(() => {
@@ -104,5 +91,13 @@ export function useTerminalSearch(
     if (addon && stateRef.current.query) addon.findPrevious(stateRef.current.query);
   }, [searchAddonRef]);
 
-  return { state, open, close, setQuery, next, previous };
+  const setResultsFromAddon = useCallback((resultIndex: number, resultCount: number) => {
+    dispatch({
+      type: 'setResults',
+      currentMatch: resultIndex >= 0 ? resultIndex + 1 : 0,
+      totalMatches: resultCount,
+    });
+  }, []);
+
+  return { state, open, close, setQuery, next, previous, setResultsFromAddon };
 }

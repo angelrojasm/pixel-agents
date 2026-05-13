@@ -67,6 +67,12 @@ export function TerminalPane({
     fitRef.current = fit;
     searchRef.current = searchAddon;
 
+    // Subscribe to addon's search-result events; dispatch through the live hook
+    // (via the ref) to avoid stale-closure issues.
+    const resultsSub = searchAddon.onDidChangeResults((e) => {
+      searchHookRef.current.setResultsFromAddon(e.resultIndex, e.resultCount);
+    });
+
     term.attachCustomKeyEventHandler((event) => {
       const s = searchHookRef.current;
       // Cmd/Ctrl+F: open search bar (block xterm).
@@ -136,6 +142,7 @@ export function TerminalPane({
     vscode.postMessage({ type: 'terminalPaneReady', agentId });
 
     return () => {
+      resultsSub.dispose();
       dataSub.dispose();
       exitSub.dispose();
       scrollbackSub.dispose();
