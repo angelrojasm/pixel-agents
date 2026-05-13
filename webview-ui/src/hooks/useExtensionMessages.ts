@@ -11,6 +11,7 @@ import { extractToolName } from '../office/toolUtils.js';
 import type { OfficeLayout, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
 import { vscode } from '../vscodeApi.js';
+import { applyCrashAction, crashInitialState, type CrashState } from './crashReducer.js';
 
 export interface SubagentCharacter {
   id: number;
@@ -79,6 +80,10 @@ interface ExtensionMessageState {
   ptyEventBus: PtyEventBus;
   ptyBackedByAgent: Record<number, boolean>;
   agentRenameSeq: number;
+  crashState: CrashState;
+  hookHealth: { status: 'ok' | 'degraded' | 'down'; reason?: string };
+  acknowledgeCrash: (agentId: number) => void;
+  restartAgent: (agentId: number) => void;
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -126,6 +131,27 @@ export function useExtensionMessages(
   const [terminalLineHeight, setTerminalLineHeightState] = useState(1.0);
   const [ptyBackedByAgent, setPtyBackedByAgent] = useState<Record<number, boolean>>({});
   const [agentRenameSeq, setAgentRenameSeq] = useState(0);
+  const [crashState, setCrashState] = useState<CrashState>(crashInitialState);
+  const [hookHealth, setHookHealth] = useState<{
+    status: 'ok' | 'degraded' | 'down';
+    reason?: string;
+  }>({
+    status: 'ok',
+  });
+
+  const acknowledgeCrash = useCallback(
+    (agentId: number) => {
+      const os = getOfficeState();
+      os.acknowledgeCrash(agentId);
+      setCrashState((prev) => applyCrashAction(prev, { type: 'crashAcknowledged', agentId }));
+      vscode.postMessage({ type: 'acknowledgeCrash', agentId });
+    },
+    [getOfficeState],
+  );
+
+  const restartAgent = useCallback((agentId: number) => {
+    vscode.postMessage({ type: 'restartAgent', agentId });
+  }, []);
 
   const setDefaultCwd = (v: string): void => {
     setDefaultCwdState(v);
@@ -261,6 +287,7 @@ export function useExtensionMessages(
         os.removeAllSubagents(id);
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id));
         os.removeAgent(id);
+        setCrashState((prev) => applyCrashAction(prev, { type: 'agentClosed', agentId: id }));
       } else if (msg.type === 'agentTerminalNameChanged') {
         const id = msg.id as number;
         const terminalName = msg.terminalName as string;
@@ -618,6 +645,30 @@ export function useExtensionMessages(
         const id = msg.agentId as number;
         const lines = Array.isArray(msg.lines) ? (msg.lines as string[]) : [];
         ptyEventBusRef.current.emitScrollback(id, lines);
+      } else if (msg.type === 'agentCrashed') {
+        const agentId = msg.agentId as number;
+        const code = typeof msg.code === 'number' ? msg.code : 0;
+        const signal = typeof msg.signal === 'string' ? (msg.signal as string) : undefined;
+        // Drop if the agent has already been closed in the webview.
+        if (!os.characters.has(agentId)) return;
+        os.setAgentCrashed(agentId, true);
+        setCrashState((prev) =>
+          applyCrashAction(prev, { type: 'agentCrashed', agentId, code, signal }),
+        );
+      } else if (msg.type === 'crashAcknowledged') {
+        const agentId = msg.agentId as number;
+        os.acknowledgeCrash(agentId);
+        setCrashState((prev) => applyCrashAction(prev, { type: 'crashAcknowledged', agentId }));
+      } else if (msg.type === 'agentRestarted') {
+        const agentId = msg.agentId as number;
+        os.setAgentCrashed(agentId, false);
+        setCrashState((prev) => applyCrashAction(prev, { type: 'agentRestarted', agentId }));
+      } else if (msg.type === 'hookHealthChanged') {
+        const status = msg.status as 'ok' | 'degraded' | 'down';
+        const reason = typeof msg.reason === 'string' ? (msg.reason as string) : undefined;
+        if (status === 'ok' || status === 'degraded' || status === 'down') {
+          setHookHealth({ status, reason });
+        }
       }
     };
     window.addEventListener('message', handler);
@@ -658,5 +709,9 @@ export function useExtensionMessages(
     ptyEventBus: ptyEventBusRef.current,
     ptyBackedByAgent,
     agentRenameSeq,
+    crashState,
+    hookHealth,
+    acknowledgeCrash,
+    restartAgent,
   };
 }
