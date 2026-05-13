@@ -105,6 +105,9 @@ export function createCharacter(
     matrixEffect: null,
     matrixEffectTimer: 0,
     matrixEffectSeeds: [],
+    ptyActivityUntil: 0,
+    crashed: false,
+    crashedAcknowledged: false,
     inputTokens: 0,
     outputTokens: 0,
   };

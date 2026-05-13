@@ -206,6 +206,16 @@ export interface Character {
   leadAgentId?: number;
   /** True when lead spawns teammates via tmux (run_in_background Agent calls) */
   teamUsesTmux?: boolean;
+  /** ms-since-epoch timestamp until which the character is considered "actively
+   *  typing" because the focused pty emitted bytes recently. 0 means inactive.
+   *  Bumped by useCharacterPtyActivity; read by getCharacterSprite via FSM. */
+  ptyActivityUntil: number;
+  /** True when this agent's pty exited with non-zero code; flips off on restart
+   *  or on user acknowledgement. Drives desaturation + glyph in the renderer. */
+  crashed: boolean;
+  /** Ephemeral: true once the user clicked the crashed glyph or × to ack. Resets
+   *  on next ptyExit, on webview reload, and on matrixEffect='despawn'. */
+  crashedAcknowledged: boolean;
   /** Cumulative input tokens consumed */
   inputTokens: number;
   /** Cumulative output tokens consumed */
