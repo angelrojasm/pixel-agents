@@ -53,6 +53,7 @@ export function LiteRail({
       }}
     >
       <div
+        className="pixel-scrollbar"
         style={{
           display: 'flex',
           flexDirection: horizontal ? 'row' : 'column',
@@ -76,6 +77,7 @@ export function LiteRail({
       <button
         type="button"
         onClick={onHideRail}
+        className="panel-icon-hover"
         style={{
           background: 'transparent',
           border: 'none',
