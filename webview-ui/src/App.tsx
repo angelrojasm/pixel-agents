@@ -294,6 +294,7 @@ function App() {
           zoom={editor.zoom}
           onZoomChange={editor.handleZoomChange}
           panRef={editor.panRef}
+          focusedAgentId={panel.state.focusedAgentId}
         />
 
         {!isDebugMode ? (

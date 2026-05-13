@@ -11,8 +11,14 @@ import {
   BUTTON_RADIUS_ZOOM_FACTOR,
   CHARACTER_SITTING_OFFSET_PX,
   CHARACTER_Z_SORT_OFFSET,
+  CRASHED_GLYPH_BG,
+  CRASHED_GLYPH_BORDER,
+  CRASHED_GLYPH_OFFSET_X_PX,
+  CRASHED_GLYPH_OFFSET_Y_PX,
+  CRASHED_GLYPH_SIZE_PX,
   DELETE_BUTTON_BG,
   FALLBACK_FLOOR_COLOR,
+  FOCUS_HALO_INSET_PX,
   GHOST_BORDER_HOVER_FILL,
   GHOST_BORDER_HOVER_STROKE,
   GHOST_BORDER_STROKE,
@@ -30,6 +36,9 @@ import {
   SELECTED_OUTLINE_ALPHA,
   SELECTION_DASH_PATTERN,
   SELECTION_HIGHLIGHT_COLOR,
+  SUBAGENT_LINK_COLOR,
+  SUBAGENT_LINK_DASH,
+  SUBAGENT_LINK_WIDTH_PX,
   VOID_TILE_DASH_PATTERN,
   VOID_TILE_OUTLINE_COLOR,
 } from '../../constants.js';
@@ -50,6 +59,7 @@ import type {
 } from '../types.js';
 import { CharacterState, TILE_SIZE, TileType } from '../types.js';
 import { getWallInstances, hasWallSprites, wallColorToHex } from '../wallTiles.js';
+import { getFocusHaloStyle } from './characterHalo.js';
 import { getCharacterSprite } from './characters.js';
 import { renderMatrixEffect } from './matrixEffect.js';
 
@@ -117,8 +127,13 @@ export function renderScene(
   zoom: number,
   selectedAgentId: number | null,
   hoveredAgentId: number | null,
+  focusedAgentId: number | null,
+  isEditMode: boolean,
+  subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }>,
 ): void {
   const drawables: ZDrawable[] = [];
+  const charById = new Map<number, Character>();
+  for (const ch of characters) charById.set(ch.id, ch);
 
   // Furniture
   for (const f of furniture) {
@@ -146,23 +161,45 @@ export function renderScene(
     }
   }
 
+  // Sub-agent → parent dashed lines (only when parent is focused; suppressed in edit mode).
+  if (!isEditMode && focusedAgentId != null) {
+    for (const ch of characters) {
+      if (!ch.isSubagent) continue;
+      const meta = subagentMeta.get(ch.id);
+      if (!meta || meta.parentAgentId !== focusedAgentId) continue;
+      const parent = charById.get(meta.parentAgentId);
+      if (!parent) continue;
+      const sx = Math.round(offsetX + ch.x * zoom);
+      const sy = Math.round(offsetY + ch.y * zoom);
+      const ex = Math.round(offsetX + parent.x * zoom);
+      const ey = Math.round(offsetY + parent.y * zoom);
+      drawables.push({
+        zY: 0, // under everything except floor
+        draw: (c) => {
+          c.save();
+          c.strokeStyle = SUBAGENT_LINK_COLOR;
+          c.lineWidth = SUBAGENT_LINK_WIDTH_PX;
+          c.setLineDash(SUBAGENT_LINK_DASH);
+          c.beginPath();
+          c.moveTo(sx, sy);
+          c.lineTo(ex, ey);
+          c.stroke();
+          c.restore();
+        },
+      });
+    }
+  }
+
   // Characters
   for (const ch of characters) {
-    const sprites = getCharacterSprites(ch.palette, ch.hueShift);
+    const sprites = getCharacterSprites(ch.palette, ch.hueShift, ch.crashed);
     const spriteData = getCharacterSprite(ch, sprites);
     const cached = getCachedSprite(spriteData, zoom);
-    // Sitting offset: shift character down when seated so they visually sit in the chair
     const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
-    // Anchor at bottom-center of character — round to integer device pixels
     const drawX = Math.round(offsetX + ch.x * zoom - cached.width / 2);
     const drawY = Math.round(offsetY + (ch.y + sittingOffset) * zoom - cached.height);
-
-    // Sort characters by bottom of their tile (not center) so they render
-    // in front of same-row furniture (e.g. chairs) but behind furniture
-    // at lower rows (e.g. desks, bookshelves that occlude from below).
     const charZY = ch.y + TILE_SIZE / 2 + CHARACTER_Z_SORT_OFFSET;
 
-    // Matrix spawn/despawn effect — skip outline, use per-pixel rendering
     if (ch.matrixEffect) {
       const mDrawX = drawX;
       const mDrawY = drawY;
@@ -177,17 +214,43 @@ export function renderScene(
       continue;
     }
 
-    // White outline: full opacity for selected, 50% for hover
+    // Focus halo (suppressed in edit mode).
+    if (!isEditMode) {
+      const isFocused = focusedAgentId != null && ch.id === focusedAgentId;
+      const haloStyle = getFocusHaloStyle({
+        isActive: ch.isActive,
+        isFocused,
+        awaitingSince: ch.awaitingSince,
+      });
+      if (haloStyle && !ch.isSubagent) {
+        const tileX = offsetX + ch.tileCol * TILE_SIZE * zoom - FOCUS_HALO_INSET_PX;
+        const tileY = offsetY + ch.tileRow * TILE_SIZE * zoom - FOCUS_HALO_INSET_PX;
+        const tileW = TILE_SIZE * zoom + FOCUS_HALO_INSET_PX * 2;
+        const tileH = TILE_SIZE * zoom + FOCUS_HALO_INSET_PX * 2;
+        drawables.push({
+          zY: charZY - OUTLINE_Z_SORT_OFFSET * 2,
+          draw: (c) => {
+            c.save();
+            c.strokeStyle = haloStyle.color;
+            c.lineWidth = haloStyle.width;
+            c.setLineDash(haloStyle.dash as number[]);
+            c.strokeRect(tileX, tileY, tileW, tileH);
+            c.restore();
+          },
+        });
+      }
+    }
+
     const isSelected = selectedAgentId !== null && ch.id === selectedAgentId;
     const isHovered = hoveredAgentId !== null && ch.id === hoveredAgentId;
     if (isSelected || isHovered) {
       const outlineAlpha = isSelected ? SELECTED_OUTLINE_ALPHA : HOVERED_OUTLINE_ALPHA;
       const outlineData = getOutlineSprite(spriteData);
       const outlineCached = getCachedSprite(outlineData, zoom);
-      const olDrawX = drawX - zoom; // 1 sprite-pixel offset, scaled
-      const olDrawY = drawY - zoom; // outline follows sitting offset via drawY
+      const olDrawX = drawX - zoom;
+      const olDrawY = drawY - zoom;
       drawables.push({
-        zY: charZY - OUTLINE_Z_SORT_OFFSET, // sort just before character
+        zY: charZY - OUTLINE_Z_SORT_OFFSET,
         draw: (c) => {
           c.save();
           c.globalAlpha = outlineAlpha;
@@ -203,14 +266,31 @@ export function renderScene(
         c.drawImage(cached, drawX, drawY);
       },
     });
+
+    // Crashed glyph: drawn AFTER the character sprite (higher zY).
+    if (!isEditMode && ch.crashed && !ch.crashedAcknowledged) {
+      const tileX = offsetX + ch.tileCol * TILE_SIZE * zoom;
+      const tileY = offsetY + ch.tileRow * TILE_SIZE * zoom;
+      const gx = tileX + CRASHED_GLYPH_OFFSET_X_PX * zoom;
+      const gy = tileY + CRASHED_GLYPH_OFFSET_Y_PX * zoom;
+      const gs = CRASHED_GLYPH_SIZE_PX * zoom;
+      drawables.push({
+        zY: charZY + 1,
+        draw: (c) => {
+          c.save();
+          c.fillStyle = CRASHED_GLYPH_BG;
+          c.fillRect(gx, gy, gs, gs);
+          c.strokeStyle = CRASHED_GLYPH_BORDER;
+          c.lineWidth = Math.max(1, Math.floor(zoom * 0.3));
+          c.strokeRect(gx + 0.5, gy + 0.5, gs - 1, gs - 1);
+          c.restore();
+        },
+      });
+    }
   }
 
-  // Sort by Y (lower = in front = drawn later)
   drawables.sort((a, b) => a.zY - b.zY);
-
-  for (const d of drawables) {
-    d.draw(ctx);
-  }
+  for (const d of drawables) d.draw(ctx);
 }
 
 // ── Seat indicators ─────────────────────────────────────────────
@@ -571,9 +651,13 @@ export interface EditorRenderState {
 export interface SelectionRenderState {
   selectedAgentId: number | null;
   hoveredAgentId: number | null;
+  /** Webview-local focused-agent id (panel.focusedAgentId). Drives focus halo. */
+  focusedAgentId: number | null;
   hoveredTile: { col: number; row: number } | null;
   seats: Map<string, Seat>;
   characters: Map<number, Character>;
+  /** Parent→tool lookup so the renderer can draw the sub-agent parent line. */
+  subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }>;
 }
 
 export function renderFrame(
@@ -629,7 +713,19 @@ export function renderFrame(
   // Draw walls + furniture + characters (z-sorted)
   const selectedId = selection?.selectedAgentId ?? null;
   const hoveredId = selection?.hoveredAgentId ?? null;
-  renderScene(ctx, allFurniture, characters, offsetX, offsetY, zoom, selectedId, hoveredId);
+  renderScene(
+    ctx,
+    allFurniture,
+    characters,
+    offsetX,
+    offsetY,
+    zoom,
+    selectedId,
+    hoveredId,
+    selection?.focusedAgentId ?? null,
+    editor != null,
+    selection?.subagentMeta ?? new Map(),
+  );
 
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom);

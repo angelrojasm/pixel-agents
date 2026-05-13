@@ -618,6 +618,33 @@ export class OfficeState {
     }
   }
 
+  /** Set or clear the crash flag on a regular agent. Resets crashedAcknowledged
+   *  to false so a re-crash re-glyphs even if the previous crash was ack'd. */
+  setAgentCrashed(id: number, crashed: boolean): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.crashed = crashed;
+    ch.crashedAcknowledged = false;
+    // Crash also propagates to live sub-agents whose parent is this agent.
+    if (crashed) {
+      for (const [subId, meta] of this.subagentMeta) {
+        if (meta.parentAgentId !== id) continue;
+        const sub = this.characters.get(subId);
+        if (!sub) continue;
+        if (sub.matrixEffect === 'despawn') continue; // no-op for already-despawning
+        sub.crashed = true;
+        sub.crashedAcknowledged = false;
+      }
+    }
+  }
+
+  /** Mark a crashed agent's glyph as acknowledged (hide until next crash). */
+  acknowledgeCrash(id: number): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.crashedAcknowledged = true;
+  }
+
   showPermissionBubble(id: number): void {
     const ch = this.characters.get(id);
     if (ch) {

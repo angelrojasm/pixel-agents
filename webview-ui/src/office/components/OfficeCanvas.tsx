@@ -38,6 +38,7 @@ interface OfficeCanvasProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
   panRef: React.MutableRefObject<{ x: number; y: number }>;
+  focusedAgentId: number | null;
 }
 
 export function OfficeCanvas({
@@ -55,10 +56,14 @@ export function OfficeCanvas({
   zoom,
   onZoomChange,
   panRef,
+  focusedAgentId,
 }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef({ x: 0, y: 0 });
+  // Keep focusedAgentId current inside the game-loop closure without restarting the loop.
+  const focusedAgentIdRef = useRef(focusedAgentId);
+  focusedAgentIdRef.current = focusedAgentId;
   // Middle-mouse pan state (imperative, no re-renders)
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
@@ -246,6 +251,8 @@ export function OfficeCanvas({
         const selectionRender: SelectionRenderState = {
           selectedAgentId: officeState.selectedAgentId,
           hoveredAgentId: officeState.hoveredAgentId,
+          focusedAgentId: focusedAgentIdRef.current,
+          subagentMeta: officeState.subagentMeta,
           hoveredTile: officeState.hoveredTile,
           seats: officeState.seats,
           characters: officeState.characters,
