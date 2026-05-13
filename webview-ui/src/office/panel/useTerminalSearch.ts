@@ -66,7 +66,7 @@ export function useTerminalSearch(
     const sub = addon.onDidChangeResults((e) => {
       dispatch({
         type: 'setResults',
-        currentMatch: e.resultIndex + 1,
+        currentMatch: e.resultIndex >= 0 ? e.resultIndex + 1 : 0,
         totalMatches: e.resultCount,
       });
     });
