@@ -81,3 +81,13 @@ export const PTY_SCROLLBACK_MAX_LINES = 2000;
  *  output (massive single writes) is split or truncated to protect the
  *  postMessage channel from a runaway producer. */
 export const PTY_MAX_CHUNK_BYTES = 1_048_576; // 1 MiB
+
+// ── Hook Health Monitor ─────────────────────────────────────
+/** Missed heartbeats before ok → degraded */
+export const HOOK_HEARTBEAT_MISS_DEGRADED = 2;
+/** Missed heartbeats before degraded → down */
+export const HOOK_HEARTBEAT_MISS_DOWN = 3;
+/** Suppress `down` events while the webview is booting */
+export const HOOK_HEALTH_BOOT_GRACE_MS = 3000;
+/** Interval between heartbeat checks */
+export const HOOK_HEARTBEAT_INTERVAL_MS = 5000;

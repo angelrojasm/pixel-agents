@@ -199,3 +199,38 @@ export const PANEL_SPRITE_PLACEHOLDER = '#f5c2a7';
 // ── Character Nameplate ──────────────────────────────────────
 export const NAMEPLATE_TEXT_COLOR = '#dcd6ec';
 export const NAMEPLATE_TEXT_OUTLINE = '0 0 2px #000, 0 0 4px rgba(0, 0, 0, 0.8)';
+
+// ── Terminal ↔ Character Interaction ────────────────────────
+// Focus halo
+export const FOCUS_HALO_WIDTH_PX = 2;
+export const FOCUS_HALO_INSET_PX = 2;
+export const FOCUS_HALO_DOTTED_DASH: [number, number] = [1, 1];
+export const FOCUS_HALO_SOLID_DASH: number[] = [];
+export const FOCUS_HALO_COLOR_ACCENT = PANEL_ACCENT;
+export const FOCUS_HALO_COLOR_MUTED = PANEL_MUTED;
+export const FOCUS_HALO_COLOR_AWAITING = PANEL_WAITING;
+export const FOCUS_HALO_COLOR_WARNING = 'var(--color-warning)';
+
+// Crashed glyph
+export const CRASHED_GLYPH_SIZE_PX = 5;
+export const CRASHED_GLYPH_OFFSET_X_PX = TILE_SIZE - 6;
+export const CRASHED_GLYPH_OFFSET_Y_PX = -6;
+export const CRASHED_GLYPH_BG = 'var(--color-danger)';
+export const CRASHED_GLYPH_BORDER = '#0a0a14';
+export const CRASHED_DESATURATION_PCT = 60;
+
+// Sub-agent parent-link line
+export const SUBAGENT_LINK_DASH: [number, number] = [2, 2];
+export const SUBAGENT_LINK_WIDTH_PX = 1;
+export const SUBAGENT_LINK_FLASH_DURATION_MS = 250;
+export const SUBAGENT_LINK_COLOR = PANEL_MUTED;
+
+// PTY → animation timing
+export const PTY_ACTIVITY_HOLD_MS = 200;
+export const PTY_SILENCE_TO_READING_MS = 1000;
+
+// Hook-health UI
+export const HOOK_HEALTH_DOT_SIZE_PX = 4;
+export const HOOK_HEALTH_TOAST_DURATION_MS = 0;
+export const HOOK_HEALTH_DOT_COLOR_DOWN = 'var(--color-danger)';
+export const HOOK_HEALTH_DOT_COLOR_DEGRADED = 'var(--color-warning)';
