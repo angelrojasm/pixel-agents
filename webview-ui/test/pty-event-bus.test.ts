@@ -69,3 +69,29 @@ test('PtyEventBus: ptyScrollback event carries an array of lines', () => {
   bus.emitScrollback(8, ['line1', 'line2']);
   assert.deepEqual(received, [['line1', 'line2']]);
 });
+
+test('subscribeActivity fires on every emitData call', () => {
+  const bus = new PtyEventBus();
+  let count = 0;
+  const sub = bus.subscribeActivity(1, () => {
+    count++;
+  });
+  bus.emitData(1, 'first');
+  bus.emitData(1, 'second');
+  bus.emitData(1, 'third');
+  assert.equal(count, 3);
+  sub.dispose();
+  bus.emitData(1, 'after-dispose');
+  assert.equal(count, 3);
+});
+
+test('subscribeActivity is scoped per agent', () => {
+  const bus = new PtyEventBus();
+  let countAgent1 = 0;
+  let countAgent2 = 0;
+  bus.subscribeActivity(1, () => countAgent1++);
+  bus.subscribeActivity(2, () => countAgent2++);
+  bus.emitData(1, 'hi');
+  assert.equal(countAgent1, 1);
+  assert.equal(countAgent2, 0);
+});
