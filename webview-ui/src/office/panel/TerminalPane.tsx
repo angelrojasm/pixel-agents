@@ -18,6 +18,7 @@ interface TerminalPaneProps {
   fontFamily: string;
   lineHeight: number;
   bus: PtyEventBus;
+  onRestartAgent: (id: number) => void;
 }
 
 export function TerminalPane({
@@ -27,7 +28,10 @@ export function TerminalPane({
   fontFamily,
   lineHeight,
   bus,
+  onRestartAgent,
 }: TerminalPaneProps) {
+  // Consumed in Task 12 (restart button). Held here so OfficePanel can pass it through.
+  void onRestartAgent;
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);

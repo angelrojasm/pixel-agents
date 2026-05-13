@@ -21,6 +21,7 @@ import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { characterLabel } from './office/engine/characters.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
+import { HookHealthToast } from './office/panel/HookHealthToast.js';
 import { OfficePanel } from './office/panel/OfficePanel.js';
 import type { AgentSummary } from './office/panel/panelTypes.js';
 import { usePanelState } from './office/panel/usePanelState.js';
@@ -87,6 +88,9 @@ function App() {
     ptyBackedByAgent,
     ptyEventBus,
     agentRenameSeq,
+    hookHealth,
+    acknowledgeCrash,
+    restartAgent,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -212,14 +216,18 @@ function App() {
 
   const handleClick = useCallback(
     (agentId: number) => {
-      // If clicked agent is a sub-agent, focus the parent's terminal instead
       const os = getOfficeState();
       const meta = os.subagentMeta.get(agentId);
       const focusId = meta ? meta.parentAgentId : agentId;
+      // If the clicked character is currently crashed and unacknowledged, ack it.
+      const ch = os.characters.get(agentId);
+      if (ch?.crashed && !ch.crashedAcknowledged) {
+        acknowledgeCrash(agentId);
+      }
       vscode.postMessage({ type: 'focusAgent', id: focusId });
       panel.focusOrToggle(focusId);
     },
-    [panel],
+    [panel, acknowledgeCrash],
   );
 
   // Force dependency on editorTickForKeyboard to propagate keyboard-triggered re-renders
@@ -265,6 +273,8 @@ function App() {
       ptyEventBus={ptyEventBus}
       terminalFontFamily={terminalFontFamily}
       terminalLineHeight={terminalLineHeight}
+      hookHealth={hookHealth.status}
+      onRestartAgent={restartAgent}
     />
   );
 
@@ -493,6 +503,7 @@ function App() {
         )}
       </div>
       {!panelFirst && panelEl}
+      <HookHealthToast status={hookHealth.status} reason={hookHealth.reason} />
     </div>
   );
 }

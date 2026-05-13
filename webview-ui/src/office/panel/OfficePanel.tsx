@@ -21,6 +21,8 @@ interface OfficePanelProps {
   ptyEventBus: PtyEventBus;
   terminalFontFamily: string;
   terminalLineHeight: number;
+  hookHealth: 'ok' | 'degraded' | 'down';
+  onRestartAgent: (id: number) => void;
 }
 
 export function OfficePanel({
@@ -35,6 +37,8 @@ export function OfficePanel({
   ptyEventBus,
   terminalFontFamily,
   terminalLineHeight,
+  hookHealth,
+  onRestartAgent,
 }: OfficePanelProps) {
   const focused = agents.find((a) => a.id === state.focusedAgentId) ?? null;
   const horizontal = isHorizontalAxis(state.panelPosition);
@@ -86,6 +90,7 @@ export function OfficePanel({
         agents={agents}
         focusedAgentId={state.focusedAgentId}
         panelPosition={state.panelPosition}
+        hookHealth={hookHealth}
         onFocusAgent={onFocusAgent}
         onCollapse={onCollapse}
       />
@@ -105,6 +110,7 @@ export function OfficePanel({
             fontFamily={terminalFontFamily}
             lineHeight={terminalLineHeight}
             bus={ptyEventBus}
+            onRestartAgent={onRestartAgent}
           />
         ) : (
           <TerminalPaneStub

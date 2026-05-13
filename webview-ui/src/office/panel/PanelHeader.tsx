@@ -1,4 +1,7 @@
 import {
+  HOOK_HEALTH_DOT_COLOR_DEGRADED,
+  HOOK_HEALTH_DOT_COLOR_DOWN,
+  HOOK_HEALTH_DOT_SIZE_PX,
   PANEL_ACCENT,
   PANEL_BG_CELL,
   PANEL_BG_CHROME,
@@ -15,6 +18,7 @@ interface PanelHeaderProps {
   agents: AgentSummary[];
   focusedAgentId: number | null;
   panelPosition: PanelPosition;
+  hookHealth: 'ok' | 'degraded' | 'down';
   onFocusAgent: (id: number) => void;
   onCollapse: () => void;
 }
@@ -23,6 +27,7 @@ export function PanelHeader({
   agents,
   focusedAgentId,
   panelPosition,
+  hookHealth,
   onFocusAgent,
   onCollapse,
 }: PanelHeaderProps) {
@@ -102,22 +107,39 @@ export function PanelHeader({
           />
         ))}
       </div>
-      <button
-        type="button"
-        onClick={onCollapse}
-        className="panel-icon-hover"
-        style={{
-          background: 'transparent',
-          border: 'none',
-          color: PANEL_MUTED,
-          fontSize: 10,
-          cursor: 'pointer',
-          padding: '0 4px',
-        }}
-        title="Hide panel"
-      >
-        {collapseLabel}
-      </button>
+      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+        <button
+          type="button"
+          onClick={onCollapse}
+          className="panel-icon-hover"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: PANEL_MUTED,
+            fontSize: 10,
+            cursor: 'pointer',
+            padding: '0 4px',
+          }}
+          title="Hide panel"
+        >
+          {collapseLabel}
+        </button>
+        {hookHealth !== 'ok' && (
+          <span
+            aria-label={`Hook server status: ${hookHealth}`}
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              width: HOOK_HEALTH_DOT_SIZE_PX,
+              height: HOOK_HEALTH_DOT_SIZE_PX,
+              background:
+                hookHealth === 'down' ? HOOK_HEALTH_DOT_COLOR_DOWN : HOOK_HEALTH_DOT_COLOR_DEGRADED,
+              pointerEvents: 'none',
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }
