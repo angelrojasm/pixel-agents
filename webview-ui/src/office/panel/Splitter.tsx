@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 
+import { PANEL_BORDER } from '../../constants.js';
 import { isHorizontalAxis, PanelPosition } from './panelTypes.js';
 
 interface SplitterProps {
@@ -72,6 +73,22 @@ export function Splitter({ panelPosition, bandSize, onResize, onReset }: Splitte
         ...(panelPosition === PanelPosition.LEFT ? { right: -2 } : { left: -2 }),
       };
 
+  const gripStyle: React.CSSProperties = horizontal
+    ? {
+        width: 12,
+        height: 2,
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+      }
+    : {
+        width: 2,
+        height: 12,
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+      };
+
   return (
     <div
       style={style}
@@ -79,6 +96,9 @@ export function Splitter({ panelPosition, bandSize, onResize, onReset }: Splitte
       onDoubleClick={onReset}
       role="separator"
       aria-orientation={horizontal ? 'horizontal' : 'vertical'}
-    />
+      className="panel-splitter"
+    >
+      <span aria-hidden style={{ position: 'absolute', background: PANEL_BORDER, ...gripStyle }} />
+    </div>
   );
 }
