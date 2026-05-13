@@ -1,10 +1,15 @@
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
 import { useEffect, useRef } from 'react';
 
 import { PANEL_BG_CHROME, PANEL_BORDER } from '../../constants.js';
 import { vscode } from '../../vscodeApi.js';
 import type { PtyEventBus } from './ptyEventBus.js';
+import { TerminalSearchBar } from './TerminalSearchBar.js';
+import { useTerminalSearch } from './useTerminalSearch.js';
+import { handleWebLinkClick } from './webLinkHandler.js';
 
 interface TerminalPaneProps {
   agentId: number;
@@ -26,6 +31,11 @@ export function TerminalPane({
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchRef = useRef<SearchAddon | null>(null);
+
+  const search = useTerminalSearch(searchRef);
+  const searchHookRef = useRef(search);
+  searchHookRef.current = search;
 
   // One-time setup per agentId: create the xterm.js Terminal + addon, attach to DOM.
   useEffect(() => {
@@ -47,10 +57,31 @@ export function TerminalPane({
       convertEol: true,
     });
     const fit = new FitAddon();
+    const searchAddon = new SearchAddon();
+    const webLinks = new WebLinksAddon((event, uri) => handleWebLinkClick(event, uri));
     term.loadAddon(fit);
+    term.loadAddon(searchAddon);
+    term.loadAddon(webLinks);
     term.open(el);
     termRef.current = term;
     fitRef.current = fit;
+    searchRef.current = searchAddon;
+
+    term.attachCustomKeyEventHandler((event) => {
+      const s = searchHookRef.current;
+      // Cmd/Ctrl+F: open search bar (block xterm).
+      if (event.type === 'keydown' && event.key === 'f' && (event.metaKey || event.ctrlKey)) {
+        s.open();
+        return false;
+      }
+      // Esc: close search bar if open (block xterm); otherwise pass through.
+      if (event.type === 'keydown' && event.key === 'Escape' && s.state.open) {
+        s.close();
+        term.focus();
+        return false;
+      }
+      return true;
+    });
 
     // Initial fit + send dimensions to the extension so the pty matches.
     try {
@@ -113,6 +144,7 @@ export function TerminalPane({
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
+      searchRef.current = null;
     };
     // The bus is stable (ref'd in useExtensionMessages); fontSize changes are
     // handled by a separate effect below to avoid re-creating the terminal.
@@ -163,10 +195,25 @@ export function TerminalPane({
         borderLeft: `2px solid ${PANEL_BORDER}`,
         borderRight: `2px solid ${PANEL_BORDER}`,
         borderBottom: `2px solid ${PANEL_BORDER}`,
+        position: 'relative',
       }}
       aria-label={agentName ? `Terminal for ${agentName}` : 'Terminal'}
     >
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      {search.state.open && (
+        <TerminalSearchBar
+          query={search.state.query}
+          currentMatch={search.state.currentMatch}
+          totalMatches={search.state.totalMatches}
+          onQueryChange={search.setQuery}
+          onNext={search.next}
+          onPrevious={search.previous}
+          onClose={() => {
+            search.close();
+            termRef.current?.focus();
+          }}
+        />
+      )}
     </div>
   );
 }
