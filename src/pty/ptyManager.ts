@@ -68,6 +68,9 @@ export class PtyManager {
       // still replay scrollback via terminalPaneReady. The worker is reaped
       // explicitly via stop()/disposeAll().
       void this.opts.sink.postMessage({ type: 'ptyExit', agentId, code, signal });
+      if ((typeof code === 'number' && code !== 0) || typeof signal === 'string') {
+        void this.opts.sink.postMessage({ type: 'agentCrashed', agentId, code, signal });
+      }
     });
 
     this.workers.set(agentId, worker);

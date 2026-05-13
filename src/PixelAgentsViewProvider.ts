@@ -16,6 +16,7 @@ import {
   launchNewTerminal,
   persistAgents,
   removeAgent,
+  restartPty,
   restoreAgents,
   sendCurrentAgentStatuses,
   sendExistingAgents,
@@ -986,6 +987,22 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         } catch (err) {
           console.warn('[Pixel Agents] openExternal: invalid URI', uri, err);
         }
+      }
+    } else if (message.type === 'acknowledgeCrash') {
+      const agentId = typeof message.agentId === 'number' ? message.agentId : null;
+      if (agentId === null) return;
+      this.broadcastSink.postMessage({ type: 'crashAcknowledged', agentId });
+    } else if (message.type === 'restartAgent') {
+      const agentId = typeof message.agentId === 'number' ? message.agentId : null;
+      if (agentId === null) return;
+      const bypass = !!this.context.workspaceState.get<boolean>(
+        'pixel-agents.bypassPermissions',
+        false,
+      );
+      const defaultCwd = this.context.globalState.get<string>(GLOBAL_KEY_DEFAULT_CWD, '');
+      const ok = restartPty(agentId, this.agents, this.ptyManager, defaultCwd, bypass);
+      if (ok) {
+        this.broadcastSink.postMessage({ type: 'agentRestarted', agentId });
       }
     }
   }

@@ -715,3 +715,35 @@ export function sendLayout(
     wasReset: result?.wasReset ?? false,
   });
 }
+
+/** Restart a pty-backed agent in place: kill the old worker, start a fresh one
+ *  using the same agent's projectDir + sessionId. The caller owns triggering
+ *  the new pty (this helper is a thin coordinator). */
+export function restartPty(
+  agentId: number,
+  agents: Map<number, AgentState>,
+  ptyManager: PtyManager | null,
+  defaultCwd: string | undefined,
+  bypassPermissions: boolean,
+): boolean {
+  if (!ptyManager) return false;
+  const agent = agents.get(agentId);
+  if (!agent || !agent.ptyBacked) return false;
+  ptyManager.stop(agentId);
+  const folders = vscode.workspace.workspaceFolders;
+  const cwd = folders?.[0]?.uri.fsPath || resolveDefaultCwd(defaultCwd) || os.homedir();
+  const shell = process.env.SHELL ?? (process.platform === 'win32' ? 'cmd.exe' : '/bin/zsh');
+  const claudeArgs = bypassPermissions
+    ? ['--session-id', agent.sessionId, '--dangerously-skip-permissions']
+    : ['--session-id', agent.sessionId];
+  ptyManager.start(agentId, {
+    shell,
+    args: ['-l', '-c', `claude ${claudeArgs.join(' ')}`],
+    cwd,
+    env: process.env as Record<string, string | undefined>,
+    cols: 80,
+    rows: 24,
+    scrollbackCapacity: PTY_SCROLLBACK_MAX_LINES,
+  });
+  return true;
+}
