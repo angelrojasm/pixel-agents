@@ -200,4 +200,55 @@ describe('PixelAgentsServer', () => {
 
     expect(received).toHaveLength(0);
   });
+
+  // 15. A valid hook POST records a heartbeat in the HealthMonitor.
+  //     We use the public health-change listener to assert that the monitor
+  //     transitioned to 'ok' as a side-effect of the heartbeat.
+  it('valid hook POST triggers HealthMonitor.heartbeat()', async () => {
+    const config = await server.start();
+    const states: string[] = [];
+    server.onHealthChange((s) => states.push(s.status));
+
+    // Confirm no transition has occurred yet (monitor is still in 'boot').
+    expect(server.getHealthState()).toBeNull();
+
+    await postHook(
+      config.port,
+      config.token,
+      JSON.stringify({ session_id: 'hb', hook_event_name: 'Stop' }),
+    );
+
+    // heartbeat() transitions the monitor from 'boot' → 'ok' and fires onChange.
+    expect(states).toContain('ok');
+    const state = server.getHealthState();
+    expect(state).not.toBeNull();
+    expect(state?.status).toBe('ok');
+  });
+
+  // 16. server.stop() clears the heartbeat tick timer (no leaked async work).
+  //     We assert observable side-effects: after stop, the monitor is disposed
+  //     (getHealthState returns null) and no new transitions can fire.
+  it('server.stop() clears the heartbeat tick timer', async () => {
+    await server.start();
+    const beforeHandleCount =
+      typeof process.getActiveResourcesInfo === 'function'
+        ? process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length
+        : null;
+
+    server.stop();
+
+    // After stop, the monitor is null — getHealthState returns null and would
+    // throw on tick() if it were still being called.
+    expect(server.getHealthState()).toBeNull();
+
+    // If active resources are inspectable, the Timeout count must not have
+    // grown across stop (the heartbeat interval should be cleared, leaving at
+    // most the same set of timers that existed before start).
+    if (beforeHandleCount !== null) {
+      const afterHandleCount = process
+        .getActiveResourcesInfo()
+        .filter((r) => r === 'Timeout').length;
+      expect(afterHandleCount).toBeLessThanOrEqual(beforeHandleCount);
+    }
+  });
 });

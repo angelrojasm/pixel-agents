@@ -209,14 +209,13 @@ export const FOCUS_HALO_SOLID_DASH: number[] = [];
 export const FOCUS_HALO_COLOR_ACCENT = PANEL_ACCENT;
 export const FOCUS_HALO_COLOR_MUTED = PANEL_MUTED;
 export const FOCUS_HALO_COLOR_AWAITING = PANEL_WAITING;
-export const FOCUS_HALO_COLOR_WARNING = 'var(--color-warning)';
 
 // Crashed glyph
 export const CRASHED_GLYPH_SIZE_PX = 5;
 export const CRASHED_GLYPH_OFFSET_X_PX = TILE_SIZE - 6;
 export const CRASHED_GLYPH_OFFSET_Y_PX = -6;
 export const CRASHED_GLYPH_BG = 'var(--color-danger)';
-export const CRASHED_GLYPH_BORDER = '#0a0a14';
+export const CRASHED_GLYPH_BORDER = PANEL_BG_CHROME;
 export const CRASHED_DESATURATION_PCT = 60;
 
 // Sub-agent parent-link line

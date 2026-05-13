@@ -5,7 +5,6 @@ import {
   FOCUS_HALO_COLOR_ACCENT,
   FOCUS_HALO_COLOR_AWAITING,
   FOCUS_HALO_COLOR_MUTED,
-  FOCUS_HALO_COLOR_WARNING,
   FOCUS_HALO_DOTTED_DASH,
   FOCUS_HALO_SOLID_DASH,
 } from '../src/constants.ts';
@@ -15,7 +14,6 @@ interface HaloInput {
   isActive: boolean;
   isFocused: boolean;
   awaitingSince: number | null;
-  ptyStubFocused?: boolean;
 }
 
 function input(overrides: Partial<HaloInput>): HaloInput {
@@ -49,14 +47,4 @@ test('awaiting user + focused → solid amber halo', () => {
   const style = getFocusHaloStyle(input({ isFocused: true, awaitingSince: Date.now() }));
   assert.equal(style!.color, FOCUS_HALO_COLOR_AWAITING);
   assert.deepEqual(style!.dash, FOCUS_HALO_SOLID_DASH);
-});
-
-test('pty stub + focused → solid warning halo', () => {
-  const style = getFocusHaloStyle(input({ isFocused: true, ptyStubFocused: true }));
-  assert.equal(style!.color, FOCUS_HALO_COLOR_WARNING);
-});
-
-test('pty stub overrides accent priority', () => {
-  const style = getFocusHaloStyle(input({ isActive: true, isFocused: true, ptyStubFocused: true }));
-  assert.equal(style!.color, FOCUS_HALO_COLOR_WARNING);
 });

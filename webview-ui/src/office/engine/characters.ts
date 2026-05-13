@@ -392,10 +392,21 @@ export function getCharacterSprite(ch: Character, sprites: CharacterSprites): Sp
       if (!ch.isActive) {
         return sprites.walk[ch.dir][1];
       }
-      if (isReadingTool(ch.currentTool)) {
-        return sprites.reading[ch.dir][ch.frame % 2];
+      // Active + has an active tool → tool-driven animation (existing behavior).
+      if (ch.currentTool) {
+        if (isReadingTool(ch.currentTool)) {
+          return sprites.reading[ch.dir][ch.frame % 2];
+        }
+        return sprites.typing[ch.dir][ch.frame % 2];
       }
-      return sprites.typing[ch.dir][ch.frame % 2];
+      // Active + no tool: pty signal refines typing/reading. The pty-activity
+      // window indicates the agent is actively writing to its terminal; in the
+      // silence between bursts, we show the reading pose. Both gated by isActive
+      // so a non-active character never animates from pty bytes.
+      if (Date.now() < ch.ptyActivityUntil) {
+        return sprites.typing[ch.dir][ch.frame % 2];
+      }
+      return sprites.reading[ch.dir][ch.frame % 2];
     case CharacterState.WALK:
       return sprites.walk[ch.dir][ch.frame % 4];
     case CharacterState.IDLE:

@@ -24,6 +24,7 @@ import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { HookHealthToast } from './office/panel/HookHealthToast.js';
 import { OfficePanel } from './office/panel/OfficePanel.js';
 import type { AgentSummary } from './office/panel/panelTypes.js';
+import { useCharacterPtyActivity } from './office/panel/useCharacterPtyActivity.js';
 import { usePanelState } from './office/panel/usePanelState.js';
 import { EditTool } from './office/types.js';
 import { isBrowserRuntime } from './runtime.js';
@@ -167,6 +168,10 @@ function App() {
 
   const panel = usePanelState(containerRef, editor.isEditMode);
 
+  // Pty → character animation: bumps `Character.ptyActivityUntil` on bytes
+  // from the focused agent's pty. Renderer reads the timestamp every frame.
+  useCharacterPtyActivity(panel.state.focusedAgentId, ptyEventBus, officeState);
+
   const handleCloseAgent = useCallback(
     (id: number) => {
       // Pick the next agent to focus (most recent other agent id, if any)
@@ -307,7 +312,7 @@ function App() {
           focusedAgentId={panel.state.focusedAgentId}
           agentIds={agents}
           onFocusAgent={handleClick}
-          onTogglePanel={panel.toggleRailHidden}
+          onTogglePanel={panel.collapse}
         />
 
         {!isDebugMode ? (

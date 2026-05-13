@@ -148,6 +148,14 @@ export class PixelAgentsServer {
     return this.config;
   }
 
+  /** Returns the current hook-health state, or null when no transition has
+   *  occurred yet (boot state — caller treats as "unknown / wait"). Late-
+   *  mounting webviews call this on `webviewReady` to catch up to whatever the
+   *  monitor has already broadcast. */
+  getHealthState(): HealthState | null {
+    return this.healthMonitor?.getState() ?? null;
+  }
+
   /** Top-level request router. Dispatches to health or hook handler based on method + path. */
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
     const url = req.url ?? '';

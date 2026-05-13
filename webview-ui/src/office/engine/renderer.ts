@@ -130,6 +130,7 @@ export function renderScene(
   focusedAgentId: number | null,
   isEditMode: boolean,
   subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }>,
+  seats: Map<string, Seat>,
 ): void {
   const drawables: ZDrawable[] = [];
   const charById = new Map<number, Character>();
@@ -223,8 +224,16 @@ export function renderScene(
         awaitingSince: ch.awaitingSince,
       });
       if (haloStyle && !ch.isSubagent) {
-        const tileX = offsetX + ch.tileCol * TILE_SIZE * zoom - FOCUS_HALO_INSET_PX;
-        const tileY = offsetY + ch.tileRow * TILE_SIZE * zoom - FOCUS_HALO_INSET_PX;
+        // Halo follows the character's WORK SEAT, not their current wander
+        // tile. The seat is the agent's "home" — drawing it there keeps the
+        // focus indicator stable when the character is roaming. Falls back to
+        // the character tile if no seat is assigned (defensive — first-frame
+        // restore can be a tick before assignment).
+        const seat = ch.workSeatId ? seats.get(ch.workSeatId) : null;
+        const haloCol = seat?.seatCol ?? ch.tileCol;
+        const haloRow = seat?.seatRow ?? ch.tileRow;
+        const tileX = offsetX + haloCol * TILE_SIZE * zoom - FOCUS_HALO_INSET_PX;
+        const tileY = offsetY + haloRow * TILE_SIZE * zoom - FOCUS_HALO_INSET_PX;
         const tileW = TILE_SIZE * zoom + FOCUS_HALO_INSET_PX * 2;
         const tileH = TILE_SIZE * zoom + FOCUS_HALO_INSET_PX * 2;
         drawables.push({
@@ -725,6 +734,7 @@ export function renderFrame(
     selection?.focusedAgentId ?? null,
     editor != null,
     selection?.subagentMeta ?? new Map(),
+    selection?.seats ?? new Map(),
   );
 
   // Speech bubbles (always on top of characters)

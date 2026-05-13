@@ -625,16 +625,16 @@ export class OfficeState {
     if (!ch) return;
     ch.crashed = crashed;
     ch.crashedAcknowledged = false;
-    // Crash also propagates to live sub-agents whose parent is this agent.
-    if (crashed) {
-      for (const [subId, meta] of this.subagentMeta) {
-        if (meta.parentAgentId !== id) continue;
-        const sub = this.characters.get(subId);
-        if (!sub) continue;
-        if (sub.matrixEffect === 'despawn') continue; // no-op for already-despawning
-        sub.crashed = true;
-        sub.crashedAcknowledged = false;
-      }
+    // Crash flag also propagates to live sub-agents whose parent is this agent
+    // — same propagation in both directions (set + clear) so a successful
+    // restart wipes the glyph from sub-agents too.
+    for (const [subId, meta] of this.subagentMeta) {
+      if (meta.parentAgentId !== id) continue;
+      const sub = this.characters.get(subId);
+      if (!sub) continue;
+      if (sub.matrixEffect === 'despawn') continue; // no-op for already-despawning
+      sub.crashed = crashed;
+      sub.crashedAcknowledged = false;
     }
   }
 

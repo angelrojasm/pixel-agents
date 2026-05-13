@@ -387,7 +387,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     // Inbound messages flow through the MessageSource abstraction so the Phase-3
     // WebSocket transport can swap in without touching the provider's dispatch logic.
     webviewMessageSource(webviewView.webview).onMessage((message) =>
-      this.handleWebviewMessage(message),
+      this.handleWebviewMessage(message, webviewView.webview),
     );
     this.ensurePtyManager(webviewMessageSource(webviewView.webview));
   }
@@ -425,12 +425,20 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       if (this.fullScreenPanel === panel) this.fullScreenPanel = undefined;
     });
 
-    webviewMessageSource(panel.webview).onMessage((message) => this.handleWebviewMessage(message));
+    webviewMessageSource(panel.webview).onMessage((message) =>
+      this.handleWebviewMessage(message, panel.webview),
+    );
     this.ensurePtyManager(webviewMessageSource(panel.webview));
   }
 
-  /** Dispatch an incoming message from any registered webview. */
-  private async handleWebviewMessage(message: Record<string, unknown>): Promise<void> {
+  /** Dispatch an incoming message from any registered webview.
+   *  `originWebview` is the webview the message arrived from (when available);
+   *  used for snapshot replies that should target the originating webview
+   *  rather than every webview registered in the broadcast set. */
+  private async handleWebviewMessage(
+    message: Record<string, unknown>,
+    originWebview?: vscode.Webview,
+  ): Promise<void> {
     if (message.type === 'openClaude') {
       const prevAgentIds = new Set(this.agents.keys());
       await launchNewTerminal(
@@ -704,6 +712,20 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.broadcastSink.postMessage({
           type: 'workspaceFolders',
           folders: wsFolders.map((f) => ({ name: f.name, path: f.uri.fsPath })),
+        });
+      }
+
+      // Snapshot current hook-health state to the newly-mounted webview so it
+      // can show the correct dot/toast without waiting for the next transition.
+      // Address the originating webview only — other webviews already have
+      // current state from prior `onHealthChange` broadcasts.
+      const healthState = this.pixelAgentsServer?.getHealthState();
+      if (healthState && originWebview) {
+        void originWebview.postMessage({
+          type: 'hookHealthChanged',
+          status: healthState.status,
+          reason: healthState.reason,
+          since: healthState.since,
         });
       }
 

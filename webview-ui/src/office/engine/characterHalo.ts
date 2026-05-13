@@ -2,7 +2,6 @@ import {
   FOCUS_HALO_COLOR_ACCENT,
   FOCUS_HALO_COLOR_AWAITING,
   FOCUS_HALO_COLOR_MUTED,
-  FOCUS_HALO_COLOR_WARNING,
   FOCUS_HALO_DOTTED_DASH,
   FOCUS_HALO_SOLID_DASH,
   FOCUS_HALO_WIDTH_PX,
@@ -12,9 +11,6 @@ export interface FocusHaloInput {
   isActive: boolean;
   isFocused: boolean;
   awaitingSince: number | null;
-  /** True only when the focused agent has usePtyTerminal=on but the pty hasn't
-   *  produced its first byte yet (TerminalPaneStub is showing). */
-  ptyStubFocused?: boolean;
 }
 
 export interface FocusHaloStyle {
@@ -24,17 +20,12 @@ export interface FocusHaloStyle {
 }
 
 /** Pure selector — picks halo color/dash/width for a single character.
- *  Returns null when no halo should render. */
+ *  Returns null when no halo should render.
+ *
+ *  Note: the spec describes a "pty-stub" halo variant (warning color while a
+ *  pty-backed agent has produced no bytes yet) — implementation deferred. The
+ *  visual cue is low-value and the wiring isn't in place; ship without. */
 export function getFocusHaloStyle(input: FocusHaloInput): FocusHaloStyle | null {
-  // PTY stub state overrides everything when focused.
-  if (input.isFocused && input.ptyStubFocused) {
-    return {
-      color: FOCUS_HALO_COLOR_WARNING,
-      dash: FOCUS_HALO_SOLID_DASH,
-      width: FOCUS_HALO_WIDTH_PX,
-    };
-  }
-
   // Awaiting-user + focused: amber.
   if (input.isFocused && input.awaitingSince != null) {
     return {

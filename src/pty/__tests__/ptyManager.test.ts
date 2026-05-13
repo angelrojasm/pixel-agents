@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PtyManager } from '../ptyManager.js';
 import { isPtyInputMessage } from '../ptyProtocol.js';
+import type { PtyWorker } from '../ptyWorker.js';
 
 interface MockSinkRecord {
   type: string;
@@ -35,6 +36,37 @@ function makeSource() {
     emit(message: Record<string, unknown>) {
       for (const h of handlers) h(message);
     },
+  };
+}
+
+/** Minimal PtyWorker fake that exposes manual triggers for data/exit so tests
+ *  can drive the manager deterministically without spawning a real subprocess. */
+interface FakeWorker {
+  worker: PtyWorker;
+  fireData: (chunk: string) => void;
+  fireExit: (info: { code: number; signal?: string }) => void;
+}
+
+function makeFakeWorker(): FakeWorker {
+  const dataHandlers: ((c: string) => void)[] = [];
+  const exitHandlers: ((info: { code: number; signal?: string }) => void)[] = [];
+  const worker = {
+    onData: (h: (c: string) => void) => {
+      dataHandlers.push(h);
+    },
+    onExit: (h: (info: { code: number; signal?: string }) => void) => {
+      exitHandlers.push(h);
+    },
+    write: () => {},
+    resize: () => {},
+    kill: () => {},
+    scrollback: () => [],
+    isAlive: () => true,
+  } as unknown as PtyWorker;
+  return {
+    worker,
+    fireData: (chunk) => dataHandlers.forEach((h) => h(chunk)),
+    fireExit: (info) => exitHandlers.forEach((h) => h(info)),
   };
 }
 
@@ -209,5 +241,87 @@ describe('PtyManager', () => {
         }
       }, 10);
     });
+  });
+
+  it('non-zero exit broadcasts both ptyExit and agentCrashed', () => {
+    const sink = makeSink();
+    const source = makeSource();
+    const fake = makeFakeWorker();
+    const manager = new PtyManager({ sink, source, workerFactory: () => fake.worker });
+
+    manager.start(10, {
+      shell: '/bin/sh',
+      args: [],
+      cwd: process.cwd(),
+      env: {},
+      cols: 80,
+      rows: 24,
+    });
+
+    fake.fireExit({ code: 1, signal: undefined });
+
+    const exits = sink.sent.filter((m) => m.type === 'ptyExit' && m.agentId === 10);
+    const crashes = sink.sent.filter((m) => m.type === 'agentCrashed' && m.agentId === 10);
+    expect(exits).toHaveLength(1);
+    expect(crashes).toHaveLength(1);
+    expect(crashes[0].code).toBe(1);
+
+    manager.disposeAll();
+  });
+
+  it('clean exit (code=0, no signal) broadcasts ptyExit only', () => {
+    const sink = makeSink();
+    const source = makeSource();
+    const fake = makeFakeWorker();
+    const manager = new PtyManager({ sink, source, workerFactory: () => fake.worker });
+
+    manager.start(11, {
+      shell: '/bin/sh',
+      args: [],
+      cwd: process.cwd(),
+      env: {},
+      cols: 80,
+      rows: 24,
+    });
+
+    fake.fireExit({ code: 0, signal: undefined });
+
+    const exits = sink.sent.filter((m) => m.type === 'ptyExit' && m.agentId === 11);
+    const crashes = sink.sent.filter((m) => m.type === 'agentCrashed' && m.agentId === 11);
+    expect(exits).toHaveLength(1);
+    expect(crashes).toHaveLength(0);
+
+    manager.disposeAll();
+  });
+
+  it('intentional stop suppresses agentCrashed even on non-zero exit', () => {
+    const sink = makeSink();
+    const source = makeSource();
+    const fake = makeFakeWorker();
+    const manager = new PtyManager({ sink, source, workerFactory: () => fake.worker });
+
+    manager.start(12, {
+      shell: '/bin/sh',
+      args: [],
+      cwd: process.cwd(),
+      env: {},
+      cols: 80,
+      rows: 24,
+    });
+
+    // Caller intentionally stops the agent (e.g. user closed it). The worker
+    // may exit with a signal as a result of being killed — that exit must NOT
+    // be treated as a crash.
+    manager.stop(12);
+    fake.fireExit({ code: 0, signal: 'SIGTERM' });
+
+    const exits = sink.sent.filter((m) => m.type === 'ptyExit' && m.agentId === 12);
+    const crashes = sink.sent.filter((m) => m.type === 'agentCrashed' && m.agentId === 12);
+    // ptyExit is still emitted (downstream may want to know the pty is gone).
+    expect(exits).toHaveLength(1);
+    // agentCrashed is suppressed because the stop was intentional.
+    expect(crashes).toHaveLength(0);
+
+    manager.disposeAll();
   });
 });

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 
+import { PTY_ACTIVITY_HOLD_MS } from '../../constants.js';
 import type { OfficeState } from '../engine/officeState.js';
 import type { PtyEventBus } from './ptyEventBus.js';
 
@@ -30,7 +31,7 @@ export function useCharacterPtyActivity(
       if (!ch) return;
       // Use wall-clock (Date.now) so the renderer's Date.now() comparison
       // is in the same epoch. performance.now is just for throttle.
-      ch.ptyActivityUntil = Date.now() + 200; // PTY_ACTIVITY_HOLD_MS — kept inline so the renderer doesn't have to import.
+      ch.ptyActivityUntil = Date.now() + PTY_ACTIVITY_HOLD_MS;
     });
     return () => sub.dispose();
   }, [agentId, bus, officeState]);

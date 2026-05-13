@@ -38,6 +38,12 @@ export interface PtyStartOptions {
  */
 export class PtyManager {
   private readonly workers = new Map<number, PtyWorker>();
+  /** Agents whose worker was killed via `stop()` / `disposeAll()`. When the
+   *  worker.onExit callback fires for one of these, we suppress the
+   *  `agentCrashed` broadcast (otherwise restart-on-crash logic would re-fire
+   *  on every intentional stop, racing the restart). `ptyExit` is still
+   *  broadcast in both cases — only `agentCrashed` is gated. */
+  private readonly intentionallyStopped = new Set<number>();
   private readonly subscription: { dispose(): void };
   private readonly factory: (opts: PtyWorkerOptions) => PtyWorker;
 
@@ -51,6 +57,10 @@ export class PtyManager {
       // Idempotent: if already started, leave existing worker in place.
       return;
     }
+
+    // A restart may follow an intentional stop; clear any lingering marker so
+    // a future crash from the new worker is not suppressed.
+    this.intentionallyStopped.delete(agentId);
 
     const worker = this.factory({
       shell: startOpts.shell,
@@ -68,6 +78,10 @@ export class PtyManager {
       // still replay scrollback via terminalPaneReady. The worker is reaped
       // explicitly via stop()/disposeAll().
       void this.opts.sink.postMessage({ type: 'ptyExit', agentId, code, signal });
+      if (this.intentionallyStopped.has(agentId)) {
+        this.intentionallyStopped.delete(agentId);
+        return;
+      }
       if ((typeof code === 'number' && code !== 0) || typeof signal === 'string') {
         void this.opts.sink.postMessage({ type: 'agentCrashed', agentId, code, signal });
       }
@@ -83,12 +97,16 @@ export class PtyManager {
   stop(agentId: number): void {
     const w = this.workers.get(agentId);
     if (!w) return;
+    // Mark BEFORE kill — the onExit callback may fire synchronously on some
+    // platforms, and the marker must be visible when it does.
+    this.intentionallyStopped.add(agentId);
     w.kill();
     this.workers.delete(agentId);
   }
 
   disposeAll(): void {
-    for (const w of this.workers.values()) {
+    for (const [agentId, w] of this.workers) {
+      this.intentionallyStopped.add(agentId);
       try {
         w.kill();
       } catch {
