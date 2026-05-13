@@ -82,16 +82,25 @@ Terminal QoL bundle (2026-05-13, same branch):
 - **SearchAddon** + `useTerminalSearch` hook (pure reducer, unit-tested) + `TerminalSearchBar` overlay using the visual-chrome tokens. Cmd/Ctrl+F opens, Enter / Shift+Enter navigate, Esc closes. Custom-key handler in `TerminalPane` intercepts only Cmd/Ctrl+F and Esc-when-open so xterm passthrough is preserved.
 - `onDidChangeResults` lives on `TerminalPane` (not inside the hook) to avoid double-subscription churn; `resultIndex === -1` is mapped to `currentMatch=0`.
 
+Terminal ↔ character interaction bundle (2026-05-13, same branch):
+
+- **Focus halo** around the focused agent's work-seat tile (dotted for idle-focused, solid for active-focused, muted-solid for active-not-focused, amber for awaiting-user). Selector lives in pure `characterHalo.ts` with full unit-test matrix.
+- **PTY→animation bridge**: `PtyEventBus.subscribeActivity` channel + `ptyActivityReducer` + `useCharacterPtyActivity` hook bump `Character.ptyActivityUntil`; `getCharacterSprite` reads it (gated by `isActive`) so byte-level activity drives typing-vs-reading frames.
+- **Crashed-agent glyph + acknowledgement**: pty exits with non-zero code or signal → `agentCrashed` broadcast → red `!` on the character + desaturated sprite (cached via `:crashed` key); click character to ack. Restart button surfaces in `TerminalPane` when exit observed; `PtyManager.intentionallyStopped` set suppresses spurious crash broadcasts on user-initiated restart.
+- **Sub-agent parent line**: dashed muted line from sub-agent character back to parent's seat tile, visible only when parent is focused.
+- **Hook health surfacing**: `server/src/healthMonitor.ts` ok → degraded → down state machine with boot-grace; `hookHealthChanged` broadcast; `HookHealthToast` (sticky, bottom-center) + dot on `PanelHeader` hide button. New webview gets a current-health snapshot on `webviewReady`.
+- **Canvas keyboard shortcuts**: `Cmd/Ctrl+1..9` focuses the Nth rail agent; `Cmd/Ctrl+'` collapses the panel (matches `[hide]` button). Shortcuts respect xterm focus and form-field focus.
+
 Still open:
 
-- **Terminal ↔ character interaction layer**: pty activity drives character animation/bubbles, click-character-focuses-pty, sub-agent/teammate representation when the parent is pty-backed, hook-error surfacing in the panel vs. character overlay.
+- (none for Phase 2 §1-3 — settings redesign is next and final.)
 
 **Recommended sequence (decided 2026-05-13)**
 
 1. ~~**Visual chrome**~~ — **shipped 2026-05-13** (8 commits on `2026-05-12-terminal-polish`). Established pixel-art tokens (borders, accent strip, focus state, scrollbar) for the next two bundles.
 2. ~~**Terminal QoL**~~ — **shipped 2026-05-13** (9 commits on `2026-05-12-terminal-polish`). Search bar, web links, focus return on close. Manual copy/paste QA folded into the Phase 2 final QA pass.
-3. **Terminal ↔ character interaction** — next. Largest scope, most design decisions, biggest visual payoff. Sits on top of a fully-styled, fully-featured terminal so new bubbles / typing indicators can match the established aesthetic.
-4. **Settings menu redesign** — last. By then there will be ~2–4 new settings from the Phase 2 bundles to migrate in one pass.
+3. ~~**Terminal ↔ character interaction**~~ — **shipped 2026-05-13** (14 commits + 1 review-fix commit on `2026-05-12-terminal-polish`). Focus halo, pty→animation, crashed glyph + ack, restart, sub-agent line, hook-health toast + dot, canvas shortcuts. 261 tests passing.
+4. **Settings menu redesign** — last. Migrating the ~12 Phase 2 settings (defaultCwd, usePtyTerminal, terminalFontFamily, terminalFontSize, terminalLineHeight, panelPosition, userBandSizePx, soundEnabled, watchAllSessions, hooksEnabled, alwaysShowLabels, showTerminalNames) into a sectioned modal in one pass.
 
 Rationale: doing chrome before character-interaction prevents rework on bubbles/indicators that would otherwise be designed against un-styled chrome. Doing settings last lets it absorb a known set of new settings in one migration instead of evolving the modal continuously.
 
