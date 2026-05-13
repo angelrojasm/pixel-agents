@@ -978,6 +978,15 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       } catch {
         vscode.window.showErrorMessage('Pixel Agents: Failed to read or parse layout file.');
       }
+    } else if (message.type === 'openExternal') {
+      const uri = typeof message.uri === 'string' ? message.uri : '';
+      if (uri) {
+        try {
+          vscode.env.openExternal(vscode.Uri.parse(uri));
+        } catch (err) {
+          console.warn('[Pixel Agents] openExternal: invalid URI', uri, err);
+        }
+      }
     }
   }
 
