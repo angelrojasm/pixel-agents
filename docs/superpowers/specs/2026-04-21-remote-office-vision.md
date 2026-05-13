@@ -32,7 +32,7 @@ Rather than a hard rewrite, this is executed in three phases. Each phase ships o
 Every extension **outbound** message now flows through `MessageSink`. A WebSocket-backed `MessageSink` can replace the broadcast sink without touching any of the downstream modules (`agentManager`, `fileWatcher`, etc.).
 **Gap for Phase 3**: the **inbound** path — `Webview.onDidReceiveMessage` inside `PixelAgentsViewProvider.resolveWebviewView` / `openFullScreenPanel` — is still VS Code-shaped. Replacing the transport means introducing an equivalent abstraction on that side (e.g. a `MessageSource` interface with `onMessage(handler)`) and routing both `WebviewView` events and future WebSocket events through it.
 
-## Phase 2 — Terminal inside the office (on hold)
+## Phase 2 — Terminal inside the office (in progress)
 
 **Intent**
 Click a character → that agent's terminal appears anchored in the office, rendered as `xterm.js` inside the webview. VS Code's native terminal strip goes away for pixel-agent sessions.
@@ -41,17 +41,37 @@ Click a character → that agent's terminal appears anchored in the office, rend
 
 - Spawn Claude via [`node-pty`](https://github.com/microsoft/node-pty) from the extension host instead of `vscode.window.createTerminal`. `node-pty` exposes raw stdin/stdout on a pseudo-terminal.
 - Render [xterm.js](https://xtermjs.org) inside the webview. Pipe pty data + keystrokes over the existing `postMessage` channel (keystrokes go webview→extension; output chunks go extension→webview).
-- Each agent's terminal is an overlay anchored to that character (or tabbed/stacked in a bottom pane of the office canvas — UX TBD).
+- Terminal anchors in the office panel (bottom / left / right, user-positioned). The user resizes the panel band with a drag handle (`Splitter.tsx`).
 
 **Alternative considered and rejected**
 Tab-grouping hack that toggles native VS Code terminal visibility per agent click. Cheaper to build, but leaves the terminal in VS Code's terminal strip, so it does not deliver the "inside the office" experience.
 
-**Open UX questions**
+**Status (2026-05-13)**
 
-- Where does the terminal anchor visually? Above the character? A slide-up drawer? A stacked row of mini-terminals?
-- How do multiple simultaneous terminals compose?
-- Focus management (clicks on the office canvas vs. the terminal).
-- Copy/paste integration with xterm.js.
+Foundations (vsix 1.3.0):
+
+- **D1 — `MessageSource`**: inbound message abstraction landed; mirrors `MessageSink` for Phase-3 WS readiness.
+- **D2 — `node-pty` backend**: `PtyManager` + `PtyWorker` + scrollback ring buffer + pty protocol (`ptyData` / `ptyExit` / `ptyScrollback` outbound; `ptyInput` / `ptyResize` / `terminalPaneReady` inbound).
+- **xterm.js pane**: `TerminalPane.tsx` consumes the protocol; `FitAddon` drives reflow on every container resize. Gated by the `usePtyTerminal` user setting (default off).
+
+Polish bundle (2026-05-12, branch `2026-05-12-terminal-polish`):
+
+- Agent **auto-rename** from Claude's `/rename` slash command — parses the `custom-title` JSONL record, persists `customTitle` on `AgentState` / `PersistedAgent`, replays on restore, renders in panel tab + character nameplate via `characterLabel()`.
+- **Resizable panel band** — `Splitter.tsx` with sign-flipped drag math per panel position; `userBandSizePx` clamped in `computePanelBand`.
+- **0.5 zoom increments** — `ZOOM_STEPS` array drives both `+/-` buttons and Ctrl+scroll.
+- **Terminal font customization** — family / size / line-height surfaced in Settings; system-installed mono fonts (Menlo, SF Mono, Monaco, Cascadia Mono, Consolas, Courier New, generic monospace). No fonts bundled.
+
+Resolved UX questions:
+
+- Terminal anchors in the panel band (a drawer, user-resizable, user-positioned bottom/left/right). Not a per-character overlay.
+- Multiple agents: the panel shows ONE focused terminal at a time; the rail/header lets the user pick which.
+- Copy/paste: deferred — relies on xterm.js defaults for now.
+
+Still open:
+
+- Terminal pane visual chrome (pixel-art borders, colors, tab/header).
+- Terminal QoL: copy/paste polish, link handling, scrollback search, focus behavior, keybinding conflicts with the panel chrome.
+- **Terminal ↔ character interaction layer**: pty activity drives character animation/bubbles, click-character-focuses-pty, sub-agent/teammate representation when the parent is pty-backed, hook-error surfacing in the panel vs. character overlay.
 
 **Known risks**
 
@@ -59,7 +79,7 @@ Tab-grouping hack that toggles native VS Code terminal visibility per agent clic
 - Loss of VS Code terminal affordances (the user's current shell integration, right-click menu, etc.). Acceptable trade-off for the UX payoff.
 
 **Fallback / rollback**
-Keep `vscode.window.createTerminal` spawning behind a per-agent opt-out (feature flag or setting) during the Phase 2 rollout. If `node-pty` + xterm.js misbehaves on a given agent or platform, the user can route that session through the native terminal path until the issue is fixed. Once Phase 2 is stable, the flag can be removed in a subsequent release.
+The `vscode.window.createTerminal` path remains the default and runs in parallel for every agent. If `node-pty` + xterm.js misbehaves on a given agent or platform, the user toggles `usePtyTerminal` off and new agents route through the native terminal path. Once Phase 2 is stable, the flag can be flipped to default-on or removed entirely in a subsequent release.
 
 ## Phase 3 — Standalone remote app
 
