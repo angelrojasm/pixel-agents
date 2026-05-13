@@ -62,17 +62,17 @@ export function PanelHeader({
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            padding: '0 6px',
-            border: `1px solid ${PANEL_ACCENT}`,
-            height: 16,
+            padding: '0 8px',
+            height: '100%',
             background: PANEL_BG_CELL,
+            ...(horizontal ? { borderBottom: `2px solid ${PANEL_ACCENT}` } : {}),
           }}
         >
           <span
             aria-hidden
             style={{
-              width: 8,
-              height: 10,
+              width: 10,
+              height: 12,
               background: PANEL_SPRITE_PLACEHOLDER,
               flex: '0 0 auto',
             }}
@@ -104,6 +104,7 @@ export function PanelHeader({
       <button
         type="button"
         onClick={onCollapse}
+        className="panel-icon-hover"
         style={{
           background: 'transparent',
           border: 'none',
