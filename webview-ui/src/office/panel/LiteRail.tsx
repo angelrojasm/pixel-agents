@@ -67,6 +67,7 @@ export function LiteRail({
             key={a.id}
             agent={a}
             variant={variant}
+            panelPosition={panelPosition}
             isFocused={a.id === focusedAgentId}
             onClick={() => onFocusAgent(a.id)}
           />

@@ -95,6 +95,7 @@ export function PanelHeader({
             key={a.id}
             agent={a}
             variant={horizontal ? 'tab' : 'rail-side'}
+            panelPosition={panelPosition}
             isFocused={false}
             onClick={() => onFocusAgent(a.id)}
           />

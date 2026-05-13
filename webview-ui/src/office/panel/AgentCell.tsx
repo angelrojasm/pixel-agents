@@ -6,11 +6,12 @@ import {
   PANEL_SPRITE_PLACEHOLDER,
   PANEL_WAITING,
 } from '../../constants.js';
-import type { AgentSummary } from './panelTypes.js';
+import type { AgentSummary, PanelPosition } from './panelTypes.js';
 
 interface AgentCellProps {
   agent: AgentSummary;
   variant: 'rail' | 'rail-side' | 'tab';
+  panelPosition: PanelPosition;
   isFocused: boolean;
   onClick: () => void;
 }
@@ -27,20 +28,42 @@ const STATUS_COLOR: Record<AgentSummary['status'], string> = {
   idle: PANEL_MUTED,
 };
 
-export function AgentCell({ agent, variant, isFocused, onClick }: AgentCellProps) {
+type DropEdge = 'top' | 'right' | 'bottom' | 'left' | null;
+
+function focusDropEdge(
+  variant: 'rail' | 'rail-side' | 'tab',
+  panelPosition: PanelPosition,
+): DropEdge {
+  // Only LiteRail-context variants can render focused; PanelHeader filters
+  // the focused agent out of its tab/other-agent list.
+  if (variant === 'rail') return 'top';
+  if (variant === 'rail-side') return panelPosition === 'left' ? 'right' : 'left';
+  return null;
+}
+
+export function AgentCell({ agent, variant, panelPosition, isFocused, onClick }: AgentCellProps) {
   const { width, height, fontSize } = SIZES[variant];
   const borderColor = isFocused ? PANEL_ACCENT : PANEL_BORDER;
   const isSquare = variant === 'rail-side';
+  const dropEdge = isFocused ? focusDropEdge(variant, panelPosition) : null;
+
+  const borderStyle: React.CSSProperties = {
+    borderTop: dropEdge === 'top' ? 'none' : `1px solid ${borderColor}`,
+    borderRight: dropEdge === 'right' ? 'none' : `1px solid ${borderColor}`,
+    borderBottom: dropEdge === 'bottom' ? 'none' : `1px solid ${borderColor}`,
+    borderLeft: dropEdge === 'left' ? 'none' : `1px solid ${borderColor}`,
+  };
 
   return (
     <button
       type="button"
       onClick={onClick}
+      className="panel-cell-hover"
       style={{
         width,
         height,
         background: PANEL_BG_CELL,
-        border: `1px solid ${borderColor}`,
+        ...borderStyle,
         borderRadius: 0,
         display: 'flex',
         alignItems: 'center',
