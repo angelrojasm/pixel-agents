@@ -33,3 +33,33 @@ export const TERMINAL_NAME_PREFIX = 'Claude Code';
 
 // ── Terminal Name Polling ────────────────────────────────────
 export const TERMINAL_NAME_POLL_INTERVAL_MS = 2000;
+
+/** Canonical default values for every user-facing setting. Source of truth for
+ *  both the `globalState.get(KEY, default)` sites and the per-category
+ *  "Restore Defaults" flow. State-tracking flags (hooksInfoShown,
+ *  lastSeenVersion, etc.) are NOT settings and are not represented here. */
+export const DEFAULT_SETTINGS = {
+  general: {
+    soundEnabled: true,
+    alwaysShowLabels: false,
+    showTerminalNames: true,
+    debugMode: false,
+  },
+  agents: {
+    watchAllSessions: false,
+    hooksEnabled: true,
+    defaultCwd: '',
+  },
+  terminal: {
+    usePtyTerminal: false,
+    panelPosition: 'bottom' as 'bottom' | 'left' | 'right',
+    fontFamily: 'monospace',
+    fontSize: 13,
+    lineHeight: 1.0,
+  },
+  office: {
+    externalAssetDirectories: [] as string[],
+  },
+} as const;
+
+export type SettingsCategory = keyof typeof DEFAULT_SETTINGS;

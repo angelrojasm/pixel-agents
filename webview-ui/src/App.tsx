@@ -6,6 +6,7 @@ import { ChangelogModal } from './components/ChangelogModal.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import { SettingsModalV2 } from './components/settings/SettingsModalV2.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
@@ -100,6 +101,9 @@ function App() {
 
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  // Dev-only switch — flip to true to test V2 modal during development.
+  // Remove this line and the conditional render once V2 reaches parity.
+  const useSettingsV2 = false;
   const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
@@ -470,41 +474,45 @@ function App() {
           currentVersion={extensionVersion}
         />
 
-        <SettingsModal
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-          isDebugMode={isDebugMode}
-          onToggleDebugMode={handleToggleDebugMode}
-          alwaysShowOverlay={alwaysShowOverlay}
-          onToggleAlwaysShowOverlay={handleToggleAlwaysShowOverlay}
-          showTerminalNames={showTerminalNamesLocal}
-          onToggleShowTerminalNames={handleToggleShowTerminalNames}
-          externalAssetDirectories={externalAssetDirectories}
-          watchAllSessions={watchAllSessions}
-          onToggleWatchAllSessions={() => {
-            const newVal = !watchAllSessions;
-            setWatchAllSessions(newVal);
-            vscode.postMessage({ type: 'setWatchAllSessions', enabled: newVal });
-          }}
-          hooksEnabled={hooksEnabled}
-          onToggleHooksEnabled={() => {
-            const newVal = !hooksEnabled;
-            setHooksEnabled(newVal);
-            vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
-          }}
-          usePtyTerminal={usePtyTerminal}
-          onToggleUsePtyTerminal={() => setUsePtyTerminal(!usePtyTerminal)}
-          defaultCwd={defaultCwd}
-          onChangeDefaultCwd={setDefaultCwd}
-          panelPosition={panel.state.panelPosition}
-          onChangePanelPosition={panel.setPanelPosition}
-          terminalFontSize={panel.state.terminalFontSize}
-          onChangeTerminalFontSize={panel.setTerminalFontSize}
-          terminalFontFamily={terminalFontFamily}
-          onSetTerminalFontFamily={setTerminalFontFamily}
-          terminalLineHeight={terminalLineHeight}
-          onSetTerminalLineHeight={setTerminalLineHeight}
-        />
+        {useSettingsV2 ? (
+          <SettingsModalV2 isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+        ) : (
+          <SettingsModal
+            isOpen={isSettingsOpen}
+            onClose={() => setIsSettingsOpen(false)}
+            isDebugMode={isDebugMode}
+            onToggleDebugMode={handleToggleDebugMode}
+            alwaysShowOverlay={alwaysShowOverlay}
+            onToggleAlwaysShowOverlay={handleToggleAlwaysShowOverlay}
+            showTerminalNames={showTerminalNamesLocal}
+            onToggleShowTerminalNames={handleToggleShowTerminalNames}
+            externalAssetDirectories={externalAssetDirectories}
+            watchAllSessions={watchAllSessions}
+            onToggleWatchAllSessions={() => {
+              const newVal = !watchAllSessions;
+              setWatchAllSessions(newVal);
+              vscode.postMessage({ type: 'setWatchAllSessions', enabled: newVal });
+            }}
+            hooksEnabled={hooksEnabled}
+            onToggleHooksEnabled={() => {
+              const newVal = !hooksEnabled;
+              setHooksEnabled(newVal);
+              vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
+            }}
+            usePtyTerminal={usePtyTerminal}
+            onToggleUsePtyTerminal={() => setUsePtyTerminal(!usePtyTerminal)}
+            defaultCwd={defaultCwd}
+            onChangeDefaultCwd={setDefaultCwd}
+            panelPosition={panel.state.panelPosition}
+            onChangePanelPosition={panel.setPanelPosition}
+            terminalFontSize={panel.state.terminalFontSize}
+            onChangeTerminalFontSize={panel.setTerminalFontSize}
+            terminalFontFamily={terminalFontFamily}
+            onSetTerminalFontFamily={setTerminalFontFamily}
+            terminalLineHeight={terminalLineHeight}
+            onSetTerminalLineHeight={setTerminalLineHeight}
+          />
+        )}
 
         {showMigrationNotice && (
           <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />

@@ -147,6 +147,14 @@ export const TOOL_OVERLAY_VERTICAL_OFFSET = 32;
 export const MAX_CONTEXT_TOKENS = 200_000;
 export const TOKEN_WARN_THRESHOLD = 0.6;
 export const TOKEN_DANGER_THRESHOLD = 0.8;
+
+// Settings modal layout constants
+export const SETTINGS_MODAL_WIDTH_PX = 720;
+export const SETTINGS_MODAL_HEIGHT_PX = 520;
+export const SETTINGS_SIDEBAR_WIDTH_PX = 160;
+export const SETTINGS_TITLE_STRIP_HEIGHT_PX = 32;
+// Settings undo toast duration
+export const SETTINGS_UNDO_TOAST_MS = 5000;
 export const TOKEN_CRITICAL_THRESHOLD = 0.95;
 export const FUEL_GAUGE_WIDTH_PX = 40;
 export const FUEL_GAUGE_HEIGHT_PX = 4;
