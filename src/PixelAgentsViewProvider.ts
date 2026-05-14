@@ -73,7 +73,7 @@ import type { LayoutWatcher } from './layoutPersistence.js';
 import { readLayoutFromFile, watchLayoutFile, writeLayoutToFile } from './layoutPersistence.js';
 import { webviewMessageSource } from './messageSource.js';
 import { PtyManager } from './pty/ptyManager.js';
-import { resolveCategoryDefaults } from './settingsDefaults.js';
+import { applyCategoryDefaults } from './settingsDefaults.js';
 import { clearAwaitingUser } from './timerManager.js';
 import { setHookProvider } from './transcriptParser.js';
 import type { AgentState, MessageSink, MessageSource } from './types.js';
@@ -578,13 +578,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       this.usePtyTerminal.current = enabled;
     } else if (message.type === 'setTerminalFontFamily') {
       const value =
-        typeof message.value === 'string'
-          ? message.value
-          : 'Menlo, Monaco, "Courier New", monospace';
+        typeof message.value === 'string' ? message.value : DEFAULT_SETTINGS.terminal.fontFamily;
       this.context.globalState.update(GLOBAL_KEY_TERMINAL_FONT_FAMILY, value);
     } else if (message.type === 'setTerminalLineHeight') {
       const value =
-        typeof message.value === 'number' && Number.isFinite(message.value) ? message.value : 1.0;
+        typeof message.value === 'number' && Number.isFinite(message.value)
+          ? message.value
+          : DEFAULT_SETTINGS.terminal.lineHeight;
       this.context.globalState.update(GLOBAL_KEY_TERMINAL_LINE_HEIGHT, value);
     } else if (message.type === 'setHooksInfoShown') {
       this.context.globalState.update(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
@@ -636,48 +636,15 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       this.broadcastSink.postMessage({ type: 'setDebugMode', enabled: message.enabled as boolean });
     } else if (message.type === 'restoreCategoryDefaults') {
       const category = message.category as SettingsCategory;
-
-      if (category === 'general') {
-        const v = resolveCategoryDefaults(
-          'general',
-          message.values as (typeof DEFAULT_SETTINGS)['general'] | undefined,
-        );
-        this.context.globalState.update(GLOBAL_KEY_SOUND_ENABLED, v.soundEnabled);
-        this.context.globalState.update(GLOBAL_KEY_ALWAYS_SHOW_LABELS, v.alwaysShowLabels);
-        this.context.globalState.update(GLOBAL_KEY_SHOW_TERMINAL_NAMES, v.showTerminalNames);
-        // debugMode: webview-local state; broadcast a setDebugMode message so multi-webview instances reset
-        this.broadcastSink.postMessage({ type: 'setDebugMode', enabled: v.debugMode });
-      } else if (category === 'agents') {
-        const v = resolveCategoryDefaults(
-          'agents',
-          message.values as (typeof DEFAULT_SETTINGS)['agents'] | undefined,
-        );
-        this.context.globalState.update(GLOBAL_KEY_WATCH_ALL_SESSIONS, v.watchAllSessions);
-        this.context.globalState.update(GLOBAL_KEY_HOOKS_ENABLED, v.hooksEnabled);
-        this.context.globalState.update(GLOBAL_KEY_DEFAULT_CWD, v.defaultCwd);
-      } else if (category === 'terminal') {
-        const v = resolveCategoryDefaults(
-          'terminal',
-          message.values as (typeof DEFAULT_SETTINGS)['terminal'] | undefined,
-        );
-        this.context.globalState.update(GLOBAL_KEY_USE_PTY_TERMINAL, v.usePtyTerminal);
-        this.context.globalState.update(GLOBAL_KEY_TERMINAL_FONT_FAMILY, v.fontFamily);
-        this.context.globalState.update(GLOBAL_KEY_TERMINAL_LINE_HEIGHT, v.lineHeight);
-      } else if (category === 'office') {
-        const v = resolveCategoryDefaults(
-          'office',
-          message.values as (typeof DEFAULT_SETTINGS)['office'] | undefined,
-        );
-        // externalAssetDirectories lives in ~/.pixel-agents/config.json
-        const config = readConfig();
-        config.externalAssetDirectories = [...v.externalAssetDirectories];
-        writeConfig(config);
-        this.broadcastSink.postMessage({
-          type: 'externalAssetDirectoriesUpdated',
-          dirs: v.externalAssetDirectories,
-        });
-      }
-
+      applyCategoryDefaults(
+        category,
+        message.values as Partial<(typeof DEFAULT_SETTINGS)[typeof category]> | undefined,
+        {
+          globalState: this.context.globalState,
+          broadcast: this.broadcastSink,
+          office: { read: readConfig, write: writeConfig },
+        },
+      );
       // Re-broadcast settingsLoaded so the webview re-syncs everything visible.
       this.broadcastSettingsLoaded();
     } else if (message.type === 'webviewReady') {
@@ -1348,11 +1315,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       usePtyTerminal,
       terminalFontFamily: this.context.globalState.get<string>(
         GLOBAL_KEY_TERMINAL_FONT_FAMILY,
-        'Menlo, Monaco, "Courier New", monospace',
+        DEFAULT_SETTINGS.terminal.fontFamily,
       ),
       terminalLineHeight: this.context.globalState.get<number>(
         GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
-        1.0,
+        DEFAULT_SETTINGS.terminal.lineHeight,
       ),
     });
   }

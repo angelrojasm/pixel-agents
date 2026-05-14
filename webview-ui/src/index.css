@@ -43,6 +43,12 @@
   /* Non-utility values */
   --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
   --btn-disabled-opacity: 0.35;
+
+  /* Settings/modal pixel aliases (alias existing --color-* tokens) */
+  --pixel-bg: var(--color-bg);
+  --pixel-border: var(--color-border);
+  --pixel-accent: var(--color-accent);
+  --pixel-muted: var(--color-text-muted);
 }
 
 @theme inline {

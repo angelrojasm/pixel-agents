@@ -66,6 +66,7 @@ interface ExtensionMessageState {
   setWatchAllSessions: (v: boolean) => void;
   alwaysShowLabels: boolean;
   showTerminalNames: boolean;
+  soundEnabled: boolean;
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
   hooksInfoShown: boolean;
@@ -122,6 +123,7 @@ export function useExtensionMessages(
   const [watchAllSessions, setWatchAllSessions] = useState(false);
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [showTerminalNames, setShowTerminalNames] = useState(true);
+  const [soundEnabledState, setSoundEnabledState] = useState(true);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
   const [defaultCwd, setDefaultCwdState] = useState('');
@@ -561,6 +563,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'settingsLoaded') {
         const soundOn = msg.soundEnabled as boolean;
         setSoundEnabled(soundOn);
+        setSoundEnabledState(soundOn);
         if (typeof msg.watchAllSessions === 'boolean') {
           setWatchAllSessions(msg.watchAllSessions as boolean);
         }
@@ -698,6 +701,7 @@ export function useExtensionMessages(
     setWatchAllSessions,
     alwaysShowLabels,
     showTerminalNames,
+    soundEnabled: soundEnabledState,
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,

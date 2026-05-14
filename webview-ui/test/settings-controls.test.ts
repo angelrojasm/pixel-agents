@@ -3,6 +3,9 @@ import { test } from 'node:test';
 
 import { stepperNext, stepperPrev } from '../src/components/settings/controls/stepperUtils.ts';
 
+// Note: Select / RadioGroup / PathInput / ListEditor are purely presentational
+// (no extractable pure logic) — covered by manual QA + the e2e settings flow.
+
 test('stepperNext respects max', () => {
   assert.equal(stepperNext(1.0, 0.1, 0.8, 2.0), 1.1);
   assert.equal(stepperNext(2.0, 0.1, 0.8, 2.0), 2.0);

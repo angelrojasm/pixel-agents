@@ -135,11 +135,11 @@ export const DEFAULT_SETTINGS = {
     hooksEnabled: true,
     defaultCwd: '',
   },
+  // Note: panelPosition and fontSize are webview-local (panelPersistence)
+  // and are NOT covered by DEFAULT_SETTINGS / Restore Defaults / Undo.
   terminal: {
     usePtyTerminal: false,
-    panelPosition: 'bottom' as const,
-    fontFamily: 'monospace',
-    fontSize: 13,
+    fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     lineHeight: 1.0,
   },
   office: {
@@ -177,9 +177,9 @@ export const DEFAULT_SETTINGS = {
 | webview → ext | `setHooksEnabled` (existing)                 | Agents toggle                                             | `{ enabled: boolean }`                                                                                                                         |
 | webview → ext | `setDefaultCwd` (existing)                   | Agents path input commit                                  | `{ value: string }`                                                                                                                            |
 | webview → ext | `setUsePtyTerminal` (existing)               | Terminal toggle                                           | `{ enabled: boolean }`                                                                                                                         |
-| webview → ext | `setPanelPosition` (existing)                | Terminal radio                                            | `{ position: 'bottom' \| 'left' \| 'right' }`                                                                                                  |
+| —             | `setPanelPosition`                           | Terminal radio                                            | (webview-local, persisted via panelPersistence; not broadcast — no multi-webview sync for this setting in v1)                                  |
 | webview → ext | `setTerminalFontFamily` (existing)           | Terminal dropdown                                         | `{ value: string }`                                                                                                                            |
-| webview → ext | `setTerminalFontSize` (existing)             | Terminal stepper                                          | `{ value: number }`                                                                                                                            |
+| —             | `setTerminalFontSize`                        | Terminal stepper                                          | (webview-local, persisted via panelPersistence; not broadcast — no multi-webview sync for this setting in v1)                                  |
 | webview → ext | `setTerminalLineHeight` (existing)           | Terminal stepper                                          | `{ value: number }`                                                                                                                            |
 | webview → ext | `addExternalAssetDirectory` (existing)       | Office "Add Asset Directory"                              | `{ path: string }`                                                                                                                             |
 | webview → ext | `removeExternalAssetDirectory` (existing)    | Office "Remove" per row                                   | `{ path: string }`                                                                                                                             |

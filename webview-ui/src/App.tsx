@@ -79,6 +79,7 @@ function App() {
     setWatchAllSessions,
     alwaysShowLabels,
     showTerminalNames,
+    soundEnabled,
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
@@ -111,6 +112,11 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
   const [soundEnabledLocal, setSoundEnabledLocal] = useState(isSoundEnabled);
+  // Re-sync local sound state whenever the extension broadcasts a new value
+  // (settingsLoaded / setSoundEnabled). Keeps multi-webview instances aligned.
+  useEffect(() => {
+    setSoundEnabledLocal(soundEnabled);
+  }, [soundEnabled]);
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
 
@@ -130,7 +136,13 @@ function App() {
     setAlwaysShowOverlay(alwaysShowLabels);
   }, [alwaysShowLabels]);
 
-  const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), []);
+  const handleToggleDebugMode = useCallback(() => {
+    setIsDebugMode((prev) => {
+      const next = !prev;
+      vscode.postMessage({ type: 'setDebugMode', enabled: next });
+      return next;
+    });
+  }, []);
   const handleToggleSound = useCallback(() => {
     const newVal = !isSoundEnabled();
     setSoundEnabled(newVal);

@@ -70,6 +70,8 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
   const [undoSnapshot, setUndoSnapshot] = useState<unknown>(null);
 
   const mainRef = useRef<HTMLElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   const onKey = useCallback(
     (e: KeyboardEvent) => {
@@ -77,6 +79,22 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
       if (e.key === 'Escape') {
         onClose();
         e.preventDefault();
+        return;
+      }
+      if (e.key === 'Tab') {
+        const focusables = modalRef.current?.querySelectorAll<HTMLElement>(
+          'button, [role="tab"], input, select, [tabindex]:not([tabindex="-1"])',
+        );
+        if (!focusables || focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     },
     [isOpen, onClose],
@@ -87,6 +105,11 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onKey]);
+
+  // On open, focus the close button so the user lands inside the modal.
+  useEffect(() => {
+    if (isOpen) closeButtonRef.current?.focus({ preventScroll: true });
+  }, [isOpen]);
 
   useEffect(() => {
     if (!mainRef.current) return;
@@ -115,11 +138,11 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
           defaultCwd: props.defaultCwd,
         };
       } else if (category === 'terminal') {
+        // panelPosition + fontSize are webview-local (panelPersistence) and not
+        // covered by Restore Defaults / Undo. See src/constants.ts comment.
         snapshot = {
           usePtyTerminal: props.usePtyTerminal,
-          panelPosition: props.panelPosition,
           fontFamily: props.terminalFontFamily,
-          fontSize: props.terminalFontSize,
           lineHeight: props.terminalLineHeight,
         };
       } else if (category === 'office') {
@@ -138,9 +161,7 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
       props.hooksEnabled,
       props.defaultCwd,
       props.usePtyTerminal,
-      props.panelPosition,
       props.terminalFontFamily,
-      props.terminalFontSize,
       props.terminalLineHeight,
       props.externalAssetDirectories,
     ],
@@ -158,17 +179,26 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
     setUndoSnapshot(null);
   }, [undoCategory, undoSnapshot]);
 
+  // Stable dismiss handler so UndoToast's auto-dismiss timer is created once
+  // per toast appearance instead of resetting on every parent re-render.
+  const handleUndoToastDismiss = useCallback(() => {
+    setUndoCategory(null);
+    setUndoSnapshot(null);
+  }, []);
+
   if (!isOpen) return null;
 
   return (
     <div
-      role="dialog"
-      aria-labelledby="settings-title"
       onClick={onClose}
       className="fixed inset-0 bg-black/50 flex items-center justify-center"
       style={{ zIndex: 100 }}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
         onClick={(e) => e.stopPropagation()}
         style={{
           width: SETTINGS_MODAL_WIDTH_PX,
@@ -193,6 +223,7 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
             Settings
           </span>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             aria-label="Close"
@@ -215,6 +246,8 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
           <main
             ref={mainRef}
             role="tabpanel"
+            id={`settings-panel-${active}`}
+            aria-labelledby={`settings-tab-${active}`}
             style={{ flex: 1, padding: 0, overflowY: 'auto', minHeight: 0, position: 'relative' }}
           >
             {active === 'general' && (
@@ -277,10 +310,7 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
               <UndoToast
                 message={`${undoCategory.charAt(0).toUpperCase()}${undoCategory.slice(1)} defaults restored.`}
                 onUndo={onUndo}
-                onDismiss={() => {
-                  setUndoCategory(null);
-                  setUndoSnapshot(null);
-                }}
+                onDismiss={handleUndoToastDismiss}
               />
             )}
           </main>

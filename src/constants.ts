@@ -50,11 +50,10 @@ export const DEFAULT_SETTINGS = {
     hooksEnabled: true,
     defaultCwd: '',
   },
+  // Note: panelPosition and fontSize are webview-local (panelPersistence) and not in this constant.
   terminal: {
     usePtyTerminal: false,
-    panelPosition: 'bottom' as 'bottom' | 'left' | 'right',
-    fontFamily: 'monospace',
-    fontSize: 13,
+    fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     lineHeight: 1.0,
   },
   office: {

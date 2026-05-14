@@ -58,7 +58,10 @@ export function TerminalPanel(props: TerminalPanelProps) {
             <Select
               value={props.terminalFontFamily}
               options={[
-                { value: 'monospace', label: 'System default' },
+                {
+                  value: 'Menlo, Monaco, "Courier New", monospace',
+                  label: 'System default',
+                },
                 { value: "'Fira Code', monospace", label: 'Fira Code' },
                 { value: "'JetBrains Mono', monospace", label: 'JetBrains Mono' },
                 { value: "'Cascadia Mono', monospace", label: 'Cascadia Mono' },

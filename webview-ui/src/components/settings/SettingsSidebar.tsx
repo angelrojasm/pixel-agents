@@ -44,8 +44,10 @@ export function SettingsSidebar({ categories, active, onChange }: SettingsSideba
       {categories.map((c) => (
         <button
           key={c.id}
+          id={`settings-tab-${c.id}`}
           role="tab"
           aria-selected={active === c.id}
+          aria-controls={`settings-panel-${c.id}`}
           tabIndex={-1}
           onClick={() => onChange(c.id)}
           style={{
