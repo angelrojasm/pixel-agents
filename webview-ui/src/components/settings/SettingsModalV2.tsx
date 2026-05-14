@@ -1,17 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { SettingsCategory } from '../../../../src/constants.js';
-import {
-  SETTINGS_MODAL_HEIGHT_PX,
-  SETTINGS_MODAL_WIDTH_PX,
-  SETTINGS_SIDEBAR_WIDTH_PX,
-} from '../../constants.js';
+import { SETTINGS_MODAL_HEIGHT_PX, SETTINGS_MODAL_WIDTH_PX } from '../../constants.js';
 import { vscode } from '../../vscodeApi.js';
 import { AboutPanel } from './panels/AboutPanel.js';
 import { AgentsPanel } from './panels/AgentsPanel.js';
 import { GeneralPanel } from './panels/GeneralPanel.js';
 import { OfficePanel } from './panels/OfficePanel.js';
 import { TerminalPanel } from './panels/TerminalPanel.js';
+import { SettingsSidebar } from './SettingsSidebar.js';
 import { UndoToast } from './UndoToast.js';
 
 interface SettingsModalV2Props {
@@ -72,6 +69,8 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
   const [undoCategory, setUndoCategory] = useState<string | null>(null);
   const [undoSnapshot, setUndoSnapshot] = useState<unknown>(null);
 
+  const mainRef = useRef<HTMLElement>(null);
+
   const onKey = useCallback(
     (e: KeyboardEvent) => {
       if (!isOpen) return;
@@ -88,6 +87,14 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onKey]);
+
+  useEffect(() => {
+    if (!mainRef.current) return;
+    const first = mainRef.current.querySelector<HTMLElement>(
+      'button, [role="radio"], input, select',
+    );
+    first?.focus({ preventScroll: true });
+  }, [active]);
 
   const onRestoreCategory = useCallback(
     (category: 'general' | 'agents' | 'terminal' | 'office') => {
@@ -200,39 +207,13 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
           </button>
         </div>
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-          <nav
-            role="tablist"
-            aria-orientation="vertical"
-            style={{
-              width: SETTINGS_SIDEBAR_WIDTH_PX,
-              borderRight: '2px solid var(--pixel-border)',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.id}
-                role="tab"
-                aria-selected={active === c.id}
-                onClick={() => setActive(c.id)}
-                style={{
-                  textAlign: 'left',
-                  padding: '8px 12px',
-                  borderLeft:
-                    active === c.id ? '2px solid var(--pixel-accent)' : '2px solid transparent',
-                  fontWeight: active === c.id ? 'bold' : 'normal',
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'inherit',
-                }}
-              >
-                {c.label}
-              </button>
-            ))}
-          </nav>
+          <SettingsSidebar
+            categories={CATEGORIES}
+            active={active}
+            onChange={(id) => setActive(id)}
+          />
           <main
+            ref={mainRef}
             role="tabpanel"
             style={{ flex: 1, padding: 0, overflowY: 'auto', minHeight: 0, position: 'relative' }}
           >
