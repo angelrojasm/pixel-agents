@@ -16,7 +16,7 @@
 
 ## Preconditions
 
-- Branch off `main` (or off the terminal-polish branch if it's already merged).
+- Already on branch `2026-05-12-terminal-polish` (all Phase 2 work lives here; do NOT create a new branch).
 - All existing tests pass: `npm test` is green.
 - Repo dependencies installed.
 
@@ -57,20 +57,7 @@
 
 # Part A — Scaffolding + canonical defaults
 
-## Task A1: Branch
-
-- [ ] **Step 1: Create branch**
-
-```bash
-git checkout -b 2026-05-12-settings-redesign
-```
-
-- [ ] **Step 2: Verify clean baseline**
-
-Run: `npm test`
-Expected: PASS.
-
-## Task A2: Define `DEFAULT_SETTINGS`
+## Task A1: Define `DEFAULT_SETTINGS`
 
 **Files:**
 
@@ -90,7 +77,7 @@ export const DEFAULT_SETTINGS = {
     soundEnabled: true,
     alwaysShowLabels: false,
     showTerminalNames: true,
-    isDebugMode: false,
+    debugMode: false,
   },
   agents: {
     watchAllSessions: false,
@@ -111,6 +98,22 @@ export const DEFAULT_SETTINGS = {
 
 export type SettingsCategory = keyof typeof DEFAULT_SETTINGS;
 ```
+
+- [ ] **Step 1b: Add modal sizing and timing constants to `webview-ui/src/constants.ts`**
+
+These must live here (spec Acceptance Criteria §12 — no inline literals allowed in settings component files):
+
+```ts
+// Settings modal layout constants
+export const SETTINGS_MODAL_WIDTH_PX = 720;
+export const SETTINGS_MODAL_HEIGHT_PX = 520;
+export const SETTINGS_SIDEBAR_WIDTH_PX = 160;
+export const SETTINGS_TITLE_STRIP_HEIGHT_PX = 32;
+// Settings undo toast duration
+export const SETTINGS_UNDO_TOAST_MS = 5000;
+```
+
+Any occurrence of the literal `720`, `520`, `160`, `32` (as a modal dimension), or `5000` (as undo duration) in files under `webview-ui/src/components/settings/` must reference these constants instead.
 
 - [ ] **Step 2: Update existing `globalState.get` defaults to reference the constant**
 
@@ -148,7 +151,7 @@ git add src/constants.ts src/PixelAgentsViewProvider.ts
 git commit -m "constants: introduce DEFAULT_SETTINGS as single source of truth"
 ```
 
-## Task A3: Create empty SettingsModalV2 shell
+## Task A2: Create empty SettingsModalV2 shell
 
 **Files:**
 
@@ -161,6 +164,11 @@ Create the file:
 ```tsx
 import { useState, useCallback, useEffect } from 'react';
 import type { SettingsCategory } from '../../../../src/constants.js';
+import {
+  SETTINGS_MODAL_WIDTH_PX,
+  SETTINGS_MODAL_HEIGHT_PX,
+  SETTINGS_SIDEBAR_WIDTH_PX,
+} from '../../constants.js';
 
 interface SettingsModalV2Props {
   isOpen: boolean;
@@ -215,8 +223,8 @@ export function SettingsModalV2({ isOpen, onClose }: SettingsModalV2Props) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 720,
-          height: 520,
+          width: SETTINGS_MODAL_WIDTH_PX,
+          height: SETTINGS_MODAL_HEIGHT_PX,
           background: 'var(--pixel-bg)',
           border: '2px solid var(--pixel-border)',
           boxShadow: '2px 2px 0px var(--pixel-border)',
@@ -255,7 +263,7 @@ export function SettingsModalV2({ isOpen, onClose }: SettingsModalV2Props) {
             role="tablist"
             aria-orientation="vertical"
             style={{
-              width: 160,
+              width: SETTINGS_SIDEBAR_WIDTH_PX,
               borderRight: '2px solid var(--pixel-border)',
               display: 'flex',
               flexDirection: 'column',
@@ -311,7 +319,7 @@ git add webview-ui/src/components/settings/SettingsModalV2.tsx
 git commit -m "settings: V2 modal shell with category tabs, ESC to close"
 ```
 
-## Task A4: Feature-flag V2 modal behind a dev toggle
+## Task A3: Feature-flag V2 modal behind a dev toggle
 
 **Files:**
 
@@ -844,6 +852,8 @@ git commit -m "settings: SettingsRow layout primitive"
 - [ ] **Step 1: Implement**
 
 ```tsx
+import { SETTINGS_TITLE_STRIP_HEIGHT_PX } from '../../constants.js';
+
 interface SettingsTitleStripProps {
   title: string;
   onRestoreDefaults: () => void;
@@ -857,6 +867,7 @@ export function SettingsTitleStrip({ title, onRestoreDefaults }: SettingsTitleSt
         justifyContent: 'space-between',
         alignItems: 'center',
         background: 'var(--pixel-accent)',
+        minHeight: SETTINGS_TITLE_STRIP_HEIGHT_PX,
         padding: '6px 12px',
         borderBottom: '2px solid var(--pixel-border)',
       }}
@@ -910,7 +921,7 @@ interface GeneralPanelProps {
   onToggleAlwaysShowLabels: () => void;
   showTerminalNames: boolean;
   onToggleShowTerminalNames: () => void;
-  isDebugMode: boolean;
+  debugMode: boolean;
   onToggleDebugMode: () => void;
   onRestoreDefaults: () => void;
 }
@@ -953,7 +964,7 @@ export function GeneralPanel(props: GeneralPanelProps) {
           label="Debug View"
           helper="Overlay diagnostic information on top of the office canvas."
           control={
-            <Checkbox checked={props.isDebugMode} onChange={props.onToggleDebugMode} label="" />
+            <Checkbox checked={props.debugMode} onChange={props.onToggleDebugMode} label="" />
           }
         />
       </div>
@@ -977,7 +988,7 @@ interface SettingsModalV2Props {
   onToggleAlwaysShowLabels: () => void;
   showTerminalNames: boolean;
   onToggleShowTerminalNames: () => void;
-  isDebugMode: boolean;
+  debugMode: boolean;
   onToggleDebugMode: () => void;
   onRestoreCategory: (category: 'general' | 'agents' | 'terminal' | 'office') => void;
 }
@@ -993,7 +1004,7 @@ Replace `<div>General panel placeholder</div>` with:
   onToggleAlwaysShowLabels={onToggleAlwaysShowLabels}
   showTerminalNames={showTerminalNames}
   onToggleShowTerminalNames={onToggleShowTerminalNames}
-  isDebugMode={isDebugMode}
+  debugMode={isDebugMode}
   onToggleDebugMode={onToggleDebugMode}
   onRestoreDefaults={() => onRestoreCategory('general')}
 />
@@ -1429,13 +1440,25 @@ git add src/PixelAgentsViewProvider.ts
 git commit -m "settings: resolveCategoryDefaults helper"
 ```
 
-## Task D3: Wire the `restoreCategoryDefaults` message
+## Task D3: Wire the `restoreCategoryDefaults` message + add `setDebugMode` handler
 
 **Files:**
 
 - Modify: `src/PixelAgentsViewProvider.ts`
 
-- [ ] **Step 1: Add message handler**
+- [ ] **Step 0: Add `setDebugMode` inbound message handler**
+
+`debugMode` is currently webview-local state only (no extension persistence). To keep multi-webview modals in sync when Restore Defaults resets it, the extension must be able to broadcast the reset value back. Add a handler in the message dispatch chain:
+
+```ts
+    } else if (message.type === 'setDebugMode') {
+      // debugMode is webview-local; just echo back to all webviews so multi-webview modals stay in sync.
+      this.broadcastSink.postMessage({ type: 'setDebugMode', enabled: message.enabled as boolean });
+```
+
+In `useExtensionMessages.ts`, handle the inbound `setDebugMode` message and call `setIsDebugMode(msg.enabled)` (or expose a setter from App-level state).
+
+- [ ] **Step 1: Add `restoreCategoryDefaults` message handler**
 
 In the message dispatch chain (where `setUsePtyTerminal` etc. live), add:
 
@@ -1449,7 +1472,8 @@ In the message dispatch chain (where `setUsePtyTerminal` etc. live), add:
         this.context.globalState.update(GLOBAL_KEY_SOUND_ENABLED, values.soundEnabled);
         this.context.globalState.update(GLOBAL_KEY_ALWAYS_SHOW_LABELS, values.alwaysShowLabels);
         this.context.globalState.update(GLOBAL_KEY_SHOW_TERMINAL_NAMES, values.showTerminalNames);
-        // isDebugMode: webview-local; broadcast a reset message
+        // debugMode: webview-local state; broadcast a setDebugMode message so multi-webview instances reset
+        this.broadcastSink.postMessage({ type: 'setDebugMode', enabled: values.debugMode });
       } else if (category === 'agents') {
         this.context.globalState.update(GLOBAL_KEY_WATCH_ALL_SESSIONS, values.watchAllSessions);
         this.context.globalState.update(GLOBAL_KEY_HOOKS_ENABLED, values.hooksEnabled);
@@ -1502,6 +1526,7 @@ git commit -m "settings: handle restoreCategoryDefaults message"
 
 ```tsx
 import { useEffect } from 'react';
+import { SETTINGS_UNDO_TOAST_MS } from '../../../constants.js';
 
 interface UndoToastProps {
   message: string;
@@ -1510,7 +1535,12 @@ interface UndoToastProps {
   durationMs?: number;
 }
 
-export function UndoToast({ message, onUndo, onDismiss, durationMs = 5000 }: UndoToastProps) {
+export function UndoToast({
+  message,
+  onUndo,
+  onDismiss,
+  durationMs = SETTINGS_UNDO_TOAST_MS,
+}: UndoToastProps) {
   useEffect(() => {
     const t = setTimeout(onDismiss, durationMs);
     return () => clearTimeout(t);
@@ -1596,7 +1626,7 @@ const onRestoreCategory = useCallback(
         soundEnabled,
         alwaysShowLabels,
         showTerminalNames,
-        isDebugMode,
+        debugMode: isDebugMode,
       };
     } else if (category === 'agents') {
       snapshot = { watchAllSessions, hooksEnabled, defaultCwd };
@@ -1694,6 +1724,7 @@ Move the `<nav role="tablist">` block from `SettingsModalV2.tsx` into:
 
 ```tsx
 import { useRef, useEffect } from 'react';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../constants.js';
 
 export type SettingsCategoryId = 'general' | 'agents' | 'terminal' | 'office' | 'about';
 
@@ -1727,7 +1758,7 @@ export function SettingsSidebar({ categories, active, onChange }: SettingsSideba
       tabIndex={0}
       onKeyDown={onKey}
       style={{
-        width: 160,
+        width: SETTINGS_SIDEBAR_WIDTH_PX,
         borderRight: '2px solid var(--pixel-border)',
         display: 'flex',
         flexDirection: 'column',
@@ -1823,6 +1854,7 @@ Build + F5. Open Settings. For each category:
 - **Restore Defaults** on General → confirm settings revert → Undo within 5s → confirm restore.
 - **ESC** closes from any category.
 - **↑/↓** moves sidebar selection.
+- **Multi-webview sync**: open the side-panel view AND a full-screen panel simultaneously (both showing the Settings modal). Toggle a setting (e.g. Sound Notifications) in the side-panel modal — confirm the checkbox in the full-screen modal reflects the new value within one event-loop tick (driven by `settingsLoaded` broadcast).
 
 - [ ] **Step 3: Fix any visual or behavioral parity gaps**
 
@@ -1868,43 +1900,21 @@ git add webview-ui/src/App.tsx
 git commit -m "settings: remove V1 modal, V2 is now canonical"
 ```
 
-## Task F3: Update CLAUDE.md
+## Task F3: Update docs/ROADMAP.md
 
 **Files:**
 
-- Modify: `CLAUDE.md`
+- Modify: `docs/ROADMAP.md`
 
-- [ ] **Step 1: Update the SettingsModal line**
+- [ ] **Step 1: Mark Settings Menu Redesign as shipped**
 
-Find the line describing `SettingsModal.tsx` in `CLAUDE.md`. Replace with:
+Find the Phase 2 section in `docs/ROADMAP.md`. Locate the "Settings menu redesign" (or "§4" / "settings" bundle) entry. Mark it as shipped (e.g. change `[ ]` to `[x]`, or update the status label). If there is a "Still open" line specifically referencing this bundle, strike or remove it.
 
-```
-    SettingsModal*.tsx          — Replaced by settings/ — see below
-    settings/
-      SettingsModalV2.tsx       — Paneled settings modal: sidebar + content pane
-      SettingsSidebar.tsx       — Category list with ↑/↓ keyboard nav
-      SettingsTitleStrip.tsx    — Per-panel title + Restore Defaults button
-      SettingsRow.tsx           — [label, helper, control] row primitive
-      UndoToast.tsx             — 5s undo for Restore Defaults
-      panels/                   — GeneralPanel, AgentsPanel, TerminalPanel, OfficePanel, AboutPanel
-      controls/                 — Stepper, Select, RadioGroup, PathInput, ListEditor
-```
-
-(Adapt to the exact CLAUDE.md layout — the existing file uses an ASCII tree.)
-
-- [ ] **Step 2: Add a one-line note in the constants section**
-
-Find the "Constants" section. Add:
-
-```
-- **Settings defaults**: `src/constants.ts` `DEFAULT_SETTINGS` — single source of truth for `globalState.get` defaults and per-category Restore Defaults.
-```
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
-git add CLAUDE.md
-git commit -m "docs(CLAUDE): document settings redesign + DEFAULT_SETTINGS"
+git add docs/ROADMAP.md
+git commit -m "docs(ROADMAP): mark Settings Menu Redesign shipped (final Phase 2 bundle)"
 ```
 
 ---
@@ -1928,36 +1938,61 @@ Expected: PASS.
 Run: `npm run build`
 Expected: PASS.
 
-## Task FV2: Push + open PR
+## Task FV2: Confirm full build + test suite green
 
-- [ ] **Step 1: Push**
+Do NOT push or open a PR — the orchestrator handles integration after code review.
+
+- [ ] **Step 1: Full test suite**
+
+Run: `npm test`
+Expected: PASS (extension, server, webview suites; note final test counts for reporting).
+
+- [ ] **Step 2: Type-check both sides**
+
+Run: `npx tsc --noEmit && npx tsc --noEmit -p webview-ui`
+Expected: PASS.
+
+- [ ] **Step 3: Full build**
+
+Run: `npm run build`
+Expected: PASS.
+
+- [ ] **Step 4: Report**
+
+Report final test counts (extension / server / webview) and confirm zero type errors. The orchestrator will create the PR.
+
+## Task FV3: Spec compliance grep gate
+
+**Files:** None (read-only checks).
+
+- [ ] **Step 1: No inline hex literals in settings components**
 
 ```bash
-git push -u origin 2026-05-12-settings-redesign
+grep -rn -E '#[0-9a-fA-F]{3,8}\b' webview-ui/src/components/settings/
 ```
 
-- [ ] **Step 2: Open PR via gh**
+Expected: zero matches. Every color reference must use a `--pixel-*` CSS variable. If any matches appear, replace with the appropriate variable (see `webview-ui/src/index.css` `:root`) before proceeding.
+
+- [ ] **Step 2: No `vscode.` references in settings components**
 
 ```bash
-gh pr create --title "Settings menu redesign (paneled)" --body "$(cat <<'EOF'
-## Summary
-- Replace flat-scrolling Settings modal with a paneled, game-style layout (sidebar + content pane).
-- 5 categories: General / Agents / Terminal / Office / About.
-- Per-category Restore Defaults with 5s undo.
-- Single source of truth for defaults via `DEFAULT_SETTINGS` in `src/constants.ts`.
-- Keyboard nav: ESC closes, ↑/↓ on sidebar, Tab cycles controls, focus jumps on category change.
-
-Spec: `docs/superpowers/specs/2026-05-12-settings-redesign-design.md`
-Plan: `docs/superpowers/plans/2026-05-12-settings-redesign.md`
-
-## Test plan
-- [ ] Toggle every setting in each category and confirm live-apply.
-- [ ] Restore Defaults + Undo for each category.
-- [ ] ↑/↓ sidebar nav, Tab cycling, ESC close.
-- [ ] Reload preserves all values.
-EOF
-)"
+grep -rn 'vscode\.' webview-ui/src/components/settings/
 ```
+
+Expected: zero matches. The one permitted webview→extension channel is `vscode.postMessage(...)` — but that call lives in `SettingsModalV2.tsx`, accessed via the `vscodeApi.ts` wrapper (`import { vscode } from '../../vscodeApi.js'`), not via a direct `vscode.` reference. If any raw `vscode.` usage is found, route through `vscodeApi.ts`.
+
+- [ ] **Step 3: Sizing constants are in place**
+
+```bash
+grep -n 'SETTINGS_MODAL_WIDTH_PX\|SETTINGS_MODAL_HEIGHT_PX\|SETTINGS_SIDEBAR_WIDTH_PX\|SETTINGS_TITLE_STRIP_HEIGHT_PX\|SETTINGS_UNDO_TOAST_MS' webview-ui/src/constants.ts
+```
+
+Expected: all 5 constants found.
+
+- [ ] **Step 4: Type-check + lint + full test suite**
+
+Run: `npx tsc --noEmit && npx tsc --noEmit -p webview-ui && npm test`
+Expected: all pass, zero type errors.
 
 ---
 
@@ -1978,3 +2013,24 @@ EOF
 - [x] **Tests:** Real test code in Tasks B1 (Stepper) and D1 (resolveCategoryDefaults). Manual integration steps in Task F1 cover behavior parity.
 - [x] **Granularity:** Each task ships independently. The V2 modal is feature-flagged until parity is reached (Task F1), so the work can pause at any commit without breaking V1.
 - [x] **No Cmd/Ctrl+, claim:** the spec dropped this shortcut; plan never references it.
+
+---
+
+## Spec Acceptance Criteria Coverage
+
+Maps the 12 spec acceptance criteria (§Acceptance Criteria) to the plan task(s) that implement them.
+
+| #   | Spec criterion (abbreviated)                                                                            | Implementing task(s)                      |
+| --- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| 1   | Settings modal opens within 100ms (perceived instant)                                                   | Task A2 (shell), Task F1 (parity pass)    |
+| 2   | Every setting persists across close/reopen and webview reload (`set*` writes to globalState)            | Tasks C1–C6 (per-panel wiring), Task F1   |
+| 3   | Restore Defaults writes DEFAULT_SETTINGS[category], emits `settingsLoaded`, modal re-renders            | Tasks D1–D3 (TDD + handler)               |
+| 4   | Undo within 5s restores snapshot exactly                                                                | Task D5 (undo callback + toast)           |
+| 5   | Multi-webview sync: setting changed in side-panel updates full-screen modal within one tick             | Task D3 (`broadcastSink`); Task FV3 grep  |
+| 6   | Keyboard-only flow: open, ↓ to Office, Tab controls, Space checkbox, Esc close                          | Task E1 (sidebar nav + focus mgmt)        |
+| 7   | No inline hex literals in settings/\* (`grep -nE '#[0-9a-fA-F]{6}'` returns 0)                          | Task FV3 Step 1                           |
+| 8   | No `vscode.` references in settings/\* (`grep -nE 'vscode\.'` returns 0)                                | Task FV3 Step 2                           |
+| 9   | Modal traps focus (Tab wraps; Shift+Tab from close button wraps to last element)                        | Task E1 (focus-on-change); Task F1 parity |
+| 10  | Unit tests cover every reusable control (Stepper, Dropdown, RadioGroup, PathInput, ListEditor)          | Tasks B1–B6                               |
+| 11  | Extension test: `restoreCategoryDefaults` writes correct keys and emits `settingsLoaded` (4 categories) | Tasks D1–D3                               |
+| 12  | Sizing constants in `webview-ui/src/constants.ts` (5 constants); no inline literals in component files  | Task A1 Step 1b; Task FV3 Steps 1 + 3     |
