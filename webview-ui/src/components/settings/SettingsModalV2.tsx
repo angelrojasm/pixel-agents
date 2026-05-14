@@ -6,11 +6,13 @@ import {
   SETTINGS_MODAL_WIDTH_PX,
   SETTINGS_SIDEBAR_WIDTH_PX,
 } from '../../constants.js';
+import { vscode } from '../../vscodeApi.js';
 import { AboutPanel } from './panels/AboutPanel.js';
 import { AgentsPanel } from './panels/AgentsPanel.js';
 import { GeneralPanel } from './panels/GeneralPanel.js';
 import { OfficePanel } from './panels/OfficePanel.js';
 import { TerminalPanel } from './panels/TerminalPanel.js';
+import { UndoToast } from './UndoToast.js';
 
 interface SettingsModalV2Props {
   isOpen: boolean;
@@ -52,8 +54,6 @@ interface SettingsModalV2Props {
   extensionVersion: string;
   onViewChangelog: () => void;
   onViewHooksInfo: () => void;
-  // Restore defaults
-  onRestoreCategory: (category: 'general' | 'agents' | 'terminal' | 'office') => void;
 }
 
 const CATEGORIES: { id: SettingsCategory | 'about'; label: string }[] = [
@@ -67,6 +67,10 @@ const CATEGORIES: { id: SettingsCategory | 'about'; label: string }[] = [
 export function SettingsModalV2(props: SettingsModalV2Props) {
   const { isOpen, onClose } = props;
   const [active, setActive] = useState<(typeof CATEGORIES)[number]['id']>('general');
+
+  // Undo state for Restore Defaults
+  const [undoCategory, setUndoCategory] = useState<string | null>(null);
+  const [undoSnapshot, setUndoSnapshot] = useState<unknown>(null);
 
   const onKey = useCallback(
     (e: KeyboardEvent) => {
@@ -84,6 +88,68 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onKey]);
+
+  const onRestoreCategory = useCallback(
+    (category: 'general' | 'agents' | 'terminal' | 'office') => {
+      // Build a snapshot from current props. The parent owns the live values;
+      // we record them so undo can restore them precisely.
+      let snapshot: Record<string, unknown> = {};
+      if (category === 'general') {
+        snapshot = {
+          soundEnabled: props.soundEnabled,
+          alwaysShowLabels: props.alwaysShowLabels,
+          showTerminalNames: props.showTerminalNames,
+          debugMode: props.debugMode,
+        };
+      } else if (category === 'agents') {
+        snapshot = {
+          watchAllSessions: props.watchAllSessions,
+          hooksEnabled: props.hooksEnabled,
+          defaultCwd: props.defaultCwd,
+        };
+      } else if (category === 'terminal') {
+        snapshot = {
+          usePtyTerminal: props.usePtyTerminal,
+          panelPosition: props.panelPosition,
+          fontFamily: props.terminalFontFamily,
+          fontSize: props.terminalFontSize,
+          lineHeight: props.terminalLineHeight,
+        };
+      } else if (category === 'office') {
+        snapshot = { externalAssetDirectories: props.externalAssetDirectories };
+      }
+      setUndoSnapshot(snapshot);
+      setUndoCategory(category);
+      vscode.postMessage({ type: 'restoreCategoryDefaults', category });
+    },
+    [
+      props.soundEnabled,
+      props.alwaysShowLabels,
+      props.showTerminalNames,
+      props.debugMode,
+      props.watchAllSessions,
+      props.hooksEnabled,
+      props.defaultCwd,
+      props.usePtyTerminal,
+      props.panelPosition,
+      props.terminalFontFamily,
+      props.terminalFontSize,
+      props.terminalLineHeight,
+      props.externalAssetDirectories,
+    ],
+  );
+
+  const onUndo = useCallback(() => {
+    if (undoCategory && undoSnapshot) {
+      vscode.postMessage({
+        type: 'restoreCategoryDefaults',
+        category: undoCategory,
+        values: undoSnapshot,
+      });
+    }
+    setUndoCategory(null);
+    setUndoSnapshot(null);
+  }, [undoCategory, undoSnapshot]);
 
   if (!isOpen) return null;
 
@@ -166,7 +232,10 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
               </button>
             ))}
           </nav>
-          <main role="tabpanel" style={{ flex: 1, padding: 0, overflowY: 'auto', minHeight: 0 }}>
+          <main
+            role="tabpanel"
+            style={{ flex: 1, padding: 0, overflowY: 'auto', minHeight: 0, position: 'relative' }}
+          >
             {active === 'general' && (
               <GeneralPanel
                 soundEnabled={props.soundEnabled}
@@ -177,7 +246,7 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
                 onToggleShowTerminalNames={props.onToggleShowTerminalNames}
                 debugMode={props.debugMode}
                 onToggleDebugMode={props.onToggleDebugMode}
-                onRestoreDefaults={() => props.onRestoreCategory('general')}
+                onRestoreDefaults={() => onRestoreCategory('general')}
               />
             )}
             {active === 'agents' && (
@@ -188,7 +257,7 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
                 onToggleHooksEnabled={props.onToggleHooksEnabled}
                 defaultCwd={props.defaultCwd}
                 onChangeDefaultCwd={props.onChangeDefaultCwd}
-                onRestoreDefaults={() => props.onRestoreCategory('agents')}
+                onRestoreDefaults={() => onRestoreCategory('agents')}
               />
             )}
             {active === 'terminal' && (
@@ -203,7 +272,7 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
                 onChangeTerminalFontSize={props.onChangeTerminalFontSize}
                 terminalLineHeight={props.terminalLineHeight}
                 onChangeTerminalLineHeight={props.onChangeTerminalLineHeight}
-                onRestoreDefaults={() => props.onRestoreCategory('terminal')}
+                onRestoreDefaults={() => onRestoreCategory('terminal')}
               />
             )}
             {active === 'office' && (
@@ -213,7 +282,7 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
                 onRemoveAssetDirectory={props.onRemoveAssetDirectory}
                 onExportLayout={props.onExportLayout}
                 onImportLayout={props.onImportLayout}
-                onRestoreDefaults={() => props.onRestoreCategory('office')}
+                onRestoreDefaults={() => onRestoreCategory('office')}
               />
             )}
             {active === 'about' && (
@@ -221,6 +290,16 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
                 extensionVersion={props.extensionVersion}
                 onViewChangelog={props.onViewChangelog}
                 onViewHooksInfo={props.onViewHooksInfo}
+              />
+            )}
+            {undoCategory && (
+              <UndoToast
+                message={`${undoCategory.charAt(0).toUpperCase()}${undoCategory.slice(1)} defaults restored.`}
+                onUndo={onUndo}
+                onDismiss={() => {
+                  setUndoCategory(null);
+                  setUndoSnapshot(null);
+                }}
               />
             )}
           </main>

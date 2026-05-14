@@ -38,6 +38,7 @@ import {
   sendWallTilesToWebview,
 } from './assetLoader.js';
 import { readConfig, writeConfig } from './configPersistence.js';
+import type { SettingsCategory } from './constants.js';
 import {
   DEFAULT_SETTINGS,
   GLOBAL_KEY_ALWAYS_SHOW_LABELS,
@@ -72,6 +73,7 @@ import type { LayoutWatcher } from './layoutPersistence.js';
 import { readLayoutFromFile, watchLayoutFile, writeLayoutToFile } from './layoutPersistence.js';
 import { webviewMessageSource } from './messageSource.js';
 import { PtyManager } from './pty/ptyManager.js';
+import { resolveCategoryDefaults } from './settingsDefaults.js';
 import { clearAwaitingUser } from './timerManager.js';
 import { setHookProvider } from './transcriptParser.js';
 import type { AgentState, MessageSink, MessageSource } from './types.js';
@@ -629,6 +631,55 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.broadcastSink.postMessage({ type: 'agentClosed', id });
         }
       }
+    } else if (message.type === 'setDebugMode') {
+      // debugMode is webview-local; just echo back to all webviews so multi-webview modals stay in sync.
+      this.broadcastSink.postMessage({ type: 'setDebugMode', enabled: message.enabled as boolean });
+    } else if (message.type === 'restoreCategoryDefaults') {
+      const category = message.category as SettingsCategory;
+
+      if (category === 'general') {
+        const v = resolveCategoryDefaults(
+          'general',
+          message.values as (typeof DEFAULT_SETTINGS)['general'] | undefined,
+        );
+        this.context.globalState.update(GLOBAL_KEY_SOUND_ENABLED, v.soundEnabled);
+        this.context.globalState.update(GLOBAL_KEY_ALWAYS_SHOW_LABELS, v.alwaysShowLabels);
+        this.context.globalState.update(GLOBAL_KEY_SHOW_TERMINAL_NAMES, v.showTerminalNames);
+        // debugMode: webview-local state; broadcast a setDebugMode message so multi-webview instances reset
+        this.broadcastSink.postMessage({ type: 'setDebugMode', enabled: v.debugMode });
+      } else if (category === 'agents') {
+        const v = resolveCategoryDefaults(
+          'agents',
+          message.values as (typeof DEFAULT_SETTINGS)['agents'] | undefined,
+        );
+        this.context.globalState.update(GLOBAL_KEY_WATCH_ALL_SESSIONS, v.watchAllSessions);
+        this.context.globalState.update(GLOBAL_KEY_HOOKS_ENABLED, v.hooksEnabled);
+        this.context.globalState.update(GLOBAL_KEY_DEFAULT_CWD, v.defaultCwd);
+      } else if (category === 'terminal') {
+        const v = resolveCategoryDefaults(
+          'terminal',
+          message.values as (typeof DEFAULT_SETTINGS)['terminal'] | undefined,
+        );
+        this.context.globalState.update(GLOBAL_KEY_USE_PTY_TERMINAL, v.usePtyTerminal);
+        this.context.globalState.update(GLOBAL_KEY_TERMINAL_FONT_FAMILY, v.fontFamily);
+        this.context.globalState.update(GLOBAL_KEY_TERMINAL_LINE_HEIGHT, v.lineHeight);
+      } else if (category === 'office') {
+        const v = resolveCategoryDefaults(
+          'office',
+          message.values as (typeof DEFAULT_SETTINGS)['office'] | undefined,
+        );
+        // externalAssetDirectories lives in ~/.pixel-agents/config.json
+        const config = readConfig();
+        config.externalAssetDirectories = [...v.externalAssetDirectories];
+        writeConfig(config);
+        this.broadcastSink.postMessage({
+          type: 'externalAssetDirectoriesUpdated',
+          dirs: v.externalAssetDirectories,
+        });
+      }
+
+      // Re-broadcast settingsLoaded so the webview re-syncs everything visible.
+      this.broadcastSettingsLoaded();
     } else if (message.type === 'webviewReady') {
       // Note: pty-backed agents are runtime-only in v1 — they're filtered out of
       // persistAgents() so restoreAgents never sees them. On reload, the user must
@@ -659,68 +710,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.registerAgentHook(agent);
       }
       // Send persisted settings to webview
-      const soundEnabled = this.context.globalState.get<boolean>(
-        GLOBAL_KEY_SOUND_ENABLED,
-        DEFAULT_SETTINGS.general.soundEnabled,
-      );
-      const lastSeenVersion = this.context.globalState.get<string>(
-        GLOBAL_KEY_LAST_SEEN_VERSION,
-        '',
-      );
-      const extensionVersion =
-        (this.context.extension.packageJSON as { version?: string }).version ?? '';
-      const watchAllSessions = this.context.globalState.get<boolean>(
+      // Sync mutable refs before broadcasting so runtime state matches persisted values
+      this.watchAllSessions.current = this.context.globalState.get<boolean>(
         GLOBAL_KEY_WATCH_ALL_SESSIONS,
         DEFAULT_SETTINGS.agents.watchAllSessions,
-      );
-      const alwaysShowLabels = this.context.globalState.get<boolean>(
-        GLOBAL_KEY_ALWAYS_SHOW_LABELS,
-        DEFAULT_SETTINGS.general.alwaysShowLabels,
-      );
-      const showTerminalNames = this.context.globalState.get<boolean>(
-        GLOBAL_KEY_SHOW_TERMINAL_NAMES,
-        DEFAULT_SETTINGS.general.showTerminalNames,
-      );
-      this.watchAllSessions.current = watchAllSessions;
-      const hooksEnabled = this.context.globalState.get<boolean>(
-        GLOBAL_KEY_HOOKS_ENABLED,
-        DEFAULT_SETTINGS.agents.hooksEnabled,
-      );
-      const hooksInfoShown = this.context.globalState.get<boolean>(
-        GLOBAL_KEY_HOOKS_INFO_SHOWN,
-        false,
-      );
-      const defaultCwd = this.context.globalState.get<string>(
-        GLOBAL_KEY_DEFAULT_CWD,
-        DEFAULT_SETTINGS.agents.defaultCwd,
       );
       this.usePtyTerminal.current = this.context.globalState.get<boolean>(
         GLOBAL_KEY_USE_PTY_TERMINAL,
         DEFAULT_SETTINGS.terminal.usePtyTerminal,
       );
-      const config = readConfig();
-      this.broadcastSink.postMessage({
-        type: 'settingsLoaded',
-        soundEnabled,
-        lastSeenVersion,
-        extensionVersion,
-        watchAllSessions,
-        alwaysShowLabels,
-        showTerminalNames,
-        hooksEnabled,
-        hooksInfoShown,
-        defaultCwd,
-        externalAssetDirectories: config.externalAssetDirectories,
-        usePtyTerminal: this.usePtyTerminal.current,
-        terminalFontFamily: this.context.globalState.get<string>(
-          GLOBAL_KEY_TERMINAL_FONT_FAMILY,
-          'Menlo, Monaco, "Courier New", monospace',
-        ),
-        terminalLineHeight: this.context.globalState.get<number>(
-          GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
-          1.0,
-        ),
-      });
+      this.broadcastSettingsLoaded();
 
       // Send workspace folders to webview (only when multi-root)
       const wsFolders = vscode.workspace.workspaceFolders;
@@ -1295,6 +1294,68 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       this.staleCheckTimer = null;
     }
   }
+
+  /** Broadcast the full settingsLoaded payload to all webviews. */
+  private broadcastSettingsLoaded(): void {
+    const soundEnabled = this.context.globalState.get<boolean>(
+      GLOBAL_KEY_SOUND_ENABLED,
+      DEFAULT_SETTINGS.general.soundEnabled,
+    );
+    const lastSeenVersion = this.context.globalState.get<string>(GLOBAL_KEY_LAST_SEEN_VERSION, '');
+    const extensionVersion =
+      (this.context.extension.packageJSON as { version?: string }).version ?? '';
+    const watchAllSessions = this.context.globalState.get<boolean>(
+      GLOBAL_KEY_WATCH_ALL_SESSIONS,
+      DEFAULT_SETTINGS.agents.watchAllSessions,
+    );
+    const alwaysShowLabels = this.context.globalState.get<boolean>(
+      GLOBAL_KEY_ALWAYS_SHOW_LABELS,
+      DEFAULT_SETTINGS.general.alwaysShowLabels,
+    );
+    const showTerminalNames = this.context.globalState.get<boolean>(
+      GLOBAL_KEY_SHOW_TERMINAL_NAMES,
+      DEFAULT_SETTINGS.general.showTerminalNames,
+    );
+    const hooksEnabled = this.context.globalState.get<boolean>(
+      GLOBAL_KEY_HOOKS_ENABLED,
+      DEFAULT_SETTINGS.agents.hooksEnabled,
+    );
+    const hooksInfoShown = this.context.globalState.get<boolean>(
+      GLOBAL_KEY_HOOKS_INFO_SHOWN,
+      false,
+    );
+    const defaultCwd = this.context.globalState.get<string>(
+      GLOBAL_KEY_DEFAULT_CWD,
+      DEFAULT_SETTINGS.agents.defaultCwd,
+    );
+    const usePtyTerminal = this.context.globalState.get<boolean>(
+      GLOBAL_KEY_USE_PTY_TERMINAL,
+      DEFAULT_SETTINGS.terminal.usePtyTerminal,
+    );
+    const config = readConfig();
+    this.broadcastSink.postMessage({
+      type: 'settingsLoaded',
+      soundEnabled,
+      lastSeenVersion,
+      extensionVersion,
+      watchAllSessions,
+      alwaysShowLabels,
+      showTerminalNames,
+      hooksEnabled,
+      hooksInfoShown,
+      defaultCwd,
+      externalAssetDirectories: config.externalAssetDirectories,
+      usePtyTerminal,
+      terminalFontFamily: this.context.globalState.get<string>(
+        GLOBAL_KEY_TERMINAL_FONT_FAMILY,
+        'Menlo, Monaco, "Courier New", monospace',
+      ),
+      terminalLineHeight: this.context.globalState.get<number>(
+        GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
+        1.0,
+      ),
+    });
+  }
 }
 
 function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): string {
@@ -1311,3 +1372,6 @@ function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): s
 
   return html;
 }
+
+// Re-export for consumers and tests that can't import PixelAgentsViewProvider directly
+export { resolveCategoryDefaults } from './settingsDefaults.js';

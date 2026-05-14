@@ -59,6 +59,9 @@ function App() {
     [editor.isEditMode, editor.isDirty],
   );
 
+  const [isDebugMode, setIsDebugMode] = useState(false);
+  const handleSetDebugMode = useCallback((enabled: boolean) => setIsDebugMode(enabled), []);
+
   const {
     agents,
     selectedAgent,
@@ -94,7 +97,12 @@ function App() {
     hookHealth,
     acknowledgeCrash,
     restartAgent,
-  } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
+  } = useExtensionMessages(
+    getOfficeState,
+    editor.setLastSavedLayout,
+    isEditDirty,
+    handleSetDebugMode,
+  );
 
   // Show migration notice once layout reset is detected
   const [migrationNoticeDismissed, setMigrationNoticeDismissed] = useState(false);
@@ -108,7 +116,6 @@ function App() {
   const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
   const [soundEnabledLocal, setSoundEnabledLocal] = useState(isSoundEnabled);
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
-  const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
@@ -530,9 +537,6 @@ function App() {
             extensionVersion={extensionVersion}
             onViewChangelog={() => setIsChangelogOpen(true)}
             onViewHooksInfo={() => setIsHooksInfoOpen(true)}
-            onRestoreCategory={() => {
-              /* Part D implementation */
-            }}
           />
         ) : (
           <SettingsModal
