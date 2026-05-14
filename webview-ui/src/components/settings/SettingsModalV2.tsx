@@ -1,4 +1,4 @@
-import { useCallback, useEffect,useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import type { SettingsCategory } from '../../../../src/constants.js';
 import {
@@ -6,10 +6,54 @@ import {
   SETTINGS_MODAL_WIDTH_PX,
   SETTINGS_SIDEBAR_WIDTH_PX,
 } from '../../constants.js';
+import { AboutPanel } from './panels/AboutPanel.js';
+import { AgentsPanel } from './panels/AgentsPanel.js';
+import { GeneralPanel } from './panels/GeneralPanel.js';
+import { OfficePanel } from './panels/OfficePanel.js';
+import { TerminalPanel } from './panels/TerminalPanel.js';
 
 interface SettingsModalV2Props {
   isOpen: boolean;
   onClose: () => void;
+  // General
+  soundEnabled: boolean;
+  onToggleSound: () => void;
+  alwaysShowLabels: boolean;
+  onToggleAlwaysShowLabels: () => void;
+  showTerminalNames: boolean;
+  onToggleShowTerminalNames: () => void;
+  debugMode: boolean;
+  onToggleDebugMode: () => void;
+  // Agents
+  watchAllSessions: boolean;
+  onToggleWatchAllSessions: () => void;
+  hooksEnabled: boolean;
+  onToggleHooksEnabled: () => void;
+  defaultCwd: string;
+  onChangeDefaultCwd: (v: string) => void;
+  // Terminal
+  usePtyTerminal: boolean;
+  onToggleUsePtyTerminal: () => void;
+  panelPosition: 'bottom' | 'left' | 'right';
+  onChangePanelPosition: (p: 'bottom' | 'left' | 'right') => void;
+  terminalFontFamily: string;
+  onChangeTerminalFontFamily: (v: string) => void;
+  terminalFontSize: number;
+  onChangeTerminalFontSize: (v: number) => void;
+  terminalLineHeight: number;
+  onChangeTerminalLineHeight: (v: number) => void;
+  // Office
+  externalAssetDirectories: string[];
+  onAddAssetDirectory: (path: string) => void;
+  onRemoveAssetDirectory: (path: string) => void;
+  onExportLayout: () => void;
+  onImportLayout: () => void;
+  // About
+  extensionVersion: string;
+  onViewChangelog: () => void;
+  onViewHooksInfo: () => void;
+  // Restore defaults
+  onRestoreCategory: (category: 'general' | 'agents' | 'terminal' | 'office') => void;
 }
 
 const CATEGORIES: { id: SettingsCategory | 'about'; label: string }[] = [
@@ -20,7 +64,8 @@ const CATEGORIES: { id: SettingsCategory | 'about'; label: string }[] = [
   { id: 'about', label: 'About' },
 ];
 
-export function SettingsModalV2({ isOpen, onClose }: SettingsModalV2Props) {
+export function SettingsModalV2(props: SettingsModalV2Props) {
+  const { isOpen, onClose } = props;
   const [active, setActive] = useState<(typeof CATEGORIES)[number]['id']>('general');
 
   const onKey = useCallback(
@@ -122,13 +167,62 @@ export function SettingsModalV2({ isOpen, onClose }: SettingsModalV2Props) {
             ))}
           </nav>
           <main role="tabpanel" style={{ flex: 1, padding: 0, overflowY: 'auto', minHeight: 0 }}>
-            <div style={{ padding: 16 }}>
-              {active === 'general' && <div>General panel placeholder</div>}
-              {active === 'agents' && <div>Agents panel placeholder</div>}
-              {active === 'terminal' && <div>Terminal panel placeholder</div>}
-              {active === 'office' && <div>Office panel placeholder</div>}
-              {active === 'about' && <div>About panel placeholder</div>}
-            </div>
+            {active === 'general' && (
+              <GeneralPanel
+                soundEnabled={props.soundEnabled}
+                onToggleSound={props.onToggleSound}
+                alwaysShowLabels={props.alwaysShowLabels}
+                onToggleAlwaysShowLabels={props.onToggleAlwaysShowLabels}
+                showTerminalNames={props.showTerminalNames}
+                onToggleShowTerminalNames={props.onToggleShowTerminalNames}
+                debugMode={props.debugMode}
+                onToggleDebugMode={props.onToggleDebugMode}
+                onRestoreDefaults={() => props.onRestoreCategory('general')}
+              />
+            )}
+            {active === 'agents' && (
+              <AgentsPanel
+                watchAllSessions={props.watchAllSessions}
+                onToggleWatchAllSessions={props.onToggleWatchAllSessions}
+                hooksEnabled={props.hooksEnabled}
+                onToggleHooksEnabled={props.onToggleHooksEnabled}
+                defaultCwd={props.defaultCwd}
+                onChangeDefaultCwd={props.onChangeDefaultCwd}
+                onRestoreDefaults={() => props.onRestoreCategory('agents')}
+              />
+            )}
+            {active === 'terminal' && (
+              <TerminalPanel
+                usePtyTerminal={props.usePtyTerminal}
+                onToggleUsePtyTerminal={props.onToggleUsePtyTerminal}
+                panelPosition={props.panelPosition}
+                onChangePanelPosition={props.onChangePanelPosition}
+                terminalFontFamily={props.terminalFontFamily}
+                onChangeTerminalFontFamily={props.onChangeTerminalFontFamily}
+                terminalFontSize={props.terminalFontSize}
+                onChangeTerminalFontSize={props.onChangeTerminalFontSize}
+                terminalLineHeight={props.terminalLineHeight}
+                onChangeTerminalLineHeight={props.onChangeTerminalLineHeight}
+                onRestoreDefaults={() => props.onRestoreCategory('terminal')}
+              />
+            )}
+            {active === 'office' && (
+              <OfficePanel
+                externalAssetDirectories={props.externalAssetDirectories}
+                onAddAssetDirectory={props.onAddAssetDirectory}
+                onRemoveAssetDirectory={props.onRemoveAssetDirectory}
+                onExportLayout={props.onExportLayout}
+                onImportLayout={props.onImportLayout}
+                onRestoreDefaults={() => props.onRestoreCategory('office')}
+              />
+            )}
+            {active === 'about' && (
+              <AboutPanel
+                extensionVersion={props.extensionVersion}
+                onViewChangelog={props.onViewChangelog}
+                onViewHooksInfo={props.onViewHooksInfo}
+              />
+            )}
           </main>
         </div>
       </div>

@@ -15,6 +15,7 @@ import { ZoomControls } from './components/ZoomControls.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
+import { isSoundEnabled, setSoundEnabled } from './notificationSound.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -105,6 +106,7 @@ function App() {
   // Remove this line and the conditional render once V2 reaches parity.
   const useSettingsV2 = false;
   const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
+  const [soundEnabledLocal, setSoundEnabledLocal] = useState(isSoundEnabled);
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
@@ -126,6 +128,12 @@ function App() {
   }, [alwaysShowLabels]);
 
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), []);
+  const handleToggleSound = useCallback(() => {
+    const newVal = !isSoundEnabled();
+    setSoundEnabled(newVal);
+    setSoundEnabledLocal(newVal);
+    vscode.postMessage({ type: 'setSoundEnabled', enabled: newVal });
+  }, []);
   const handleToggleAlwaysShowOverlay = useCallback(() => {
     setAlwaysShowOverlay((prev) => {
       const newVal = !prev;
@@ -475,7 +483,57 @@ function App() {
         />
 
         {useSettingsV2 ? (
-          <SettingsModalV2 isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+          <SettingsModalV2
+            isOpen={isSettingsOpen}
+            onClose={() => setIsSettingsOpen(false)}
+            soundEnabled={soundEnabledLocal}
+            onToggleSound={handleToggleSound}
+            alwaysShowLabels={alwaysShowOverlay}
+            onToggleAlwaysShowLabels={handleToggleAlwaysShowOverlay}
+            showTerminalNames={showTerminalNamesLocal}
+            onToggleShowTerminalNames={handleToggleShowTerminalNames}
+            debugMode={isDebugMode}
+            onToggleDebugMode={handleToggleDebugMode}
+            watchAllSessions={watchAllSessions}
+            onToggleWatchAllSessions={() => {
+              const newVal = !watchAllSessions;
+              setWatchAllSessions(newVal);
+              vscode.postMessage({ type: 'setWatchAllSessions', enabled: newVal });
+            }}
+            hooksEnabled={hooksEnabled}
+            onToggleHooksEnabled={() => {
+              const newVal = !hooksEnabled;
+              setHooksEnabled(newVal);
+              vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
+            }}
+            defaultCwd={defaultCwd}
+            onChangeDefaultCwd={setDefaultCwd}
+            usePtyTerminal={usePtyTerminal}
+            onToggleUsePtyTerminal={() => setUsePtyTerminal(!usePtyTerminal)}
+            panelPosition={panel.state.panelPosition}
+            onChangePanelPosition={panel.setPanelPosition}
+            terminalFontFamily={terminalFontFamily}
+            onChangeTerminalFontFamily={setTerminalFontFamily}
+            terminalFontSize={panel.state.terminalFontSize}
+            onChangeTerminalFontSize={panel.setTerminalFontSize}
+            terminalLineHeight={terminalLineHeight}
+            onChangeTerminalLineHeight={setTerminalLineHeight}
+            externalAssetDirectories={externalAssetDirectories}
+            onAddAssetDirectory={(path) =>
+              vscode.postMessage({ type: 'addExternalAssetDirectory', path })
+            }
+            onRemoveAssetDirectory={(path) =>
+              vscode.postMessage({ type: 'removeExternalAssetDirectory', path })
+            }
+            onExportLayout={() => vscode.postMessage({ type: 'exportLayout' })}
+            onImportLayout={() => vscode.postMessage({ type: 'importLayout' })}
+            extensionVersion={extensionVersion}
+            onViewChangelog={() => setIsChangelogOpen(true)}
+            onViewHooksInfo={() => setIsHooksInfoOpen(true)}
+            onRestoreCategory={() => {
+              /* Part D implementation */
+            }}
+          />
         ) : (
           <SettingsModal
             isOpen={isSettingsOpen}
