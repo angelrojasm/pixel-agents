@@ -93,14 +93,14 @@ Terminal ↔ character interaction bundle (2026-05-13, same branch):
 
 Still open:
 
-- (none for Phase 2 §1-3 — settings redesign is next and final.)
+- (none — all Phase 2 §1-4 bundles shipped.)
 
 **Recommended sequence (decided 2026-05-13)**
 
 1. ~~**Visual chrome**~~ — **shipped 2026-05-13** (8 commits on `2026-05-12-terminal-polish`). Established pixel-art tokens (borders, accent strip, focus state, scrollbar) for the next two bundles.
 2. ~~**Terminal QoL**~~ — **shipped 2026-05-13** (9 commits on `2026-05-12-terminal-polish`). Search bar, web links, focus return on close. Manual copy/paste QA folded into the Phase 2 final QA pass.
 3. ~~**Terminal ↔ character interaction**~~ — **shipped 2026-05-13** (14 commits + 1 review-fix commit on `2026-05-12-terminal-polish`). Focus halo, pty→animation, crashed glyph + ack, restart, sub-agent line, hook-health toast + dot, canvas shortcuts. 261 tests passing.
-4. **Settings menu redesign** — last. Migrating the ~12 Phase 2 settings (defaultCwd, usePtyTerminal, terminalFontFamily, terminalFontSize, terminalLineHeight, panelPosition, userBandSizePx, soundEnabled, watchAllSessions, hooksEnabled, alwaysShowLabels, showTerminalNames) into a sectioned modal in one pass.
+4. ~~**Settings menu redesign**~~ — **shipped 2026-05-13** (Parts A–F on `2026-05-12-terminal-polish`). Sectioned V2 modal (General / Agents / Terminal / Office / About) with Stepper, Select, RadioGroup, PathInput, ListEditor controls; restoreCategoryDefaults + 5s undo toast; sidebar keyboard navigation + focus trap; V1 modal deleted. 267 tests passing.
 
 Rationale: doing chrome before character-interaction prevents rework on bubbles/indicators that would otherwise be designed against un-styled chrome. Doing settings last lets it absorb a known set of new settings in one migration instead of evolving the modal continuously.
 

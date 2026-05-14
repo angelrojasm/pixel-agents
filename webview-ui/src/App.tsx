@@ -7,7 +7,6 @@ import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModalV2 } from './components/settings/SettingsModalV2.js';
-import { SettingsModal } from './components/SettingsModal.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
@@ -110,9 +109,6 @@ function App() {
 
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  // Dev-only switch — flip to true to test V2 modal during development.
-  // Remove this line and the conditional render once V2 reaches parity.
-  const useSettingsV2 = false;
   const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
   const [soundEnabledLocal, setSoundEnabledLocal] = useState(isSoundEnabled);
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
@@ -489,92 +485,54 @@ function App() {
           currentVersion={extensionVersion}
         />
 
-        {useSettingsV2 ? (
-          <SettingsModalV2
-            isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
-            soundEnabled={soundEnabledLocal}
-            onToggleSound={handleToggleSound}
-            alwaysShowLabels={alwaysShowOverlay}
-            onToggleAlwaysShowLabels={handleToggleAlwaysShowOverlay}
-            showTerminalNames={showTerminalNamesLocal}
-            onToggleShowTerminalNames={handleToggleShowTerminalNames}
-            debugMode={isDebugMode}
-            onToggleDebugMode={handleToggleDebugMode}
-            watchAllSessions={watchAllSessions}
-            onToggleWatchAllSessions={() => {
-              const newVal = !watchAllSessions;
-              setWatchAllSessions(newVal);
-              vscode.postMessage({ type: 'setWatchAllSessions', enabled: newVal });
-            }}
-            hooksEnabled={hooksEnabled}
-            onToggleHooksEnabled={() => {
-              const newVal = !hooksEnabled;
-              setHooksEnabled(newVal);
-              vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
-            }}
-            defaultCwd={defaultCwd}
-            onChangeDefaultCwd={setDefaultCwd}
-            usePtyTerminal={usePtyTerminal}
-            onToggleUsePtyTerminal={() => setUsePtyTerminal(!usePtyTerminal)}
-            panelPosition={panel.state.panelPosition}
-            onChangePanelPosition={panel.setPanelPosition}
-            terminalFontFamily={terminalFontFamily}
-            onChangeTerminalFontFamily={setTerminalFontFamily}
-            terminalFontSize={panel.state.terminalFontSize}
-            onChangeTerminalFontSize={panel.setTerminalFontSize}
-            terminalLineHeight={terminalLineHeight}
-            onChangeTerminalLineHeight={setTerminalLineHeight}
-            externalAssetDirectories={externalAssetDirectories}
-            onAddAssetDirectory={(path) =>
-              vscode.postMessage({ type: 'addExternalAssetDirectory', path })
-            }
-            onRemoveAssetDirectory={(path) =>
-              vscode.postMessage({ type: 'removeExternalAssetDirectory', path })
-            }
-            onExportLayout={() => vscode.postMessage({ type: 'exportLayout' })}
-            onImportLayout={() => vscode.postMessage({ type: 'importLayout' })}
-            extensionVersion={extensionVersion}
-            onViewChangelog={() => setIsChangelogOpen(true)}
-            onViewHooksInfo={() => setIsHooksInfoOpen(true)}
-          />
-        ) : (
-          <SettingsModal
-            isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
-            isDebugMode={isDebugMode}
-            onToggleDebugMode={handleToggleDebugMode}
-            alwaysShowOverlay={alwaysShowOverlay}
-            onToggleAlwaysShowOverlay={handleToggleAlwaysShowOverlay}
-            showTerminalNames={showTerminalNamesLocal}
-            onToggleShowTerminalNames={handleToggleShowTerminalNames}
-            externalAssetDirectories={externalAssetDirectories}
-            watchAllSessions={watchAllSessions}
-            onToggleWatchAllSessions={() => {
-              const newVal = !watchAllSessions;
-              setWatchAllSessions(newVal);
-              vscode.postMessage({ type: 'setWatchAllSessions', enabled: newVal });
-            }}
-            hooksEnabled={hooksEnabled}
-            onToggleHooksEnabled={() => {
-              const newVal = !hooksEnabled;
-              setHooksEnabled(newVal);
-              vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
-            }}
-            usePtyTerminal={usePtyTerminal}
-            onToggleUsePtyTerminal={() => setUsePtyTerminal(!usePtyTerminal)}
-            defaultCwd={defaultCwd}
-            onChangeDefaultCwd={setDefaultCwd}
-            panelPosition={panel.state.panelPosition}
-            onChangePanelPosition={panel.setPanelPosition}
-            terminalFontSize={panel.state.terminalFontSize}
-            onChangeTerminalFontSize={panel.setTerminalFontSize}
-            terminalFontFamily={terminalFontFamily}
-            onSetTerminalFontFamily={setTerminalFontFamily}
-            terminalLineHeight={terminalLineHeight}
-            onSetTerminalLineHeight={setTerminalLineHeight}
-          />
-        )}
+        <SettingsModalV2
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          soundEnabled={soundEnabledLocal}
+          onToggleSound={handleToggleSound}
+          alwaysShowLabels={alwaysShowOverlay}
+          onToggleAlwaysShowLabels={handleToggleAlwaysShowOverlay}
+          showTerminalNames={showTerminalNamesLocal}
+          onToggleShowTerminalNames={handleToggleShowTerminalNames}
+          debugMode={isDebugMode}
+          onToggleDebugMode={handleToggleDebugMode}
+          watchAllSessions={watchAllSessions}
+          onToggleWatchAllSessions={() => {
+            const newVal = !watchAllSessions;
+            setWatchAllSessions(newVal);
+            vscode.postMessage({ type: 'setWatchAllSessions', enabled: newVal });
+          }}
+          hooksEnabled={hooksEnabled}
+          onToggleHooksEnabled={() => {
+            const newVal = !hooksEnabled;
+            setHooksEnabled(newVal);
+            vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
+          }}
+          defaultCwd={defaultCwd}
+          onChangeDefaultCwd={setDefaultCwd}
+          usePtyTerminal={usePtyTerminal}
+          onToggleUsePtyTerminal={() => setUsePtyTerminal(!usePtyTerminal)}
+          panelPosition={panel.state.panelPosition}
+          onChangePanelPosition={panel.setPanelPosition}
+          terminalFontFamily={terminalFontFamily}
+          onChangeTerminalFontFamily={setTerminalFontFamily}
+          terminalFontSize={panel.state.terminalFontSize}
+          onChangeTerminalFontSize={panel.setTerminalFontSize}
+          terminalLineHeight={terminalLineHeight}
+          onChangeTerminalLineHeight={setTerminalLineHeight}
+          externalAssetDirectories={externalAssetDirectories}
+          onAddAssetDirectory={(path) =>
+            vscode.postMessage({ type: 'addExternalAssetDirectory', path })
+          }
+          onRemoveAssetDirectory={(path) =>
+            vscode.postMessage({ type: 'removeExternalAssetDirectory', path })
+          }
+          onExportLayout={() => vscode.postMessage({ type: 'exportLayout' })}
+          onImportLayout={() => vscode.postMessage({ type: 'importLayout' })}
+          extensionVersion={extensionVersion}
+          onViewChangelog={() => setIsChangelogOpen(true)}
+          onViewHooksInfo={() => setIsHooksInfoOpen(true)}
+        />
 
         {showMigrationNotice && (
           <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
