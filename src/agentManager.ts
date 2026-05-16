@@ -95,7 +95,6 @@ export async function launchNewTerminal(
   folderPath?: string,
   bypassPermissions?: boolean,
   defaultCwd?: string,
-  usePtyTerminal?: boolean,
   ptyManager?: PtyManager | null,
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
@@ -114,13 +113,12 @@ export async function launchNewTerminal(
     ? ['--session-id', sessionId, '--dangerously-skip-permissions']
     : ['--session-id', sessionId];
 
-  let terminal: vscode.Terminal | undefined;
-  let ptyBacked = false;
+  const terminal: vscode.Terminal | undefined = undefined;
   const ptyAgentId = nextAgentIdRef.current;
 
-  if (usePtyTerminal && ptyManager) {
-    // Spawn via node-pty so the terminal renders inside the office panel.
-    // Use a login shell so the user's PATH (where `claude` lives) is sourced.
+  // Spawn via node-pty so the terminal renders inside the office panel.
+  // Use a login shell so the user's PATH (where `claude` lives) is sourced.
+  if (ptyManager) {
     const shell = process.env.SHELL ?? (process.platform === 'win32' ? 'cmd.exe' : '/bin/zsh');
     ptyManager.start(ptyAgentId, {
       shell,
@@ -131,17 +129,6 @@ export async function launchNewTerminal(
       rows: 24,
       scrollbackCapacity: PTY_SCROLLBACK_MAX_LINES,
     });
-    ptyBacked = true;
-  } else {
-    terminal = vscode.window.createTerminal({
-      name: `${TERMINAL_NAME_PREFIX} #${idx}`,
-      cwd,
-    });
-    terminal.show();
-    const claudeCmd = bypassPermissions
-      ? `claude --session-id ${sessionId} --dangerously-skip-permissions`
-      : `claude --session-id ${sessionId}`;
-    terminal.sendText(claudeCmd);
   }
 
   const projectDir = getProjectDirPath(cwd);
@@ -172,7 +159,7 @@ export async function launchNewTerminal(
     permissionSent: false,
     hadToolsInTurn: false,
     awaitingSince: null,
-    ptyBacked,
+    ptyBacked: ptyManager !== null && ptyManager !== undefined,
     lastDataAt: 0,
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),

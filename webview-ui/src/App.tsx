@@ -85,8 +85,6 @@ function App() {
     hooksInfoShown,
     defaultCwd,
     setDefaultCwd,
-    usePtyTerminal,
-    setUsePtyTerminal,
     terminalFontFamily,
     setTerminalFontFamily,
     terminalLineHeight,
@@ -522,8 +520,6 @@ function App() {
           }}
           defaultCwd={defaultCwd}
           onChangeDefaultCwd={setDefaultCwd}
-          usePtyTerminal={usePtyTerminal}
-          onToggleUsePtyTerminal={() => setUsePtyTerminal(!usePtyTerminal)}
           panelPosition={panel.state.panelPosition}
           onChangePanelPosition={panel.setPanelPosition}
           terminalFontFamily={terminalFontFamily}

@@ -9,7 +9,6 @@ import {
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_TERMINAL_FONT_FAMILY,
   GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
-  GLOBAL_KEY_USE_PTY_TERMINAL,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
 } from './constants.js';
 
@@ -77,7 +76,6 @@ export function applyCategoryDefaults(
       'terminal',
       override as (typeof DEFAULT_SETTINGS)['terminal'] | undefined,
     );
-    deps.config.update(GLOBAL_KEY_USE_PTY_TERMINAL, v.usePtyTerminal);
     deps.config.update(GLOBAL_KEY_TERMINAL_FONT_FAMILY, v.fontFamily);
     deps.config.update(GLOBAL_KEY_TERMINAL_LINE_HEIGHT, v.lineHeight);
     return v;

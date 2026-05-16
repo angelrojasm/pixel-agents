@@ -72,8 +72,6 @@ interface ExtensionMessageState {
   hooksInfoShown: boolean;
   defaultCwd: string;
   setDefaultCwd: (v: string) => void;
-  usePtyTerminal: boolean;
-  setUsePtyTerminal: (v: boolean) => void;
   terminalFontFamily: string;
   terminalLineHeight: number;
   setTerminalFontFamily: (v: string) => void;
@@ -127,7 +125,6 @@ export function useExtensionMessages(
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
   const [defaultCwd, setDefaultCwdState] = useState('');
-  const [usePtyTerminal, setUsePtyTerminalState] = useState(false);
   const [terminalFontFamily, setTerminalFontFamilyState] = useState(
     'Menlo, Monaco, "Courier New", monospace',
   );
@@ -160,11 +157,6 @@ export function useExtensionMessages(
     setDefaultCwdState(v);
     vscode.postMessage({ type: 'setDefaultCwd', value: v });
   };
-
-  const setUsePtyTerminal = useCallback((v: boolean) => {
-    setUsePtyTerminalState(v);
-    vscode.postMessage({ type: 'setUsePtyTerminal', enabled: v });
-  }, []);
 
   const setTerminalFontFamily = (v: string): void => {
     setTerminalFontFamilyState(v);
@@ -580,9 +572,6 @@ export function useExtensionMessages(
         if (typeof msg.defaultCwd === 'string') {
           setDefaultCwdState(msg.defaultCwd as string);
         }
-        if (typeof msg.usePtyTerminal === 'boolean') {
-          setUsePtyTerminalState(msg.usePtyTerminal as boolean);
-        }
         if (typeof msg.terminalFontFamily === 'string') {
           setTerminalFontFamilyState(msg.terminalFontFamily as string);
         }
@@ -707,8 +696,6 @@ export function useExtensionMessages(
     hooksInfoShown,
     defaultCwd,
     setDefaultCwd,
-    usePtyTerminal,
-    setUsePtyTerminal,
     terminalFontFamily,
     terminalLineHeight,
     setTerminalFontFamily,

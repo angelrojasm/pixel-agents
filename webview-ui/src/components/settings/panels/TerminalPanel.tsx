@@ -1,4 +1,3 @@
-import { Checkbox } from '../../ui/Checkbox.js';
 import { RadioGroup } from '../controls/RadioGroup.js';
 import { Select } from '../controls/Select.js';
 import { Stepper } from '../controls/Stepper.js';
@@ -6,8 +5,6 @@ import { SettingsRow } from '../SettingsRow.js';
 import { SettingsTitleStrip } from '../SettingsTitleStrip.js';
 
 interface TerminalPanelProps {
-  usePtyTerminal: boolean;
-  onToggleUsePtyTerminal: () => void;
   panelPosition: 'bottom' | 'left' | 'right';
   onChangePanelPosition: (p: 'bottom' | 'left' | 'right') => void;
   terminalFontFamily: string;
@@ -24,18 +21,6 @@ export function TerminalPanel(props: TerminalPanelProps) {
     <div>
       <SettingsTitleStrip title="Terminal" onRestoreDefaults={props.onRestoreDefaults} />
       <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <SettingsRow
-          label="Use in-panel terminal"
-          helper="Render Claude's terminal inside the panel instead of VS Code's terminal strip."
-          hint="applies to new agents"
-          control={
-            <Checkbox
-              checked={props.usePtyTerminal}
-              onChange={props.onToggleUsePtyTerminal}
-              label=""
-            />
-          }
-        />
         <SettingsRow
           label="Panel position"
           control={

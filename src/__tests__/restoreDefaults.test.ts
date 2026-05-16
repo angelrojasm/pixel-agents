@@ -10,7 +10,6 @@ import {
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_TERMINAL_FONT_FAMILY,
   GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
-  GLOBAL_KEY_USE_PTY_TERMINAL,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
 } from '../constants.js';
 import { applyCategoryDefaults, resolveCategoryDefaults } from '../settingsDefaults.js';
@@ -123,13 +122,9 @@ describe('applyCategoryDefaults', () => {
     expect(update).toHaveBeenCalledWith(GLOBAL_KEY_DEFAULT_CWD, DEFAULT_SETTINGS.agents.defaultCwd);
   });
 
-  it('terminal → writes pty/font-family/line-height keys', () => {
+  it('terminal → writes font-family/line-height keys', () => {
     const { update, deps } = makeDeps();
     applyCategoryDefaults('terminal', undefined, deps);
-    expect(update).toHaveBeenCalledWith(
-      GLOBAL_KEY_USE_PTY_TERMINAL,
-      DEFAULT_SETTINGS.terminal.usePtyTerminal,
-    );
     expect(update).toHaveBeenCalledWith(
       GLOBAL_KEY_TERMINAL_FONT_FAMILY,
       DEFAULT_SETTINGS.terminal.fontFamily,

@@ -11,7 +11,7 @@ import type { PtyEventBus } from './ptyEventBus.js';
  * `ch.ptyActivityUntil` every frame, so we don't want to re-render on every
  * byte. The hook only re-installs on (agentId, bus, officeState) change.
  *
- * Falls through harmlessly when the bus has no data (e.g. usePtyTerminal=off).
+ * Falls through harmlessly when the bus has no data (e.g. no active agent selected).
  */
 export function useCharacterPtyActivity(
   agentId: number | null,

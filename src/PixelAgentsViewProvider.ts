@@ -60,7 +60,6 @@ import {
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_TERMINAL_FONT_FAMILY,
   GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
-  GLOBAL_KEY_USE_PTY_TERMINAL,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
   TERMINAL_NAME_POLL_INTERVAL_MS,
@@ -138,9 +137,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   watchAllSessions = { current: false };
   // Hooks enabled state (mutable ref for passing to scanners)
   hooksEnabled = { current: true };
-  // Experimental: when true, spawn agents inside the office panel via pty/xterm
-  // instead of vscode.window.createTerminal. Defaults to false (opt-in).
-  usePtyTerminal = { current: false };
   globalDismissedFiles = new Set<string>();
 
   // Bundled default layout (loaded from assets/default-layout.json)
@@ -607,7 +603,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         message.folderPath as string | undefined,
         message.bypassPermissions as boolean | undefined,
         this.config.get<string>(GLOBAL_KEY_DEFAULT_CWD) ?? DEFAULT_SETTINGS.agents.defaultCwd,
-        this.usePtyTerminal.current,
         this.ptyManager,
       );
       // Register newly created agent(s) with hook handler
@@ -726,10 +721,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         uninstallHooks();
         console.log('[Pixel Agents] Hooks disabled by user');
       }
-    } else if (message.type === 'setUsePtyTerminal') {
-      const enabled = !!message.enabled;
-      this.config.update(GLOBAL_KEY_USE_PTY_TERMINAL, enabled);
-      this.usePtyTerminal.current = enabled;
     } else if (message.type === 'setTerminalFontFamily') {
       const value =
         typeof message.value === 'string' ? message.value : DEFAULT_SETTINGS.terminal.fontFamily;
@@ -837,9 +828,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       this.watchAllSessions.current =
         this.config.get<boolean>(GLOBAL_KEY_WATCH_ALL_SESSIONS) ??
         DEFAULT_SETTINGS.agents.watchAllSessions;
-      this.usePtyTerminal.current =
-        this.config.get<boolean>(GLOBAL_KEY_USE_PTY_TERMINAL) ??
-        DEFAULT_SETTINGS.terminal.usePtyTerminal;
       this.broadcastSettingsLoaded();
 
       // Send workspace folders to webview (only when multi-root)
@@ -1458,9 +1446,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     const hooksInfoShown = this.config.get<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN) ?? false;
     const defaultCwd =
       this.config.get<string>(GLOBAL_KEY_DEFAULT_CWD) ?? DEFAULT_SETTINGS.agents.defaultCwd;
-    const usePtyTerminal =
-      this.config.get<boolean>(GLOBAL_KEY_USE_PTY_TERMINAL) ??
-      DEFAULT_SETTINGS.terminal.usePtyTerminal;
     const officeConfig = readConfig();
     return {
       soundEnabled,
@@ -1473,7 +1458,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       hooksInfoShown,
       defaultCwd,
       externalAssetDirectories: officeConfig.externalAssetDirectories,
-      usePtyTerminal,
       terminalFontFamily:
         this.config.get<string>(GLOBAL_KEY_TERMINAL_FONT_FAMILY) ??
         DEFAULT_SETTINGS.terminal.fontFamily,

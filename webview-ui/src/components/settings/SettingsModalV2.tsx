@@ -31,8 +31,6 @@ interface SettingsModalV2Props {
   defaultCwd: string;
   onChangeDefaultCwd: (v: string) => void;
   // Terminal
-  usePtyTerminal: boolean;
-  onToggleUsePtyTerminal: () => void;
   panelPosition: 'bottom' | 'left' | 'right';
   onChangePanelPosition: (p: 'bottom' | 'left' | 'right') => void;
   terminalFontFamily: string;
@@ -141,7 +139,6 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
         // panelPosition + fontSize are webview-local (panelPersistence) and not
         // covered by Restore Defaults / Undo. See src/constants.ts comment.
         snapshot = {
-          usePtyTerminal: props.usePtyTerminal,
           fontFamily: props.terminalFontFamily,
           lineHeight: props.terminalLineHeight,
         };
@@ -160,7 +157,6 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
       props.watchAllSessions,
       props.hooksEnabled,
       props.defaultCwd,
-      props.usePtyTerminal,
       props.terminalFontFamily,
       props.terminalLineHeight,
       props.externalAssetDirectories,
@@ -276,8 +272,6 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
             )}
             {active === 'terminal' && (
               <TerminalPanel
-                usePtyTerminal={props.usePtyTerminal}
-                onToggleUsePtyTerminal={props.onToggleUsePtyTerminal}
                 panelPosition={props.panelPosition}
                 onChangePanelPosition={props.onChangePanelPosition}
                 terminalFontFamily={props.terminalFontFamily}

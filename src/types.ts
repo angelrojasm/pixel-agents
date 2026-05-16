@@ -58,9 +58,8 @@ export interface AgentState {
    *  transitions and user dismissal. */
   awaitingSince: number | null;
   /** When true, this agent's terminal is backed by a node-pty worker (see PtyManager)
-   *  and routes I/O through the webview xterm.js pane. When false (current default),
-   *  the agent uses `vscode.window.createTerminal` (legacy). Gates the pty pipeline
-   *  during rollout; removed once xterm.js integration is stable. */
+   *  and routes I/O through the webview xterm.js pane. Always true for new agents
+   *  (pty is the only terminal backend). */
   ptyBacked?: boolean;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
