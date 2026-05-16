@@ -5,6 +5,8 @@ import * as vscode from 'vscode';
 
 import type { AgentsFile } from '../daemon/agentsPersistence.js';
 import { readAgents, writeAgents } from '../daemon/agentsPersistence.js';
+import type { ConfigStore } from '../daemon/configStore.js';
+import { createConfigStore } from '../daemon/configStore.js';
 import { replaySnapshot } from '../daemon/snapshotReplay.js';
 import type { HookEvent } from '../server/src/hookEventHandler.js';
 import { HookEventHandler } from '../server/src/hookEventHandler.js';
@@ -165,7 +167,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // Pty manager (lazy-init on first webview; shared across all webviews via attachSource)
   private ptyManager: PtyManager | null = null;
 
+  /** File-backed settings store — reads/writes ~/.pixel-agents/config.json.
+   *  Replaces VS Code globalState for all user-facing settings keys so settings
+   *  are shared across VS Code windows and survive the Phase-3 daemon cutover. */
+  private readonly config: ConfigStore;
+
   constructor(private readonly context: vscode.ExtensionContext) {
+    this.config = createConfigStore(path.join(os.homedir(), '.pixel-agents', 'config.json'));
     this.initHooks();
     this.registerTerminalListeners();
   }
@@ -414,10 +422,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // Server always starts regardless of hooks-enabled state.
         // It's the foundation for WebSocket transport and health monitoring.
         // Only hook installation/script-copy is gated by the toggle.
-        const hooksEnabled = this.context.globalState.get<boolean>(
-          GLOBAL_KEY_HOOKS_ENABLED,
-          DEFAULT_SETTINGS.agents.hooksEnabled,
-        );
+        const hooksEnabled =
+          this.config.get<boolean>(GLOBAL_KEY_HOOKS_ENABLED) ??
+          DEFAULT_SETTINGS.agents.hooksEnabled;
         this.hooksEnabled.current = hooksEnabled;
         if (hooksEnabled) {
           installHooks();
@@ -599,10 +606,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.persistAgents,
         message.folderPath as string | undefined,
         message.bypassPermissions as boolean | undefined,
-        this.context.globalState.get<string>(
-          GLOBAL_KEY_DEFAULT_CWD,
-          DEFAULT_SETTINGS.agents.defaultCwd,
-        ),
+        this.config.get<string>(GLOBAL_KEY_DEFAULT_CWD) ?? DEFAULT_SETTINGS.agents.defaultCwd,
         this.usePtyTerminal.current,
         this.ptyManager,
       );
@@ -701,18 +705,18 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       this.layoutWatcher?.markOwnWrite();
       writeLayoutToFile(message.layout as Record<string, unknown>);
     } else if (message.type === 'setSoundEnabled') {
-      this.context.globalState.update(GLOBAL_KEY_SOUND_ENABLED, message.enabled);
+      this.config.update(GLOBAL_KEY_SOUND_ENABLED, message.enabled);
     } else if (message.type === 'setLastSeenVersion') {
-      this.context.globalState.update(GLOBAL_KEY_LAST_SEEN_VERSION, message.version as string);
+      this.config.update(GLOBAL_KEY_LAST_SEEN_VERSION, message.version as string);
     } else if (message.type === 'setAlwaysShowLabels') {
-      this.context.globalState.update(GLOBAL_KEY_ALWAYS_SHOW_LABELS, message.enabled);
+      this.config.update(GLOBAL_KEY_ALWAYS_SHOW_LABELS, message.enabled);
     } else if (message.type === 'setShowTerminalNames') {
-      this.context.globalState.update(GLOBAL_KEY_SHOW_TERMINAL_NAMES, message.enabled);
+      this.config.update(GLOBAL_KEY_SHOW_TERMINAL_NAMES, message.enabled);
     } else if (message.type === 'setDefaultCwd') {
-      this.context.globalState.update(GLOBAL_KEY_DEFAULT_CWD, (message.value as string) ?? '');
+      this.config.update(GLOBAL_KEY_DEFAULT_CWD, (message.value as string) ?? '');
     } else if (message.type === 'setHooksEnabled') {
       const enabled = message.enabled as boolean;
-      this.context.globalState.update(GLOBAL_KEY_HOOKS_ENABLED, enabled);
+      this.config.update(GLOBAL_KEY_HOOKS_ENABLED, enabled);
       this.hooksEnabled.current = enabled;
       if (enabled) {
         installHooks();
@@ -724,23 +728,23 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       }
     } else if (message.type === 'setUsePtyTerminal') {
       const enabled = !!message.enabled;
-      this.context.globalState.update(GLOBAL_KEY_USE_PTY_TERMINAL, enabled);
+      this.config.update(GLOBAL_KEY_USE_PTY_TERMINAL, enabled);
       this.usePtyTerminal.current = enabled;
     } else if (message.type === 'setTerminalFontFamily') {
       const value =
         typeof message.value === 'string' ? message.value : DEFAULT_SETTINGS.terminal.fontFamily;
-      this.context.globalState.update(GLOBAL_KEY_TERMINAL_FONT_FAMILY, value);
+      this.config.update(GLOBAL_KEY_TERMINAL_FONT_FAMILY, value);
     } else if (message.type === 'setTerminalLineHeight') {
       const value =
         typeof message.value === 'number' && Number.isFinite(message.value)
           ? message.value
           : DEFAULT_SETTINGS.terminal.lineHeight;
-      this.context.globalState.update(GLOBAL_KEY_TERMINAL_LINE_HEIGHT, value);
+      this.config.update(GLOBAL_KEY_TERMINAL_LINE_HEIGHT, value);
     } else if (message.type === 'setHooksInfoShown') {
-      this.context.globalState.update(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
+      this.config.update(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
     } else if (message.type === 'setWatchAllSessions') {
       const enabled = message.enabled as boolean;
-      this.context.globalState.update(GLOBAL_KEY_WATCH_ALL_SESSIONS, enabled);
+      this.config.update(GLOBAL_KEY_WATCH_ALL_SESSIONS, enabled);
       this.watchAllSessions.current = enabled;
       if (enabled) {
         // Clear only toggle-specific dismissals so global agents can be re-adopted
@@ -790,7 +794,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         category,
         message.values as Partial<(typeof DEFAULT_SETTINGS)[typeof category]> | undefined,
         {
-          globalState: this.context.globalState,
+          config: this.config,
           broadcast: this.broadcastSink,
           office: { read: readConfig, write: writeConfig },
         },
@@ -830,14 +834,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       }
       // Send persisted settings to webview
       // Sync mutable refs before broadcasting so runtime state matches persisted values
-      this.watchAllSessions.current = this.context.globalState.get<boolean>(
-        GLOBAL_KEY_WATCH_ALL_SESSIONS,
-        DEFAULT_SETTINGS.agents.watchAllSessions,
-      );
-      this.usePtyTerminal.current = this.context.globalState.get<boolean>(
-        GLOBAL_KEY_USE_PTY_TERMINAL,
-        DEFAULT_SETTINGS.terminal.usePtyTerminal,
-      );
+      this.watchAllSessions.current =
+        this.config.get<boolean>(GLOBAL_KEY_WATCH_ALL_SESSIONS) ??
+        DEFAULT_SETTINGS.agents.watchAllSessions;
+      this.usePtyTerminal.current =
+        this.config.get<boolean>(GLOBAL_KEY_USE_PTY_TERMINAL) ??
+        DEFAULT_SETTINGS.terminal.usePtyTerminal;
       this.broadcastSettingsLoaded();
 
       // Send workspace folders to webview (only when multi-root)
@@ -1180,10 +1182,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         'pixel-agents.bypassPermissions',
         false,
       );
-      const defaultCwd = this.context.globalState.get<string>(
-        GLOBAL_KEY_DEFAULT_CWD,
-        DEFAULT_SETTINGS.agents.defaultCwd,
-      );
+      const defaultCwd =
+        this.config.get<string>(GLOBAL_KEY_DEFAULT_CWD) ?? DEFAULT_SETTINGS.agents.defaultCwd;
       const ok = restartPty(agentId, this.agents, this.ptyManager, defaultCwd, bypass);
       if (ok) {
         this.broadcastSink.postMessage({ type: 'agentRestarted', agentId });
@@ -1196,10 +1196,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
    *  rule used by the Watch-All toggle-off handler — ensures a consistent ruleset
    *  whether you disable Watch-All explicitly or have it off from the start. */
   private pruneForeignExternalsIfWatchAllOff(): void {
-    const enabled = this.context.globalState.get<boolean>(
-      GLOBAL_KEY_WATCH_ALL_SESSIONS,
-      DEFAULT_SETTINGS.agents.watchAllSessions,
-    );
+    const enabled =
+      this.config.get<boolean>(GLOBAL_KEY_WATCH_ALL_SESSIONS) ??
+      DEFAULT_SETTINGS.agents.watchAllSessions;
     if (enabled) return;
 
     const workspaceDirs = new Set<string>();
@@ -1440,42 +1439,29 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   /** Returns the full settings payload without posting it. Used by both
    *  broadcastSettingsLoaded (VS Code webviews) and the WS snapshot-on-connect replay. */
   private buildSettingsPayload(): Record<string, unknown> {
-    const soundEnabled = this.context.globalState.get<boolean>(
-      GLOBAL_KEY_SOUND_ENABLED,
-      DEFAULT_SETTINGS.general.soundEnabled,
-    );
-    const lastSeenVersion = this.context.globalState.get<string>(GLOBAL_KEY_LAST_SEEN_VERSION, '');
+    const soundEnabled =
+      this.config.get<boolean>(GLOBAL_KEY_SOUND_ENABLED) ?? DEFAULT_SETTINGS.general.soundEnabled;
+    const lastSeenVersion = this.config.get<string>(GLOBAL_KEY_LAST_SEEN_VERSION) ?? '';
     const extensionVersion =
       (this.context.extension.packageJSON as { version?: string }).version ?? '';
-    const watchAllSessions = this.context.globalState.get<boolean>(
-      GLOBAL_KEY_WATCH_ALL_SESSIONS,
-      DEFAULT_SETTINGS.agents.watchAllSessions,
-    );
-    const alwaysShowLabels = this.context.globalState.get<boolean>(
-      GLOBAL_KEY_ALWAYS_SHOW_LABELS,
-      DEFAULT_SETTINGS.general.alwaysShowLabels,
-    );
-    const showTerminalNames = this.context.globalState.get<boolean>(
-      GLOBAL_KEY_SHOW_TERMINAL_NAMES,
-      DEFAULT_SETTINGS.general.showTerminalNames,
-    );
-    const hooksEnabled = this.context.globalState.get<boolean>(
-      GLOBAL_KEY_HOOKS_ENABLED,
-      DEFAULT_SETTINGS.agents.hooksEnabled,
-    );
-    const hooksInfoShown = this.context.globalState.get<boolean>(
-      GLOBAL_KEY_HOOKS_INFO_SHOWN,
-      false,
-    );
-    const defaultCwd = this.context.globalState.get<string>(
-      GLOBAL_KEY_DEFAULT_CWD,
-      DEFAULT_SETTINGS.agents.defaultCwd,
-    );
-    const usePtyTerminal = this.context.globalState.get<boolean>(
-      GLOBAL_KEY_USE_PTY_TERMINAL,
-      DEFAULT_SETTINGS.terminal.usePtyTerminal,
-    );
-    const config = readConfig();
+    const watchAllSessions =
+      this.config.get<boolean>(GLOBAL_KEY_WATCH_ALL_SESSIONS) ??
+      DEFAULT_SETTINGS.agents.watchAllSessions;
+    const alwaysShowLabels =
+      this.config.get<boolean>(GLOBAL_KEY_ALWAYS_SHOW_LABELS) ??
+      DEFAULT_SETTINGS.general.alwaysShowLabels;
+    const showTerminalNames =
+      this.config.get<boolean>(GLOBAL_KEY_SHOW_TERMINAL_NAMES) ??
+      DEFAULT_SETTINGS.general.showTerminalNames;
+    const hooksEnabled =
+      this.config.get<boolean>(GLOBAL_KEY_HOOKS_ENABLED) ?? DEFAULT_SETTINGS.agents.hooksEnabled;
+    const hooksInfoShown = this.config.get<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN) ?? false;
+    const defaultCwd =
+      this.config.get<string>(GLOBAL_KEY_DEFAULT_CWD) ?? DEFAULT_SETTINGS.agents.defaultCwd;
+    const usePtyTerminal =
+      this.config.get<boolean>(GLOBAL_KEY_USE_PTY_TERMINAL) ??
+      DEFAULT_SETTINGS.terminal.usePtyTerminal;
+    const officeConfig = readConfig();
     return {
       soundEnabled,
       lastSeenVersion,
@@ -1486,16 +1472,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       hooksEnabled,
       hooksInfoShown,
       defaultCwd,
-      externalAssetDirectories: config.externalAssetDirectories,
+      externalAssetDirectories: officeConfig.externalAssetDirectories,
       usePtyTerminal,
-      terminalFontFamily: this.context.globalState.get<string>(
-        GLOBAL_KEY_TERMINAL_FONT_FAMILY,
+      terminalFontFamily:
+        this.config.get<string>(GLOBAL_KEY_TERMINAL_FONT_FAMILY) ??
         DEFAULT_SETTINGS.terminal.fontFamily,
-      ),
-      terminalLineHeight: this.context.globalState.get<number>(
-        GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
+      terminalLineHeight:
+        this.config.get<number>(GLOBAL_KEY_TERMINAL_LINE_HEIGHT) ??
         DEFAULT_SETTINGS.terminal.lineHeight,
-      ),
     };
   }
 

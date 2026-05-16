@@ -1,3 +1,4 @@
+import type { ConfigStore } from '../daemon/configStore.js';
 import type { SettingsCategory } from './constants.js';
 import {
   DEFAULT_SETTINGS,
@@ -22,12 +23,6 @@ export function resolveCategoryDefaults<C extends SettingsCategory>(
   return v;
 }
 
-/** Narrow VS Code-shaped globalState dependency so this helper is testable
- *  without importing vscode. Only `update` is needed at the write side. */
-export interface GlobalStateLike {
-  update(key: string, value: unknown): Thenable<void> | void;
-}
-
 /** Narrow broadcast sink so this helper doesn't pull in the larger MessageSink type. */
 export interface BroadcastLike {
   postMessage(message: unknown): unknown;
@@ -41,7 +36,7 @@ export interface OfficeConfigIO {
   write(cfg: { externalAssetDirectories: string[] }): void;
 }
 
-/** Apply category defaults: write each setting key to globalState (or for
+/** Apply category defaults: write each setting key to the config store (or for
  *  `office`, to the config file via the supplied IO hooks), then broadcast any
  *  category-specific follow-up message. Returns the resolved defaults applied,
  *  for tests + caller introspection. */
@@ -49,7 +44,7 @@ export function applyCategoryDefaults(
   category: SettingsCategory,
   override: Partial<(typeof DEFAULT_SETTINGS)[SettingsCategory]> | undefined,
   deps: {
-    globalState: GlobalStateLike;
+    config: ConfigStore;
     broadcast: BroadcastLike;
     office?: OfficeConfigIO;
   },
@@ -59,9 +54,9 @@ export function applyCategoryDefaults(
       'general',
       override as (typeof DEFAULT_SETTINGS)['general'] | undefined,
     );
-    deps.globalState.update(GLOBAL_KEY_SOUND_ENABLED, v.soundEnabled);
-    deps.globalState.update(GLOBAL_KEY_ALWAYS_SHOW_LABELS, v.alwaysShowLabels);
-    deps.globalState.update(GLOBAL_KEY_SHOW_TERMINAL_NAMES, v.showTerminalNames);
+    deps.config.update(GLOBAL_KEY_SOUND_ENABLED, v.soundEnabled);
+    deps.config.update(GLOBAL_KEY_ALWAYS_SHOW_LABELS, v.alwaysShowLabels);
+    deps.config.update(GLOBAL_KEY_SHOW_TERMINAL_NAMES, v.showTerminalNames);
     // debugMode is webview-local; mirror it to all webviews so multi-webview
     // instances reset their local state in sync.
     deps.broadcast.postMessage({ type: 'setDebugMode', enabled: v.debugMode });
@@ -72,9 +67,9 @@ export function applyCategoryDefaults(
       'agents',
       override as (typeof DEFAULT_SETTINGS)['agents'] | undefined,
     );
-    deps.globalState.update(GLOBAL_KEY_WATCH_ALL_SESSIONS, v.watchAllSessions);
-    deps.globalState.update(GLOBAL_KEY_HOOKS_ENABLED, v.hooksEnabled);
-    deps.globalState.update(GLOBAL_KEY_DEFAULT_CWD, v.defaultCwd);
+    deps.config.update(GLOBAL_KEY_WATCH_ALL_SESSIONS, v.watchAllSessions);
+    deps.config.update(GLOBAL_KEY_HOOKS_ENABLED, v.hooksEnabled);
+    deps.config.update(GLOBAL_KEY_DEFAULT_CWD, v.defaultCwd);
     return v;
   }
   if (category === 'terminal') {
@@ -82,9 +77,9 @@ export function applyCategoryDefaults(
       'terminal',
       override as (typeof DEFAULT_SETTINGS)['terminal'] | undefined,
     );
-    deps.globalState.update(GLOBAL_KEY_USE_PTY_TERMINAL, v.usePtyTerminal);
-    deps.globalState.update(GLOBAL_KEY_TERMINAL_FONT_FAMILY, v.fontFamily);
-    deps.globalState.update(GLOBAL_KEY_TERMINAL_LINE_HEIGHT, v.lineHeight);
+    deps.config.update(GLOBAL_KEY_USE_PTY_TERMINAL, v.usePtyTerminal);
+    deps.config.update(GLOBAL_KEY_TERMINAL_FONT_FAMILY, v.fontFamily);
+    deps.config.update(GLOBAL_KEY_TERMINAL_LINE_HEIGHT, v.lineHeight);
     return v;
   }
   if (category === 'office') {

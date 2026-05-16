@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { ConfigStore } from '../../daemon/configStore.js';
 import {
   DEFAULT_SETTINGS,
   GLOBAL_KEY_ALWAYS_SHOW_LABELS,
@@ -34,18 +35,35 @@ describe('resolveCategoryDefaults', () => {
   });
 });
 
+function makeConfigStore(spy: (key: string, value: unknown) => void): ConfigStore {
+  const store = new Map<string, unknown>();
+  return {
+    get<T>(key: string): T | undefined {
+      return store.get(key) as T | undefined;
+    },
+    update(key: string, value: unknown) {
+      store.set(key, value);
+      spy(key, value);
+    },
+    snapshot() {
+      return Object.fromEntries(store);
+    },
+  };
+}
+
 function makeDeps() {
-  const update = vi.fn();
+  const update = vi.fn<(key: string, value: unknown) => void>();
   const postMessage = vi.fn();
   const officeRead = vi.fn(() => ({ externalAssetDirectories: ['/old/dir'] }));
   const officeWrite = vi.fn();
+  const config = makeConfigStore(update);
   return {
     update,
     postMessage,
     officeRead,
     officeWrite,
     deps: {
-      globalState: { update },
+      config,
       broadcast: { postMessage },
       office: { read: officeRead, write: officeWrite },
     },
@@ -148,11 +166,11 @@ describe('applyCategoryDefaults', () => {
   });
 
   it('office without office IO throws', () => {
-    const update = vi.fn();
     const postMessage = vi.fn();
+    const config = makeConfigStore(vi.fn<(key: string, value: unknown) => void>());
     expect(() =>
       applyCategoryDefaults('office', undefined, {
-        globalState: { update },
+        config,
         broadcast: { postMessage },
       }),
     ).toThrow(/office requires deps.office/);
