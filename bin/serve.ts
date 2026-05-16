@@ -4,6 +4,8 @@ import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { PixelAgentsServer } from '../server/src/server.js';
 import { ensureHookScript } from '../daemon/hookScriptInstaller.js';
+import { readAgents, writeAgents } from '../daemon/agentsPersistence.js';
+import { pruneDeadAgents } from '../daemon/agentsBootCleanup.js';
 
 export async function startDaemon(opts: { open?: boolean } = {}): Promise<{
   server: PixelAgentsServer;
@@ -12,6 +14,19 @@ export async function startDaemon(opts: { open?: boolean } = {}): Promise<{
   const here = path.dirname(fileURLToPath(import.meta.url));
   const bundled = path.join(here, '..', 'dist', 'hooks', 'claude-hook.js');
   ensureHookScript({ home: os.homedir(), bundledPath: bundled });
+
+  // Prune agents whose pty is no longer alive on daemon startup
+  const agentsFile = path.join(os.homedir(), '.pixel-agents', 'agents.json');
+  const before = readAgents(agentsFile);
+  const after = pruneDeadAgents(before, {
+    // v1 doesn't track pty PIDs across daemon restarts, so every pty-backed
+    // agent gets dropped on boot. External agents (no sessionId we own) stay.
+    // A future PtyManager that persists PIDs would return real values here and
+    // keep agents whose pty is genuinely alive.
+    pidOf: () => undefined,
+    alive: () => false,
+  });
+  if (after.agents.length !== before.agents.length) writeAgents(agentsFile, after);
 
   const server = new PixelAgentsServer();
   const cfg = await server.start();
