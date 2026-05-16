@@ -747,3 +747,82 @@ export function restartPty(
   });
   return true;
 }
+
+// ── Phase 3: snapshot helpers ────────────────────────────────────────────────
+// These are called by PixelAgentsViewProvider.onWebSocketConnect to build the
+// replaySnapshot deps. They read from the live agents Map directly; no caching.
+
+/** Returns the sorted array of agent IDs (as numbers) for the `existingAgents`
+ *  message. The SPA's existingAgents handler reconstructs characters from this list. */
+export function getAgentIds(agents: Map<number, AgentState>): number[] {
+  return Array.from(agents.keys()).sort((a, b) => a - b);
+}
+
+/** Returns per-agent rename entries (only agents with a customTitle). */
+export function getRenamedAgentsSummary(
+  agents: Map<number, AgentState>,
+): Array<{ id: number; customTitle: string }> {
+  const result: Array<{ id: number; customTitle: string }> = [];
+  for (const [id, agent] of agents) {
+    if (agent.customTitle) {
+      result.push({ id, customTitle: agent.customTitle });
+    }
+  }
+  return result;
+}
+
+/** Returns per-agent team info entries (only agents with teamName set). */
+export function getTeamInfoSummary(agents: Map<number, AgentState>): Array<{
+  id: number;
+  teamName?: string;
+  agentName?: string;
+  isTeamLead?: boolean;
+  leadAgentId?: number;
+}> {
+  const result: Array<{
+    id: number;
+    teamName?: string;
+    agentName?: string;
+    isTeamLead?: boolean;
+    leadAgentId?: number;
+  }> = [];
+  for (const [id, agent] of agents) {
+    if (agent.teamName) {
+      result.push({
+        id,
+        teamName: agent.teamName,
+        agentName: agent.agentName,
+        isTeamLead: agent.isTeamLead,
+        leadAgentId: agent.leadAgentId,
+      });
+    }
+  }
+  return result;
+}
+
+/** Returns per-agent terminal name entries for all agents with a known terminalRef name. */
+export function getTerminalNamesSummary(
+  agents: Map<number, AgentState>,
+): Array<{ id: number; terminalName: string }> {
+  const result: Array<{ id: number; terminalName: string }> = [];
+  for (const [id, agent] of agents) {
+    const name = agent.terminalRef?.name;
+    if (name) {
+      result.push({ id, terminalName: name });
+    }
+  }
+  return result;
+}
+
+/** Returns per-agent status entries for agents that are currently waiting or active. */
+export function getActiveAgentStatusesSummary(
+  agents: Map<number, AgentState>,
+): Array<{ id: number; status: string }> {
+  const result: Array<{ id: number; status: string }> = [];
+  for (const [id, agent] of agents) {
+    if (agent.isWaiting) {
+      result.push({ id, status: 'waiting' });
+    }
+  }
+  return result;
+}

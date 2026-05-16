@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
+import { replaySnapshot } from '../daemon/snapshotReplay.js';
 import type { HookEvent } from '../server/src/hookEventHandler.js';
 import { HookEventHandler } from '../server/src/hookEventHandler.js';
 import {
@@ -12,7 +13,12 @@ import {
 import { claudeProvider, copyHookScript } from '../server/src/providers/index.js';
 import { PixelAgentsServer } from '../server/src/server.js';
 import {
+  getActiveAgentStatusesSummary,
+  getAgentIds,
   getProjectDirPath,
+  getRenamedAgentsSummary,
+  getTeamInfoSummary,
+  getTerminalNamesSummary,
   launchNewTerminal,
   persistAgents,
   removeAgent,
@@ -137,6 +143,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
   // Root path of bundled assets (set once on first load)
   private assetsRoot: string | null = null;
+
+  // Phase 3: cached asset bundles for snapshot-on-connect replay.
+  // Populated when assets are first loaded; updated on reload (e.g. external dir add/remove).
+  private cachedCharacterSprites: unknown = null;
+  private cachedFloorTiles: unknown = null;
+  private cachedWallTiles: unknown = null;
+  private cachedFurnitureAssets: unknown = null;
 
   // Cross-window layout sync
   layoutWatcher: LayoutWatcher | null = null;
@@ -314,6 +327,28 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       .catch((e) => {
         console.error(`[Pixel Agents] Failed to start server: ${e}`);
       });
+
+    // Phase 3: snapshot-on-open replay for WS clients.
+    // Every new WebSocket connection (including reconnects) receives the full
+    // snapshot so it can rehydrate from cold. Uses the per-client sink (2nd arg),
+    // NOT the broadcast, so we only repaint the connecting tab.
+    this.pixelAgentsServer.onWebSocketConnect((_src, perClientSink, _broadcast) => {
+      void replaySnapshot({
+        sink: perClientSink,
+        getCharacterSprites: () => this.cachedCharacterSprites ?? [],
+        getFloorTiles: () => this.cachedFloorTiles ?? [],
+        getWallTiles: () => this.cachedWallTiles ?? [],
+        getFurnitureAssets: () => this.cachedFurnitureAssets ?? { catalog: [] },
+        getExistingAgents: () => getAgentIds(this.agents).map((id) => ({ id })),
+        getLayout: () => readLayoutFromFile(),
+        getSettings: () => this.buildSettingsPayload(),
+        getHookHealth: () => this.pixelAgentsServer?.getHealthState()?.status ?? null,
+        getRenamedAgents: () => getRenamedAgentsSummary(this.agents),
+        getTeamInfo: () => getTeamInfoSummary(this.agents),
+        getTerminalNameChanges: () => getTerminalNamesSummary(this.agents),
+        getActiveAgentStatuses: () => getActiveAgentStatusesSummary(this.agents),
+      });
+    });
   }
 
   /** Remove all teammates of a lead agent */
@@ -832,31 +867,48 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
           // Load character sprites (bundled + external)
           const charSprites = await this.loadAllCharacterSprites();
-          if (charSprites && this.webviews.size > 0) {
-            console.log(
-              `[Extension] ${charSprites.characters.length} character sprites loaded, sending to webview`,
-            );
-            sendCharacterSpritesToWebview(this.broadcastSink, charSprites);
+          if (charSprites) {
+            this.cachedCharacterSprites = charSprites.characters;
+            if (this.webviews.size > 0) {
+              console.log(
+                `[Extension] ${charSprites.characters.length} character sprites loaded, sending to webview`,
+              );
+              sendCharacterSpritesToWebview(this.broadcastSink, charSprites);
+            }
           }
 
           // Load floor tiles
           const floorTiles = await loadFloorTiles(assetsRoot);
-          if (floorTiles && this.webviews.size > 0) {
-            console.log('[Extension] Floor tiles loaded, sending to webview');
-            sendFloorTilesToWebview(this.broadcastSink, floorTiles);
+          if (floorTiles) {
+            this.cachedFloorTiles = floorTiles.sprites;
+            if (this.webviews.size > 0) {
+              console.log('[Extension] Floor tiles loaded, sending to webview');
+              sendFloorTilesToWebview(this.broadcastSink, floorTiles);
+            }
           }
 
           // Load wall tiles
           const wallTiles = await loadWallTiles(assetsRoot);
-          if (wallTiles && this.webviews.size > 0) {
-            console.log('[Extension] Wall tiles loaded, sending to webview');
-            sendWallTilesToWebview(this.broadcastSink, wallTiles);
+          if (wallTiles) {
+            this.cachedWallTiles = wallTiles.sets;
+            if (this.webviews.size > 0) {
+              console.log('[Extension] Wall tiles loaded, sending to webview');
+              sendWallTilesToWebview(this.broadcastSink, wallTiles);
+            }
           }
 
           const assets = await this.loadAllFurnitureAssets();
-          if (assets && this.webviews.size > 0) {
-            console.log('[Extension] ✅ Assets loaded, sending to webview');
-            sendAssetsToWebview(this.broadcastSink, assets);
+          if (assets) {
+            // Convert sprites Map to plain object for caching (JSON-serializable)
+            const spritesObj: Record<string, string[][]> = {};
+            for (const [id, spriteData] of assets.sprites) {
+              spritesObj[id] = spriteData;
+            }
+            this.cachedFurnitureAssets = { catalog: assets.catalog, sprites: spritesObj };
+            if (this.webviews.size > 0) {
+              console.log('[Extension] ✅ Assets loaded, sending to webview');
+              sendAssetsToWebview(this.broadcastSink, assets);
+            }
           }
         } catch (err) {
           console.error('[Extension] ❌ Error loading assets:', err);
@@ -1181,6 +1233,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     try {
       const assets = await this.loadAllFurnitureAssets();
       if (assets) {
+        const spritesObj: Record<string, string[][]> = {};
+        for (const [id, spriteData] of assets.sprites) {
+          spritesObj[id] = spriteData;
+        }
+        this.cachedFurnitureAssets = { catalog: assets.catalog, sprites: spritesObj };
         sendAssetsToWebview(this.broadcastSink, assets);
       }
     } catch (err) {
@@ -1193,6 +1250,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     try {
       const chars = await this.loadAllCharacterSprites();
       if (chars) {
+        this.cachedCharacterSprites = chars.characters;
         sendCharacterSpritesToWebview(this.broadcastSink, chars);
       }
     } catch (err) {
@@ -1262,8 +1320,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Broadcast the full settingsLoaded payload to all webviews. */
-  private broadcastSettingsLoaded(): void {
+  /** Returns the full settings payload without posting it. Used by both
+   *  broadcastSettingsLoaded (VS Code webviews) and the WS snapshot-on-connect replay. */
+  private buildSettingsPayload(): Record<string, unknown> {
     const soundEnabled = this.context.globalState.get<boolean>(
       GLOBAL_KEY_SOUND_ENABLED,
       DEFAULT_SETTINGS.general.soundEnabled,
@@ -1300,8 +1359,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       DEFAULT_SETTINGS.terminal.usePtyTerminal,
     );
     const config = readConfig();
-    this.broadcastSink.postMessage({
-      type: 'settingsLoaded',
+    return {
       soundEnabled,
       lastSeenVersion,
       extensionVersion,
@@ -1321,6 +1379,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
         DEFAULT_SETTINGS.terminal.lineHeight,
       ),
+    };
+  }
+
+  /** Broadcast the full settingsLoaded payload to all webviews. */
+  private broadcastSettingsLoaded(): void {
+    this.broadcastSink.postMessage({
+      type: 'settingsLoaded',
+      ...this.buildSettingsPayload(),
     });
   }
 }
