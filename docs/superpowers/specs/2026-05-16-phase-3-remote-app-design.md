@@ -88,30 +88,38 @@ The webview-side adapter swaps `acquireVsCodeApi()` for a small WebSocket client
 
 Most of `src/` is already vscode-API-light. Phase 1 + Phase 2 did this on purpose.
 
-| Today (`src/`)               | Tomorrow                      | Change                                                  |
-| ---------------------------- | ----------------------------- | ------------------------------------------------------- |
-| `extension.ts`               | (gone)                        | Activation merges into `bin/serve.ts`.                  |
-| `PixelAgentsViewProvider.ts` | (gone)                        | Replaced by daemon's WS broadcast + HTTP server wiring. |
-| `agentManager.ts`            | `daemon/agentManager.ts`      | Remove `vscode.window.createTerminal` path. Pty-only.   |
-| `configPersistence.ts`       | `daemon/configPersistence.ts` | No change.                                              |
-| `layoutPersistence.ts`       | `daemon/layoutPersistence.ts` | No change.                                              |
-| `fileWatcher.ts`             | `daemon/fileWatcher.ts`       | No change.                                              |
-| `transcriptParser.ts`        | `daemon/transcriptParser.ts`  | No change.                                              |
-| `timerManager.ts`            | `daemon/timerManager.ts`      | No change.                                              |
-| `assetLoader.ts`             | `daemon/assetLoader.ts`       | Drop the `vscode.Uri`-based path resolver fallback.     |
-| `types.ts`                   | `daemon/types.ts`             | Drop `vscode.Terminal` from `AgentState`.               |
-| `constants.ts`               | `daemon/constants.ts`         | Drop VS Code-only keys (commands, view IDs).            |
-| `PtyManager.ts` (existing)   | `daemon/PtyManager.ts`        | No change (already vscode-free).                        |
-| `server/src/server.ts`       | `daemon/server.ts`            | Add WebSocket + static serving (see below).             |
+| Today                                              | Tomorrow                      | Change                                                                                                              |
+| -------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `src/extension.ts`                                 | (gone)                        | Activation merges into `bin/serve.ts`.                                                                              |
+| `src/PixelAgentsViewProvider.ts`                   | (gone)                        | Replaced by daemon's WS broadcast + HTTP server wiring.                                                             |
+| `src/agentManager.ts`                              | `daemon/agentManager.ts`      | Remove `vscode.window.createTerminal` path. Pty-only. Drop `workspaceState` param; take typed I/O.                  |
+| `src/configPersistence.ts`                         | `daemon/configPersistence.ts` | No change.                                                                                                          |
+| `src/layoutPersistence.ts`                         | `daemon/layoutPersistence.ts` | Drop `workspaceState` legacy-migration branch; file-only path remains.                                              |
+| `src/fileWatcher.ts`                               | `daemon/fileWatcher.ts`       | No change.                                                                                                          |
+| `src/transcriptParser.ts`                          | `daemon/transcriptParser.ts`  | No change.                                                                                                          |
+| `src/timerManager.ts`                              | `daemon/timerManager.ts`      | No change.                                                                                                          |
+| `src/assetLoader.ts`                               | `daemon/assetLoader.ts`       | Drop the `vscode.Uri`-based path resolver fallback; resolve bundled assets via `import.meta.url` + `fileURLToPath`. |
+| `src/settingsDefaults.ts`                          | `daemon/settingsDefaults.ts`  | Drop `GlobalStateLike` param; take a `ConfigStore` (file-backed) instead.                                           |
+| `src/pty/ptyManager.ts`, `src/pty/ptyWorker.ts`    | `daemon/pty/`                 | No change (already vscode-free).                                                                                    |
+| `src/types.ts`                                     | `daemon/types.ts`             | Drop `vscode.Terminal` from `AgentState`.                                                                           |
+| `src/constants.ts`                                 | `daemon/constants.ts`         | Drop VS Code-only keys (commands, view IDs).                                                                        |
+| `server/src/server.ts`                             | `daemon/server.ts`            | Add WebSocket + static serving (see below).                                                                         |
+| `server/src/hookEventHandler.ts`                   | `daemon/hookEventHandler.ts`  | No change.                                                                                                          |
+| `server/src/healthMonitor.ts`                      | `daemon/healthMonitor.ts`     | No change.                                                                                                          |
+| `server/src/teamProvider.ts`, `teamUtils.ts`       | `daemon/teams/`               | No change.                                                                                                          |
+| `server/src/providers/file/claudeHookInstaller.ts` | `daemon/hooks/installer.ts`   | Now invoked by the CLI (`pixel-agents install-hooks`) and on each `serve` startup for the script file (idempotent). |
 
 The split between `src/` (extension) and `server/` (server) collapses into a single `daemon/` tree.
 
 ### `webview-ui/` becomes the SPA
 
-`webview-ui/` already builds with Vite to `webview-ui/dist/`. No vscode imports in the rendering code. Phase 3 work in this directory:
+`webview-ui/` already builds with Vite to `webview-ui/dist/`. No vscode imports in the rendering code. The existing `webview-ui/src/vscodeApi.ts` already exposes an `isBrowserRuntime` guard that returns a no-op transport when not inside a VS Code webview. Phase 3 work in this directory:
 
-- `useExtensionMessages.ts`: rename internally to `useDaemonMessages.ts`; consume the new transport. Public hook signature unchanged.
-- `acquireVsCodeApi()`: replaced by `transport.ts` (WS adapter).
+- `vscodeApi.ts`: replace the no-op browser branch with a real WebSocket-backed transport. **Both directions:**
+  - Outbound: `postMessage()` writes to a `WebSocket` (single connection, queued while disconnected, replayed on open).
+  - Inbound: today the hook uses `window.addEventListener('message', …)` to receive from the VS Code host. The browser branch must wire `ws.onmessage` to dispatch the same `MessageEvent`-shaped envelope to the existing handler. The webview-side gains a `MessageSource` adapter that mirrors the extension-side abstraction (symmetric with the server-side change).
+  - VS Code branch can stay in place during phases 1–6 (safety net); deleted at cutover (step 7).
+- `useExtensionMessages.ts`: rename to `useDaemonMessages.ts`; consume the new transport. Public hook signature unchanged.
 - A handful of message names referencing "extension" become "daemon" — cosmetic, find/replace.
 - The 77 commits of Phase 2 polish (visual chrome, terminal pane, character interaction, settings redesign) all live here and carry over unchanged.
 
@@ -135,9 +143,44 @@ The daemon has no workspace. v1 behavior:
 | Settings | `globalState` (multiple keys) | `config.json` (extended)      |
 | Server   | `~/.pixel-agents/server.json` | unchanged                     |
 
-New `daemon/agentsPersistence.ts` mirrors `configPersistence.ts`: atomic `tmp + rename`, no migration from `workspaceState` (one-way cutover, personal tool).
+New `daemon/agentsPersistence.ts` mirrors `configPersistence.ts`: atomic `tmp + rename`. The daemon is the sole reader/writer of `agents.json`, so no cross-process watcher is needed (unlike `layout.json` and `config.json`, which had to sync between two VS Code windows).
+
+**`agents.json` schema (v1):**
+
+```ts
+interface AgentsFile {
+  version: 1;
+  nextAgentId: number;
+  nextTerminalIndex: number;
+  agents: PersistedAgent[];
+}
+
+interface PersistedAgent {
+  id: number;
+  sessionId?: string;
+  terminalName: string;
+  isExternal?: boolean;
+  jsonlFile: string;
+  projectDir: string; // survives — workspace folder name is dropped
+  workSeatId?: string; // moved out of workspaceState
+  palette: number; // 0–5
+  hueShift: number; // degrees (0 when palette is unique)
+  customTitle?: string;
+  teamName?: string;
+  agentName?: string;
+  isTeamLead?: boolean;
+  leadAgentId?: number;
+  teamUsesTmux?: boolean;
+}
+```
+
+Two `PersistedAgent` fields are dropped relative to today: `folderName` (only meaningful for multi-root VS Code workspaces) and the implicit `workspaceState` partitioning (the daemon has one global agents list).
+
+**Settings backfill at phase 5 (one-time, decided path):**
 
 Settings keys that move out of `globalState` into `config.json`: `soundEnabled`, `watchAllSessions`, `hooksEnabled`, `alwaysShowLabels`, `showTerminalNames`, `defaultCwd`, terminal font family/size/line-height, panel position, debug view, plus anything else `settingsLoaded` carries today.
+
+To keep the extension functional through phases 5–6 (safety net), the extension's `settingsDefaults.ts` is rewired in phase 5 to read/write from `config.json` instead of `globalState`. A one-shot migration helper (`bin/import-extension-settings.ts`, ~30 lines) reads existing `globalState` values once via a tiny VS Code command (`pixel-agents.exportSettings`) added in phase 5, dumps them to `config.json`, and is then never run again. The extension and daemon share the same `config.json` from phase 5 onwards. No silent dual-storage drift.
 
 ### Daemon lifecycle
 
@@ -182,7 +225,7 @@ A `Set<WebSocket>` on the daemon, fed into `WebSocketBroadcast`, mirrors today's
 
 The browser will let any tab on `http://localhost:*` (or `http://127.0.0.1:*`) connect to our port. Defense:
 
-1. **Origin allowlist on the WebSocket upgrade.** Reject any `Origin` that isn't our own scheme+host+port.
+1. **Origin allowlist on the WebSocket upgrade.** Allowed origins: `http://127.0.0.1:<port>` and `http://localhost:<port>` (both resolve to our loopback bind; either is what a user might type). Reject everything else.
 2. **Token check on the WebSocket upgrade.** Token is the existing one from `server.json` (already used to authenticate hook POSTs). The SPA reads it from a `<meta>` tag embedded in `index.html` at request time, and includes it as `?token=...` on the WebSocket URL.
 3. **Static-file routes don't require a token.** Same-origin + localhost-only binding is enough — and the SPA needs to load before it can talk WS.
 
@@ -190,17 +233,18 @@ Threat model: another process on the same machine, single user. Not adversarial.
 
 ## Migration phases
 
-Each phase ends with both the extension and the daemon working. Step 7 is the irreversible cutover.
+Phases 1–5 keep the extension fully functional as a safety net. **Phases 6 + 7 together are the cutover** — once they ship, the extension can no longer fall back to the legacy VS Code terminal path. Soak the pty backend on every active agent before starting phase 6.
 
 1. **Module decoupling.** Drop `vscode.*` imports from every module that doesn't need them. Convert `vscode.Disposable` returns to a plain `Disposable` interface (already what `MessageSource.onMessage` returns; widen). Extension still functions through thin shims.
-2. **WebSocket transport.** Add `ws` to the daemon. Wire `WebSocketSink`, `WebSocketBroadcast`, `WebSocketSource`. Build the SPA-side transport adapter with reconnect + offline-queue. The VS Code webview keeps using `acquireVsCodeApi()`; the SPA tab uses the new transport.
-3. **Static SPA serving.** Daemon serves `webview-ui/dist/` from `/`. Verify in a browser tab while the extension is also running.
-4. **CLI entry point.** `bin/serve.ts` with `serve`, `install-hooks`, `uninstall-hooks`, `stop`, `status`. Open-browser-on-start.
-5. **File-based persistence.** New `agentsPersistence.ts`. Settings keys leave `globalState`; the extension reads/writes through `config.json` for the new keys. No backfill from `workspaceState`/`globalState` — one-way switch.
-6. **Pty-only.** Remove `vscode.window.createTerminal` path from `agentManager`. Delete the `usePtyTerminal` setting. The extension's webview still works; only behaviour change is that all new agents are pty-backed.
-7. **Cutover commit.** Delete `src/extension.ts`, `src/PixelAgentsViewProvider.ts`, the activation events in `package.json`, and any remaining vscode-API imports. Repo's `package.json` becomes the daemon's. README rewrites to a personal CLI.
+2. **WebSocket transport.** Add `ws` to the daemon. Wire `WebSocketSink`, `WebSocketBroadcast`, `WebSocketSource`. Build the SPA-side transport adapter (`vscodeApi.ts` browser branch) with reconnect + offline-queue + symmetric inbound dispatch. The VS Code webview keeps using `acquireVsCodeApi()`; the SPA tab uses the new transport.
+   - **On every WebSocket `open` event (including reconnects)**, the daemon resends the snapshot needed to rehydrate a stale client: `existingAgents`, `layoutLoaded`, `settingsLoaded`, `hookHealthChanged`, plus per-agent `agentRenamed` and `agentTeamInfo` replays (mirrors today's `sendCurrentAgentStatuses` on `webviewReady`, just fired on every connect).
+3. **Static SPA serving.** Daemon serves `webview-ui/dist/` from `/`. Bundled assets (sprites, default layout JSON, walls.png, etc.) resolve via `path.dirname(fileURLToPath(import.meta.url))` rather than `vscode.Uri.joinPath`. Verify in a browser tab while the extension is also running.
+4. **CLI entry point.** `bin/serve.ts` with `serve`, `install-hooks`, `uninstall-hooks`, `stop`, `status`. Open-browser-on-start via the `open` package. On `serve` startup, the daemon writes `~/.pixel-agents/hooks/claude-hook.js` from a bundled copy if missing or out of date (version constant embedded in the script); ownership of that file moves from the extension's activation step to the daemon's startup step.
+5. **File-based persistence.** New `daemon/agentsPersistence.ts`. Run the one-time `bin/import-extension-settings.ts` helper (or the `pixel-agents.exportSettings` VS Code command) to copy `globalState` values into `config.json`. Extension's `settingsDefaults.ts` is rewired to read/write `config.json` from this point on. During phases 2–5, daemon and extension share the same `~/.pixel-agents/server.json` via the existing PID-reuse logic; multi-window safety isn't regressed.
+6. **Pty-only.** Remove `vscode.window.createTerminal` path from `agentManager`. Delete the `usePtyTerminal` setting. The extension's webview still works; only behavior change is that all new agents are pty-backed. **Once this lands the legacy fallback is gone — there is no extension-side rollback after step 6.**
+7. **Cutover commit.** Delete `src/extension.ts`, `src/PixelAgentsViewProvider.ts`, the `vscodeApi.ts` VS Code branch, activation events + `contributes.*` in `package.json`, and any remaining vscode-API imports. Repo's `package.json` becomes the daemon's; `bin/serve.ts` becomes the package `bin`. README rewrites to a personal CLI. Add `daemon` startup logic that, on boot, enumerates `agents.json` and drops entries whose `sessionId`'s pty PID is no longer alive (verified via `process.kill(pid, 0)`); surviving JSONL sessions get re-adopted as externals by the project-level scanner.
 
-Each phase commits independently. CI keeps both paths green through step 6.
+Each phase commits independently. CI keeps both paths green through step 5. After step 6, the extension still runs but only the pty path is exercised.
 
 ## Testing
 
@@ -214,14 +258,15 @@ Each phase commits independently. CI keeps both paths green through step 6.
 - **node-pty native build on `npm install`.** Already true today. README documents.
 - **Browser tab dies → daemon survives.** Tab reload must reattach to the same daemon state. WebSocket reconnect logic handles this; the daemon doesn't track per-tab session state.
 - **Mid-refactor breakage.** Mitigated by the phased approach. Each phase ends with both transports working.
-- **Settings migration loss.** Cutover is one-way; the user's existing globalState settings have to be reset in `config.json`. For a personal tool with the maintainer as the only user, this is a single manual step.
+- **Settings migration.** Handled by the one-shot helper in step 5 (`bin/import-extension-settings.ts`), which reads `globalState` once via a temporary `pixel-agents.exportSettings` VS Code command and writes to `config.json`. After step 5 the extension reads/writes `config.json` directly — no silent dual-storage drift.
 - **node-pty in daemon vs extension host.** The daemon is a regular Node.js process — same runtime as the extension host. node-pty already works there.
 - **Browser opening on `serve`.** macOS `open`, Linux `xdg-open`, Windows `start`. The `open` npm package handles all three.
-- **Browser hotkeys collide with canvas shortcuts.** `Cmd/Ctrl+1..9` are browser tab-switch shortcuts; `Cmd/Ctrl+'` is also reserved in some browsers. The Phase 2 QA checklist already flags these as "browser SPA out of scope." Document the loss; remap to non-conflicting shortcuts (e.g. `Alt+1..9`) as a follow-up.
+- **Browser hotkeys collide with canvas shortcuts.** The browser claims many of the chords today's canvas listens to: `Cmd/Ctrl+1..9` (tab-switch), `Cmd/Ctrl+'` (history in some browsers), `Cmd/Ctrl+F` (find-in-page, browser wins over the terminal-search override that worked in the webview), `Cmd/Ctrl+W` (close tab — no recovery), `Cmd/Ctrl+R` (reload — forces a full WS reconnect, handled by the snapshot-on-open logic in step 2), `Cmd/Ctrl+Z` (browser may steal in text inputs). **Resolution: remap every canvas/terminal shortcut from `Cmd/Ctrl` to `Alt` (or `Option` on macOS) as part of step 6 of the migration.** `Alt+1..9` selects the Nth agent; `Alt+'` collapses the panel; `Alt+F` opens terminal search; `Alt+Z`/`Alt+Shift+Z` undo/redo in the layout editor. The Phase 2 QA checklist's "canvas shortcuts" section gets rewritten with the new chords for the combined Phase 2+3 release.
+- **Inbound state lost during a WS reconnect.** Mid-flight broadcasts can drop while a tab's WS is `CLOSING/CLOSED`. The snapshot-on-open replay in step 2 covers the rehydration; without it, a 500 ms reconnect window would leave a tab silently stale.
 
 ## Future (not v1, but architecture preserves compatibility)
 
-- **LAN exposure.** Bind to `0.0.0.0` + add pairing UX (printed pairing code, browser challenge). Origin/token machinery already in place.
+- **LAN exposure.** Bind to `0.0.0.0` + add a pairing UX (printed pairing code, browser challenge). The token plumbing exists; the pairing UI and rotation logic do not.
 - **Cloud relay.** Coordinator-in-the-cloud pattern from the roadmap; daemon's WebSocket transport swaps for a coordinator-originated WS.
 - **Workspace picker.** SPA gains a folder selector that scopes the daemon's watcher and `defaultCwd`.
 
