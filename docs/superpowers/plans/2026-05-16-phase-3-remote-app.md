@@ -64,20 +64,23 @@ Goal: drop `vscode.*` imports from every module that doesn't need them. After th
 
 ```ts
 // src/__tests__/disposable.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { Disposable } from '../disposable.js';
 
 describe('Disposable', () => {
-  it('matches any { dispose: () => void }', () => {
-    const d: Disposable = { dispose: () => {} };
+  it('invokes dispose() exactly once on a registered consumer', () => {
+    const cleanup = vi.fn();
+    const d: Disposable = { dispose: cleanup };
     d.dispose();
-    expect(true).toBe(true);
+    d.dispose();
+    expect(cleanup).toHaveBeenCalledTimes(2);
   });
 
-  it('is structurally compatible with vscode.Disposable shape', () => {
+  it('accepts a vscode.Disposable-shaped value structurally (no runtime conversion needed)', () => {
+    // simulates what was passed by vscode APIs: an object whose dispose() returns undefined
     const vscodeShaped = { dispose: () => undefined };
     const d: Disposable = vscodeShaped;
-    expect(typeof d.dispose).toBe('function');
+    expect(d.dispose()).toBeUndefined();
   });
 });
 ```
@@ -241,10 +244,10 @@ npm install ws@^8 open@^10
 npm install --save-dev @types/ws@^8
 ```
 
-- [ ] **Step 2: Verify they appear in `package.json` `dependencies` and `devDependencies`**
+- [ ] **Step 2: Verify they appear in `package.json` AND that `package-lock.json` was updated**
 
-Run: `grep -E '"(ws|open|@types/ws)"' package.json`
-Expected: three lines, two in `dependencies` (`ws`, `open`), one in `devDependencies` (`@types/ws`).
+Run: `grep -E '"(ws|open|@types/ws)"' package.json && git status --short package-lock.json`
+Expected: three lines from `package.json`, plus `package-lock.json` showing as modified (`M`). Committing only `package.json` without the lockfile breaks `npm ci` for the next checkout.
 
 - [ ] **Step 3: Run build + tests to confirm nothing broke**
 
@@ -486,9 +489,13 @@ import { WebSocketBroadcast, WebSocketSource } from '../../daemon/wsTransport.js
 private wss: WebSocketServer | null = null;
 private wsClients = new Set<WebSocket>();
 private wsBroadcast = new WebSocketBroadcast(this.wsClients);
-private wsConnectHandler: ((src: WebSocketSource, sink: WebSocketBroadcast) => void) | null = null;
+private wsConnectHandler:
+  | ((src: WebSocketSource, perClientSink: WebSocketSink, broadcast: WebSocketBroadcast) => void)
+  | null = null;
 
-onWebSocketConnect(cb: (src: WebSocketSource, sink: WebSocketBroadcast) => void) {
+onWebSocketConnect(
+  cb: (src: WebSocketSource, perClientSink: WebSocketSink, broadcast: WebSocketBroadcast) => void,
+) {
   this.wsConnectHandler = cb;
 }
 
@@ -515,7 +522,7 @@ this.server.on('upgrade', (req, sock, head) => {
   this.wss!.handleUpgrade(req, sock, head, (ws) => {
     this.wsClients.add(ws);
     ws.on('close', () => this.wsClients.delete(ws));
-    this.wsConnectHandler?.(new WebSocketSource(ws), this.wsBroadcast);
+    this.wsConnectHandler?.(new WebSocketSource(ws), new WebSocketSink(ws), this.wsBroadcast);
   });
 });
 ```
@@ -546,15 +553,23 @@ describe('PixelAgentsServer WebSocket', () => {
       server.stop();
     }
   });
-  it('rejects on bad origin', async () => {
+  it('rejects on bad origin (socket closes; no open event fires within timeout)', async () => {
     const server = new PixelAgentsServer();
     const cfg = await server.start();
     try {
       const ws = new WebSocket(`ws://127.0.0.1:${cfg.port}/ws?token=${cfg.token}`, {
         origin: 'http://evil.example',
       });
-      const err = await new Promise<Error>((resolve) => ws.on('error', resolve));
-      expect(err.message).toMatch(/403|unexpected response/i);
+      const result = await Promise.race([
+        new Promise<'open'>((resolve) => ws.on('open', () => resolve('open'))),
+        new Promise<'closed'>((resolve) => {
+          ws.on('error', () => resolve('closed'));
+          ws.on('close', () => resolve('closed'));
+        }),
+        new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 500)),
+      ]);
+      expect(result).toBe('closed');
+      expect(ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING).toBe(true);
     } finally {
       server.stop();
     }
@@ -584,7 +599,8 @@ git commit -m "phase-3 step 2: PixelAgentsServer accepts WebSocket upgrades with
 - [ ] **Step 1: Identify what gets replayed on `webviewReady` today**
 
 Run: `grep -n "sendCurrentAgentStatuses\|webviewReady" src/PixelAgentsViewProvider.ts src/agentManager.ts | head -20`
-Note the exact message types that fire when a new webview connects today. Per the spec these are: `existingAgents`, `layoutLoaded`, `settingsLoaded`, `hookHealthChanged`, plus per-agent replays of `agentRenamed` and `agentTeamInfo`.
+
+A fresh tab needs **assets before state**, otherwise `layoutLoaded` paints onto missing sprites. Per CLAUDE.md "Load order", the daemon must replay (in order): `characterSpritesLoaded`, `floorTilesLoaded`, `wallTilesLoaded`, `furnitureAssetsLoaded`, then `existingAgents`, `layoutLoaded`, `settingsLoaded`, `hookHealthChanged`, then per-agent replays: `agentRenamed`, `agentTeamInfo`, `agentTerminalNameChanged`, plus current `agentStatus` for any agent in `waiting` / `permission` / `active`.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -593,21 +609,35 @@ Note the exact message types that fire when a new webview connects today. Per th
 import { describe, it, expect, vi } from 'vitest';
 import { replaySnapshot, type SnapshotDeps } from '../snapshotReplay.js';
 
+function makeDeps(over: Partial<SnapshotDeps> = {}): SnapshotDeps {
+  return {
+    sink: { postMessage: vi.fn().mockResolvedValue(true) },
+    getCharacterSprites: () => [{ palette: 0 }],
+    getFloorTiles: () => [{ pattern: 0 }],
+    getWallTiles: () => [{ bitmask: 0 }],
+    getFurnitureAssets: () => ({ catalog: [] }),
+    getExistingAgents: () => [{ id: 1, sessionId: 'a' }],
+    getLayout: () => ({ version: 1, cols: 20, rows: 11, tiles: [], furniture: [] }),
+    getSettings: () => ({ soundEnabled: true, watchAllSessions: false }),
+    getHookHealth: () => 'ok',
+    getRenamedAgents: () => [],
+    getTeamInfo: () => [],
+    getActiveAgentStatuses: () => [],
+    getTerminalNameChanges: () => [],
+    ...over,
+  };
+}
+
 describe('replaySnapshot', () => {
-  it('sends existingAgents, layoutLoaded, settingsLoaded, hookHealthChanged in order', async () => {
-    const sink = { postMessage: vi.fn().mockResolvedValue(true) };
-    const deps: SnapshotDeps = {
-      sink,
-      getExistingAgents: () => [{ id: 1, sessionId: 'a' }],
-      getLayout: () => ({ version: 1, cols: 20, rows: 11, tiles: [], furniture: [] }),
-      getSettings: () => ({ soundEnabled: true }),
-      getHookHealth: () => 'ok',
-      getRenamedAgents: () => [],
-      getTeamInfo: () => [],
-    };
-    await replaySnapshot(deps);
-    const calls = (sink.postMessage as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0].type);
-    expect(calls).toEqual([
+  it('emits assets first, then state, in the documented load order', async () => {
+    const post = vi.fn().mockResolvedValue(true);
+    await replaySnapshot(makeDeps({ sink: { postMessage: post } }));
+    const types = post.mock.calls.map((c) => (c[0] as { type: string }).type);
+    expect(types).toEqual([
+      'characterSpritesLoaded',
+      'floorTilesLoaded',
+      'wallTilesLoaded',
+      'furnitureAssetsLoaded',
       'existingAgents',
       'layoutLoaded',
       'settingsLoaded',
@@ -615,23 +645,47 @@ describe('replaySnapshot', () => {
     ]);
   });
 
-  it('emits agentRenamed for each renamed agent after settingsLoaded', async () => {
-    const sink = { postMessage: vi.fn().mockResolvedValue(true) };
-    const deps: SnapshotDeps = {
-      sink,
-      getExistingAgents: () => [],
-      getLayout: () => null,
-      getSettings: () => ({}),
-      getHookHealth: () => null,
-      getRenamedAgents: () => [
-        { id: 1, customTitle: 'Lead' },
-        { id: 2, customTitle: 'Helper' },
-      ],
-      getTeamInfo: () => [],
-    };
-    await replaySnapshot(deps);
-    const calls = (sink.postMessage as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
-    expect(calls.filter((c) => c.type === 'agentRenamed')).toHaveLength(2);
+  it('forwards payloads verbatim (not just types)', async () => {
+    const post = vi.fn().mockResolvedValue(true);
+    const settings = { soundEnabled: false, watchAllSessions: true, defaultCwd: '~' };
+    await replaySnapshot(makeDeps({ sink: { postMessage: post }, getSettings: () => settings }));
+    const call = post.mock.calls.find((c) => (c[0] as { type: string }).type === 'settingsLoaded');
+    expect(call?.[0]).toEqual({ type: 'settingsLoaded', settings });
+  });
+
+  it('skips layoutLoaded when getLayout returns null', async () => {
+    const post = vi.fn().mockResolvedValue(true);
+    await replaySnapshot(makeDeps({ sink: { postMessage: post }, getLayout: () => null }));
+    const types = post.mock.calls.map((c) => (c[0] as { type: string }).type);
+    expect(types).not.toContain('layoutLoaded');
+  });
+
+  it('skips hookHealthChanged when health is null (boot grace window)', async () => {
+    const post = vi.fn().mockResolvedValue(true);
+    await replaySnapshot(makeDeps({ sink: { postMessage: post }, getHookHealth: () => null }));
+    const types = post.mock.calls.map((c) => (c[0] as { type: string }).type);
+    expect(types).not.toContain('hookHealthChanged');
+  });
+
+  it('emits agentRenamed + agentTeamInfo + agentTerminalNameChanged + agentStatus per agent', async () => {
+    const post = vi.fn().mockResolvedValue(true);
+    await replaySnapshot(
+      makeDeps({
+        sink: { postMessage: post },
+        getRenamedAgents: () => [
+          { id: 1, customTitle: 'Lead' },
+          { id: 2, customTitle: 'Helper' },
+        ],
+        getTeamInfo: () => [{ id: 1, teamName: 'A', isTeamLead: true }],
+        getTerminalNameChanges: () => [{ id: 1, terminalName: 'shell-1' }],
+        getActiveAgentStatuses: () => [{ id: 1, status: 'waiting' }],
+      }),
+    );
+    const types = post.mock.calls.map((c) => (c[0] as { type: string }).type);
+    expect(types.filter((t) => t === 'agentRenamed')).toHaveLength(2);
+    expect(types.filter((t) => t === 'agentTeamInfo')).toHaveLength(1);
+    expect(types.filter((t) => t === 'agentTerminalNameChanged')).toHaveLength(1);
+    expect(types.filter((t) => t === 'agentStatus')).toHaveLength(1);
   });
 });
 ```
@@ -649,6 +703,10 @@ import type { MessageSink } from '../src/types.js';
 
 export interface SnapshotDeps {
   sink: MessageSink;
+  getCharacterSprites: () => unknown;
+  getFloorTiles: () => unknown;
+  getWallTiles: () => unknown;
+  getFurnitureAssets: () => unknown;
   getExistingAgents: () => Array<{ id: number; sessionId?: string; [k: string]: unknown }>;
   getLayout: () => Record<string, unknown> | null;
   getSettings: () => Record<string, unknown>;
@@ -661,12 +719,31 @@ export interface SnapshotDeps {
     isTeamLead?: boolean;
     leadAgentId?: number;
   }>;
+  getTerminalNameChanges: () => Array<{ id: number; terminalName: string }>;
+  getActiveAgentStatuses: () => Array<{ id: number; status: string; [k: string]: unknown }>;
 }
 
 /** Fire the full snapshot to a sink. Idempotent — safe to call on every WS
- *  connect or reconnect. Order: existingAgents -> layoutLoaded -> settingsLoaded
- *  -> hookHealthChanged -> per-agent agentRenamed + agentTeamInfo. */
+ *  connect or reconnect.
+ *
+ *  Order matters: assets first (so the renderer can paint), then state, then
+ *  per-agent replays (which mutate existing characters in place).
+ *
+ *  1. characterSpritesLoaded, floorTilesLoaded, wallTilesLoaded, furnitureAssetsLoaded
+ *  2. existingAgents, layoutLoaded?, settingsLoaded, hookHealthChanged?
+ *  3. per-agent agentRenamed, agentTeamInfo, agentTerminalNameChanged, agentStatus
+ */
 export async function replaySnapshot(deps: SnapshotDeps): Promise<void> {
+  // Phase 1: assets (renderer needs them before layoutLoaded paints).
+  await deps.sink.postMessage({
+    type: 'characterSpritesLoaded',
+    sprites: deps.getCharacterSprites(),
+  });
+  await deps.sink.postMessage({ type: 'floorTilesLoaded', tiles: deps.getFloorTiles() });
+  await deps.sink.postMessage({ type: 'wallTilesLoaded', tiles: deps.getWallTiles() });
+  await deps.sink.postMessage({ type: 'furnitureAssetsLoaded', assets: deps.getFurnitureAssets() });
+
+  // Phase 2: state.
   await deps.sink.postMessage({ type: 'existingAgents', agents: deps.getExistingAgents() });
   const layout = deps.getLayout();
   if (layout) {
@@ -677,35 +754,48 @@ export async function replaySnapshot(deps: SnapshotDeps): Promise<void> {
   if (health) {
     await deps.sink.postMessage({ type: 'hookHealthChanged', state: health });
   }
+
+  // Phase 3: per-agent replays.
   for (const a of deps.getRenamedAgents()) {
     await deps.sink.postMessage({ type: 'agentRenamed', id: a.id, customTitle: a.customTitle });
   }
   for (const t of deps.getTeamInfo()) {
     await deps.sink.postMessage({ type: 'agentTeamInfo', ...t });
   }
+  for (const n of deps.getTerminalNameChanges()) {
+    await deps.sink.postMessage({ type: 'agentTerminalNameChanged', ...n });
+  }
+  for (const s of deps.getActiveAgentStatuses()) {
+    await deps.sink.postMessage({ type: 'agentStatus', ...s });
+  }
 }
 ```
 
 - [ ] **Step 5: Wire `replaySnapshot` into the WS upgrade callback**
 
-In `server/src/server.ts`'s `onWebSocketConnect` handler (registered by the provider during phases 2–6, by `bin/serve.ts` after cutover):
+In `server/src/server.ts`, `onWebSocketConnect` receives a **per-client** `WebSocketSink` (not the broadcast) so the snapshot only repaints the connecting tab. Task 6 must register the handler signature accordingly: `onWebSocketConnect(cb: (src: WebSocketSource, perClientSink: WebSocketSink, broadcast: WebSocketBroadcast) => void)`.
 
 ```ts
-server.onWebSocketConnect((src, sink) => {
-  // build deps from the same providers used by sendCurrentAgentStatuses today
-  replaySnapshot({
-    sink: new WebSocketSink(/* this client */),
+server.onWebSocketConnect((src, perClientSink, _broadcast) => {
+  void replaySnapshot({
+    sink: perClientSink,
+    getCharacterSprites: () => assetLoader.getCharacterSprites(),
+    getFloorTiles: () => assetLoader.getFloorTiles(),
+    getWallTiles: () => assetLoader.getWallTiles(),
+    getFurnitureAssets: () => assetLoader.getFurnitureAssets(),
     getExistingAgents: () => agentManager.getAgentSummaries(),
     getLayout: () => layoutPersistence.read(),
     getSettings: () => settingsStore.snapshot(),
     getHookHealth: () => server.getHealthState(),
     getRenamedAgents: () => agentManager.getRenamedAgents(),
     getTeamInfo: () => agentManager.getTeamInfo(),
+    getTerminalNameChanges: () => agentManager.getTerminalNameChanges(),
+    getActiveAgentStatuses: () => agentManager.getActiveAgentStatuses(),
   });
 });
 ```
 
-Note: the SINK in the snapshot must be the **per-connection** `WebSocketSink`, not the broadcast — otherwise we'd repaint every connected client whenever any new tab opens. The broadcast sink continues to receive ongoing state-change events as normal.
+Use the broadcast sink for ongoing state-change events; use the per-client sink only for the snapshot replay.
 
 - [ ] **Step 6: Run tests + build**
 
@@ -804,32 +894,45 @@ Expected: FAIL — module not found.
 // webview-ui/src/wsClient.ts
 export interface WsClient {
   postMessage(msg: unknown): void;
+  dispose(): void;
 }
 
 export interface WsClientOptions {
   url: string;
   onMessage: (msg: unknown) => void;
+  /** Initial reconnect delay (ms). Subsequent attempts use exponential backoff
+   *  up to 10s. Tests can set this to 0 to verify immediate reconnect. */
   reconnectMs?: number;
 }
+
+const MAX_BACKOFF_MS = 10_000;
 
 export function createWsClient(opts: WsClientOptions): WsClient {
   const queue: string[] = [];
   let ws: WebSocket | null = null;
+  let disposed = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
 
   const connect = () => {
+    if (disposed) return;
     ws = new WebSocket(opts.url);
     ws.onopen = () => {
+      attempt = 0; // reset backoff on a successful open
       while (queue.length) ws!.send(queue.shift()!);
     };
     ws.onmessage = (e) => {
       try {
         opts.onMessage(JSON.parse(typeof e.data === 'string' ? e.data : ''));
       } catch {
-        /* ignore */
+        /* malformed frame; drop */
       }
     };
     ws.onclose = () => {
-      setTimeout(connect, opts.reconnectMs ?? 500);
+      if (disposed) return;
+      const base = opts.reconnectMs ?? 500;
+      const delay = Math.min(base * Math.pow(2, attempt++), MAX_BACKOFF_MS);
+      reconnectTimer = setTimeout(connect, delay);
     };
   };
 
@@ -840,6 +943,11 @@ export function createWsClient(opts: WsClientOptions): WsClient {
       const s = JSON.stringify(msg);
       if (ws && ws.readyState === ws.OPEN) ws.send(s);
       else queue.push(s);
+    },
+    dispose() {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
     },
   };
 }
@@ -985,13 +1093,14 @@ export interface StaticResult {
 }
 
 export function serveStaticFile(opts: { root: string; urlPath: string }): StaticResult | null {
-  const cleanUrl = opts.urlPath.split('?')[0];
+  const cleanUrl = (opts.urlPath.split('?')[0] || '/').replace(/\\/g, '/');
   const target = cleanUrl === '/' ? '/index.html' : cleanUrl;
-  const filePath = path.normalize(path.join(opts.root, target));
-  if (
-    !filePath.startsWith(path.resolve(opts.root) + path.sep) &&
-    filePath !== path.resolve(opts.root) + '/index.html'
-  ) {
+  const safeRoot = path.resolve(opts.root);
+  // path.resolve handles `..` segments. Anchoring on safeRoot + '.' + target
+  // means any escape attempt resolves to a path that does NOT start with
+  // safeRoot + sep — the guard below catches it.
+  const filePath = path.resolve(safeRoot, '.' + target);
+  if (filePath !== safeRoot && !filePath.startsWith(safeRoot + path.sep)) {
     return null;
   }
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
@@ -1322,7 +1431,7 @@ case 'stop':
   process.exit(await runStop({ readServerJson: defaultReadServerJson, kill: process.kill.bind(process) }));
 ```
 
-`loadInstaller()` dynamically imports the existing `claudeHookInstaller` so the CLI doesn't pay its cost at startup:
+`loadInstaller()` dynamically imports the existing `claudeHookInstaller` so the CLI doesn't pay its cost at startup. Verified exports at `server/src/providers/hook/claude/claudeHookInstaller.ts` are `installHooks` and `uninstallHooks`:
 
 ```ts
 async function loadInstaller(): Promise<HookInstaller> {
@@ -1330,8 +1439,6 @@ async function loadInstaller(): Promise<HookInstaller> {
   return { install: mod.installHooks, uninstall: mod.uninstallHooks };
 }
 ```
-
-(Use whatever names the actual `claudeHookInstaller.ts` exports — read it first.)
 
 - [ ] **Step 4: Run tests + build**
 
@@ -1627,9 +1734,18 @@ writeAgents(agentsFilePath, { version: 1, nextAgentId, nextTerminalIndex, agents
 
 The provider wires `agentManager` with `() => readAgents(agentsFilePath)` and a writer that calls `writeAgents`. Path: `path.join(os.homedir(), '.pixel-agents', 'agents.json')`.
 
-- [ ] **Step 5: Drop fields not in the new schema**
+- [ ] **Step 5: Drop fields not in the new schema; merge seat/palette data from the side-table key**
 
 `folderName` is no longer persisted (no multi-root workspace concept in the daemon). Remove from `PersistedAgent` writes; keep the reader tolerant to extra fields for one release.
+
+Today's persistence has **two** workspaceState keys: `'pixel-agents.agents'` (the main list) and `'pixel-agents.agentSeats'` (a side table holding `workSeatId` / `palette` / `hueShift` per agent). The new `agents.json` schema folds these into each `PersistedAgent` record (see Task 13). On the first migration read:
+
+1. Read `workspaceState.get<PersistedAgent[]>('pixel-agents.agents') ?? []`.
+2. Read `workspaceState.get<Record<number, { workSeatId?: string; seatId?: string; palette?: number; hueShift?: number }>>('pixel-agents.agentSeats') ?? {}`.
+3. For each agent, look up its side-table entry by `id`, copy in `workSeatId` (falling back to legacy `seatId` per CLAUDE.md's "legacy records with `seatId` migrated on load" note), `palette` (default 0), `hueShift` (default 0).
+4. Write the merged result to `agents.json` once. After this, `agentManager` reads only from the unified file.
+
+The reader for `agents.json` does NOT need to look at workspaceState — only the first-time migration path does.
 
 - [ ] **Step 6: Run all tests + Extension Dev Host smoke test**
 
@@ -1774,30 +1890,49 @@ git commit -m "phase-3 step 5: settingsDefaults uses ConfigStore (was GlobalStat
 
 In `src/extension.ts` (and `package.json` contributes.commands):
 
+The exported keys preserve their full `pixel-agents.*` form — `settingsDefaults.ts` reads/writes those exact strings via `GLOBAL_KEY_SOUND_ENABLED = 'pixel-agents.soundEnabled'`, so the file backend must use the same keys to avoid a prefix mismatch.
+
 ```ts
+import {
+  GLOBAL_KEY_SOUND_ENABLED,
+  GLOBAL_KEY_LAST_SEEN_VERSION,
+  GLOBAL_KEY_ALWAYS_SHOW_LABELS,
+  GLOBAL_KEY_WATCH_ALL_SESSIONS,
+  GLOBAL_KEY_HOOKS_ENABLED,
+  GLOBAL_KEY_HOOKS_INFO_SHOWN,
+  GLOBAL_KEY_SHOW_TERMINAL_NAMES,
+  GLOBAL_KEY_DEFAULT_CWD,
+  GLOBAL_KEY_USE_PTY_TERMINAL,
+  GLOBAL_KEY_TERMINAL_FONT_FAMILY,
+  GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
+} from './constants.js';
+
 vscode.commands.registerCommand('pixel-agents.exportSettings', async () => {
   const keys = [
-    'pixel-agents.soundEnabled',
-    'pixel-agents.watchAllSessions',
-    'pixel-agents.hooksEnabled',
-    'pixel-agents.alwaysShowLabels',
-    'pixel-agents.showTerminalNames',
-    'pixel-agents.defaultCwd',
-    'pixel-agents.terminalFontFamily',
-    'pixel-agents.terminalLineHeight',
-    'pixel-agents.usePtyTerminal',
-    // any others discovered by grep -r GLOBAL_KEY_ src/constants.ts
+    GLOBAL_KEY_SOUND_ENABLED,
+    GLOBAL_KEY_LAST_SEEN_VERSION,
+    GLOBAL_KEY_ALWAYS_SHOW_LABELS,
+    GLOBAL_KEY_WATCH_ALL_SESSIONS,
+    GLOBAL_KEY_HOOKS_ENABLED,
+    GLOBAL_KEY_HOOKS_INFO_SHOWN,
+    GLOBAL_KEY_SHOW_TERMINAL_NAMES,
+    GLOBAL_KEY_DEFAULT_CWD,
+    GLOBAL_KEY_USE_PTY_TERMINAL,
+    GLOBAL_KEY_TERMINAL_FONT_FAMILY,
+    GLOBAL_KEY_TERMINAL_LINE_HEIGHT,
   ];
   const dump: Record<string, unknown> = {};
   for (const k of keys) {
     const v = context.globalState.get(k);
-    if (v !== undefined) dump[k.replace(/^pixel-agents\./, '')] = v;
+    if (v !== undefined) dump[k] = v; // keep the full pixel-agents.* prefix
   }
   const out = path.join(os.tmpdir(), 'pixel-agents-settings-dump.json');
   fs.writeFileSync(out, JSON.stringify(dump, null, 2));
   vscode.window.showInformationMessage(`Settings exported to ${out}`);
 });
 ```
+
+Confirm the keys against `grep -n "^export const GLOBAL_KEY_" src/constants.ts` before shipping — add any new ones surfaced.
 
 - [ ] **Step 2: Build the import CLI**
 
@@ -1841,13 +1976,22 @@ describe('import-extension-settings', () => {
   it('reads a dump file and writes to config.json', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'px-import-'));
     const dumpFile = path.join(tmp, 'dump.json');
-    fs.writeFileSync(dumpFile, JSON.stringify({ soundEnabled: false, alwaysShowLabels: true }));
+    fs.writeFileSync(
+      dumpFile,
+      JSON.stringify({
+        'pixel-agents.soundEnabled': false,
+        'pixel-agents.alwaysShowLabels': true,
+      }),
+    );
     const cfg = path.join(tmp, 'config.json');
     // ... invoke importer with HOME=tmp env override, assert cfg content
     process.env.HOME = tmp;
     execSync(`node --import tsx bin/import-extension-settings.ts ${dumpFile}`);
     const out = JSON.parse(fs.readFileSync(cfg, 'utf-8'));
-    expect(out).toEqual({ soundEnabled: false, alwaysShowLabels: true });
+    expect(out).toEqual({
+      'pixel-agents.soundEnabled': false,
+      'pixel-agents.alwaysShowLabels': true,
+    });
   });
 });
 ```
@@ -2038,6 +2182,28 @@ describe('pruneDeadAgents', () => {
     const cleaned = pruneDeadAgents(file, { pidOf: () => undefined, alive: () => false });
     expect(cleaned.agents).toHaveLength(1);
   });
+
+  it('drops non-external agents whose PID is unknown (post-daemon-restart case)', () => {
+    const file = {
+      version: 1 as const,
+      nextAgentId: 2,
+      nextTerminalIndex: 2,
+      agents: [
+        {
+          id: 1,
+          terminalName: 't1',
+          jsonlFile: '/tmp/a',
+          projectDir: '/tmp',
+          palette: 0,
+          hueShift: 0,
+          sessionId: 's1',
+        },
+      ],
+    };
+    // pidOf returns undefined => we have no record that this agent is alive.
+    const cleaned = pruneDeadAgents(file, { pidOf: () => undefined, alive: () => false });
+    expect(cleaned.agents).toHaveLength(0);
+  });
 });
 ```
 
@@ -2052,6 +2218,14 @@ Expected: FAIL — module not found.
 // daemon/agentsBootCleanup.ts
 import type { AgentsFile, PersistedAgent } from './agentsPersistence.js';
 
+/** Drop persisted agents whose backing pty process is no longer alive.
+ *
+ *  - External agents (`isExternal: true`) never had a pty we own — always keep.
+ *  - Pty-backed agents (`sessionId` present): keep iff `pidOf(sessionId)` returns
+ *    a number AND `alive(pid)` is true. If we have no record of the PID (post
+ *    daemon-restart case), drop the agent — it'll re-appear via the project-
+ *    level JSONL scanner if its session is still alive.
+ */
 export function pruneDeadAgents(
   file: AgentsFile,
   deps: {
@@ -2066,11 +2240,10 @@ export function pruneDeadAgents(
       continue;
     }
     const pid = a.sessionId ? deps.pidOf(a.sessionId) : undefined;
-    if (pid === undefined) {
+    if (pid !== undefined && deps.alive(pid)) {
       keep.push(a);
-      continue;
     }
-    if (deps.alive(pid)) keep.push(a);
+    // else: drop (pty owner is dead or unknown)
   }
   return { ...file, agents: keep };
 }
@@ -2089,17 +2262,17 @@ import * as os from 'node:os';
 const agentsFile = path.join(os.homedir(), '.pixel-agents', 'agents.json');
 const before = readAgents(agentsFile);
 const after = pruneDeadAgents(before, {
-  // In v1 we don't track pty PIDs across daemon restarts — every pty-backed agent
-  // is assumed dead after a daemon restart. The PtyManager re-spawn isn't yet
-  // implemented; the user will manually re-create agents post-restart.
+  // v1 doesn't track pty PIDs across daemon restarts, so every pty-backed
+  // agent gets dropped on boot. External agents (no sessionId we own) stay.
+  // A future PtyManager that persists PIDs would return real values here and
+  // keep agents whose pty is genuinely alive.
   pidOf: () => undefined,
   alive: () => false,
 });
-// surviving entries (externals, plus any future PID-tracked agents) stay.
 if (after.agents.length !== before.agents.length) writeAgents(agentsFile, after);
 ```
 
-(Once `PtyManager` learns to persist PIDs per agent — a follow-up — the `pidOf` callback returns the real PID. For v1, conservatively drop every pty-backed agent on restart.)
+Surviving entries are externals (and, in the future, agents with a tracked-and-alive PID). Pty-backed agents whose owner is dead get dropped; if the underlying Claude session is still alive (uncommon — daemon restart usually means it isn't), the project-level JSONL scanner will re-adopt them as externals.
 
 - [ ] **Step 5: Run tests**
 
@@ -2117,7 +2290,7 @@ git commit -m "phase-3 step 7: daemon startup prunes agents whose pty is no long
 
 **Files:**
 
-- Delete: `src/extension.ts`, `src/PixelAgentsViewProvider.ts`
+- Delete: `src/extension.ts`, `src/PixelAgentsViewProvider.ts`, `src/messageSource.ts` (wraps `vscode.Webview` — no consumer after the provider is gone)
 - Modify: `webview-ui/src/vscodeApi.ts` (delete VS Code branch), `package.json` (drop activation events + contributes.\*), `src/constants.ts` (drop VS Code-only keys)
 
 - [ ] **Step 1: Verify nothing in `src/` still imports `extension.ts` or `PixelAgentsViewProvider.ts`**
@@ -2128,7 +2301,7 @@ Expected: no hits (these files only re-export to themselves; downstream is via t
 - [ ] **Step 2: Delete the files**
 
 ```bash
-git rm src/extension.ts src/PixelAgentsViewProvider.ts
+git rm src/extension.ts src/PixelAgentsViewProvider.ts src/messageSource.ts
 ```
 
 - [ ] **Step 3: Simplify `vscodeApi.ts` — delete the VS Code branch**
@@ -2239,9 +2412,98 @@ git commit -m "phase-3: README + roadmap reflect cutover (Pixel Agents is now a 
 
 ---
 
+## Task 22: Rewrite Playwright E2E for the browser tab
+
+**Files:**
+
+- Modify: `playwright.config.ts`, every `*.spec.ts` under `e2e/` (or wherever the existing E2E tests live)
+
+Today's E2E spins up an Extension Dev Host. After cutover, that path is gone. The replacement spins up the daemon as a subprocess and points Chromium at `http://127.0.0.1:<port>`.
+
+- [ ] **Step 1: Audit current E2E files**
+
+Run: `find . -name '*.spec.ts' -path '*/e2e/*' -o -name 'playwright.config.ts'`
+Note every file; each needs at minimum a setup-hook update.
+
+- [ ] **Step 2: Update `playwright.config.ts` to start the daemon as a webServer**
+
+```ts
+// playwright.config.ts
+export default defineConfig({
+  webServer: {
+    command: 'node dist/bin/serve.js --no-open',
+    url: 'http://127.0.0.1:0', // read from server.json after start
+    timeout: 30_000,
+    reuseExistingServer: !process.env.CI,
+    env: {
+      // override HOME so the test daemon writes to a per-run tmp dir
+      HOME: process.env.PLAYWRIGHT_HOME ?? process.env.HOME,
+    },
+  },
+  use: { baseURL: 'http://127.0.0.1:0' /* placeholder; per-test fixture reads server.json */ },
+});
+```
+
+- [ ] **Step 3: Create a fixture that reads `~/.pixel-agents/server.json` and exposes the real URL**
+
+```ts
+// e2e/fixtures/daemon.ts
+import { test as base } from '@playwright/test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+export const test = base.extend<{ baseURL: string }>({
+  baseURL: async ({}, use) => {
+    const serverJson = path.join(process.env.HOME!, '.pixel-agents', 'server.json');
+    const cfg = JSON.parse(fs.readFileSync(serverJson, 'utf-8')) as { port: number; token: string };
+    await use(`http://127.0.0.1:${cfg.port}`);
+  },
+});
+```
+
+- [ ] **Step 4: Rewrite each `.spec.ts` to use `await page.goto(baseURL)` instead of opening the Extension Dev Host**
+
+Each spec becomes a browser test against the SPA. Helpers that clicked side-panel webviews now click into the browser canvas. The DOM is the same — the differences are: (1) no `vscode.commands.executeCommand` path; (2) WS connection is observable in `page.on('websocket')`.
+
+- [ ] **Step 5: Run E2E + commit**
+
+Run: `npm run e2e`
+Expected: PASS.
+
+```bash
+git add playwright.config.ts e2e/
+git commit -m "phase-3 step 7: rewrite Playwright E2E to run against browser tab + daemon subprocess"
+```
+
+## Task 23: Verify vitest picks up `daemon/__tests__/`
+
+**Files:**
+
+- Modify: `vitest.config.ts` (only if needed)
+
+The plan adds tests under `daemon/__tests__/` for the first time. The existing config may have an explicit `include` glob that needs widening.
+
+- [ ] **Step 1: Run a single new test directly**
+
+Run: `npm test -- --run daemon/__tests__/wsTransport.test.ts`
+Expected: the test runs and passes (verifies the glob picks it up).
+
+- [ ] **Step 2: If skipped**
+
+Open `vitest.config.ts`; add `daemon/**/*.test.ts` to the `test.include` list.
+
+- [ ] **Step 3: Commit only if a change was needed**
+
+```bash
+git add vitest.config.ts
+git commit -m "phase-3: extend vitest include glob to cover daemon/__tests__/"
+```
+
+---
+
 ## Final verification
 
-After Task 21, run a full combined Phase 2 + Phase 3 QA pass against the updated `docs/playtests/2026-05-13-phase-2-qa-checklist.md`:
+After Task 23, run a full combined Phase 2 + Phase 3 QA pass against the updated `docs/playtests/2026-05-13-phase-2-qa-checklist.md`:
 
 - [ ] Replace "Extension Dev Host" with "`node dist/bin/serve.js`" in every section.
 - [ ] Walk through every checkbox.
@@ -2255,24 +2517,26 @@ After Task 21, run a full combined Phase 2 + Phase 3 QA pass against the updated
 
 **Coverage of the spec sections:**
 
-| Spec section                | Tasks                              |
-| --------------------------- | ---------------------------------- |
-| Module migration table      | Tasks 1, 2, 3, 17, 20              |
-| MessageSink / MessageSource | Tasks 5, 8                         |
-| webview-ui SPA              | Task 8 (also 9 for serving)        |
-| Workspace concept           | Implicit in Task 14 (single scope) |
-| Persistence (agents)        | Tasks 13, 14                       |
-| Persistence (settings)      | Tasks 15, 16                       |
-| Daemon lifecycle            | Tasks 10, 11                       |
-| HTTP routes                 | Tasks 6 (WS), 9 (static)           |
-| Multi-tab sync              | Task 6 (broadcast set)             |
-| Security on localhost       | Task 6                             |
-| Snapshot-on-open replay     | Task 7                             |
-| Hook script ownership       | Task 12                            |
-| Browser hotkey remap        | Task 18                            |
-| Daemon-restart pty cleanup  | Task 19                            |
-| Cutover                     | Tasks 20, 21                       |
-| Testing strategy            | Inline in every task               |
+| Spec section                | Tasks                                 |
+| --------------------------- | ------------------------------------- |
+| Module migration table      | Tasks 1, 2, 3, 17, 20                 |
+| MessageSink / MessageSource | Tasks 5, 8                            |
+| webview-ui SPA              | Task 8 (also 9 for serving)           |
+| Workspace concept           | Implicit in Task 14 (single scope)    |
+| Persistence (agents)        | Tasks 13, 14 (incl. seat-table merge) |
+| Persistence (settings)      | Tasks 15, 16                          |
+| Daemon lifecycle            | Tasks 10, 11                          |
+| HTTP routes                 | Tasks 6 (WS), 9 (static)              |
+| Multi-tab sync              | Task 6 (broadcast set)                |
+| Security on localhost       | Task 6                                |
+| Snapshot-on-open replay     | Task 7 (assets + state + per-agent)   |
+| Hook script ownership       | Task 12                               |
+| Browser hotkey remap        | Task 18                               |
+| Daemon-restart pty cleanup  | Task 19                               |
+| Cutover                     | Tasks 20, 21                          |
+| Playwright E2E rewrite      | Task 22                               |
+| Vitest config glob          | Task 23                               |
+| Testing strategy            | Inline in every task                  |
 
 **Type / signature consistency:**
 
@@ -2288,4 +2552,6 @@ After Task 21, run a full combined Phase 2 + Phase 3 QA pass against the updated
 
 No naming drift detected.
 
-**Commit count estimate:** 21 commits (one per task). Combined with the ~8 task-internal commit steps (where some tasks have multiple commits), total ~25 commits land Phase 3. Plus the Phase 2 backlog already on the branch = ~100 commits total for the combined release.
+**Commit count estimate:** 23 commits (one per task, one or two of which are no-ops). Combined with the ~8 task-internal commit steps (where some tasks have multiple commits), total ~30 commits land Phase 3. Plus the Phase 2 backlog already on the branch = ~110 commits total for the combined release.
+
+**TypeScript strictness note:** `verbatimModuleSyntax` is on in `webview-ui/tsconfig.app.json` and `tsconfig.node.json`, but NOT in the root `tsconfig.json`. `import type` is required for type-only imports in webview-ui files (the wsClient + vscodeApi changes) and optional but harmless in daemon/ files. The plan uses `import type` everywhere defensively.
