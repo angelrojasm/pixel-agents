@@ -3,12 +3,13 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
+import type {
+  AgentsFile,
+  PersistedAgent as PersistedAgentFile,
+} from '../daemon/agentsPersistence.js';
+import { writeAgents } from '../daemon/agentsPersistence.js';
 import { JSONL_POLL_INTERVAL_MS, PTY_SCROLLBACK_MAX_LINES } from '../server/src/constants.js';
-import {
-  TERMINAL_NAME_PREFIX,
-  WORKSPACE_KEY_AGENT_SEATS,
-  WORKSPACE_KEY_AGENTS,
-} from './constants.js';
+import { TERMINAL_NAME_PREFIX } from './constants.js';
 import {
   ensureProjectScan,
   readNewLines,
@@ -18,7 +19,7 @@ import {
 import { migrateAndLoadLayout } from './layoutPersistence.js';
 import type { PtyManager } from './pty/ptyManager.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
-import type { AgentState, MessageSink, PersistedAgent } from './types.js';
+import type { AgentState, MessageSink } from './types.js';
 
 export function getProjectDirPath(cwd?: string): string {
   // Fall back to home directory when no workspace folder is open.
@@ -179,6 +180,8 @@ export async function launchNewTerminal(
     hookDelivered: false,
     inputTokens: 0,
     outputTokens: 0,
+    palette: 0,
+    hueShift: 0,
   };
 
   agents.set(id, agent);
@@ -338,9 +341,11 @@ export function removeAgent(
 
 export function persistAgents(
   agents: Map<number, AgentState>,
-  context: vscode.ExtensionContext,
+  agentsFilePath: string,
+  nextAgentIdRef: { current: number },
+  nextTerminalIndexRef: { current: number },
 ): void {
-  const persisted: PersistedAgent[] = [];
+  const persisted: PersistedAgentFile[] = [];
   for (const agent of agents.values()) {
     // Pty-backed agents are runtime-only in v1 — skip persistence so
     // restoreAgents never tries to recreate them. The user re-spawns
@@ -353,7 +358,10 @@ export function persistAgents(
       isExternal: agent.isExternal || undefined,
       jsonlFile: agent.jsonlFile,
       projectDir: agent.projectDir,
-      folderName: agent.folderName,
+      // folderName intentionally not persisted (multi-root runtime info only)
+      palette: agent.palette,
+      hueShift: agent.hueShift,
+      workSeatId: agent.workSeatId,
       teamName: agent.teamName,
       agentName: agent.agentName,
       customTitle: agent.customTitle,
@@ -362,11 +370,16 @@ export function persistAgents(
       teamUsesTmux: agent.teamUsesTmux,
     });
   }
-  context.workspaceState.update(WORKSPACE_KEY_AGENTS, persisted);
+  writeAgents(agentsFilePath, {
+    version: 1,
+    nextAgentId: nextAgentIdRef.current,
+    nextTerminalIndex: nextTerminalIndexRef.current,
+    agents: persisted,
+  });
 }
 
 export function restoreAgents(
-  context: vscode.ExtensionContext,
+  readAgentsFile: () => AgentsFile,
   nextAgentIdRef: { current: number },
   nextTerminalIndexRef: { current: number },
   agents: Map<number, AgentState>,
@@ -381,7 +394,8 @@ export function restoreAgents(
   webview: MessageSink | undefined,
   doPersist: () => void,
 ): void {
-  const persisted = context.workspaceState.get<PersistedAgent[]>(WORKSPACE_KEY_AGENTS, []);
+  const file = readAgentsFile();
+  const persisted = file.agents;
   if (persisted.length === 0) return;
 
   const liveTerminals = vscode.window.terminals;
@@ -436,10 +450,14 @@ export function restoreAgents(
       lastDataAt: 0,
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
-      folderName: p.folderName,
+      // folderName is not persisted in agents.json (multi-root runtime info only)
+      folderName: undefined,
       hookDelivered: false,
       inputTokens: 0,
       outputTokens: 0,
+      palette: p.palette ?? 0,
+      hueShift: p.hueShift ?? 0,
+      workSeatId: p.workSeatId,
       teamName: p.teamName,
       agentName: p.agentName,
       customTitle: p.customTitle,
@@ -548,12 +566,17 @@ export function restoreAgents(
     }, 10_000); // 10 seconds grace period
   }
 
-  // Advance counters past restored IDs
-  if (maxId >= nextAgentIdRef.current) {
-    nextAgentIdRef.current = maxId + 1;
+  // Advance counters past restored IDs.
+  // Use the larger of: the file's persisted next-ID, and the max scanned ID + 1.
+  const fileNextId = file.nextAgentId ?? 1;
+  const fileNextIdx = file.nextTerminalIndex ?? 1;
+  const computedNextId = maxId > 0 ? maxId + 1 : 1;
+  const computedNextIdx = maxIdx > 0 ? maxIdx + 1 : 1;
+  if (Math.max(fileNextId, computedNextId) >= nextAgentIdRef.current) {
+    nextAgentIdRef.current = Math.max(fileNextId, computedNextId);
   }
-  if (maxIdx >= nextTerminalIndexRef.current) {
-    nextTerminalIndexRef.current = maxIdx + 1;
+  if (Math.max(fileNextIdx, computedNextIdx) >= nextTerminalIndexRef.current) {
+    nextTerminalIndexRef.current = Math.max(fileNextIdx, computedNextIdx);
   }
 
   // Re-persist cleaned-up list (removes entries whose terminals are gone)
@@ -580,7 +603,6 @@ export function restoreAgents(
 
 export function sendExistingAgents(
   agents: Map<number, AgentState>,
-  context: vscode.ExtensionContext,
   webview: MessageSink | undefined,
 ): void {
   if (!webview) return;
@@ -590,18 +612,14 @@ export function sendExistingAgents(
   }
   agentIds.sort((a, b) => a - b);
 
-  // Include persisted palette + work-seat from separate key.
-  // Legacy records may still carry a `seatId` field from before the workSeatId split.
-  const rawAgentMeta = context.workspaceState.get<
-    Record<string, { palette?: number; hueShift?: number; seatId?: string; workSeatId?: string }>
-  >(WORKSPACE_KEY_AGENT_SEATS, {});
-  const agentMeta: Record<string, { palette?: number; hueShift?: number; workSeatId?: string }> =
-    {};
-  for (const [id, m] of Object.entries(rawAgentMeta)) {
+  // Build agentMeta from the agents map — palette, hueShift, and workSeatId are now
+  // stored on the runtime AgentState (populated from agents.json on restore).
+  const agentMeta: Record<number, { palette: number; hueShift: number; workSeatId?: string }> = {};
+  for (const [id, agent] of agents) {
     agentMeta[id] = {
-      palette: m.palette,
-      hueShift: m.hueShift,
-      workSeatId: m.workSeatId ?? m.seatId,
+      palette: agent.palette,
+      hueShift: agent.hueShift,
+      workSeatId: agent.workSeatId,
     };
   }
 

@@ -92,6 +92,14 @@ export interface AgentState {
   inputTokens: number;
   outputTokens: number;
 
+  // -- Visual state (palette/seat) — source of truth for agents.json persistence --
+  /** Sprite palette index (0–5) */
+  palette: number;
+  /** Hue shift in degrees (0 = no shift) */
+  hueShift: number;
+  /** Work seat UID assigned to this agent (undefined = no seat assigned) */
+  workSeatId?: string;
+
   // -- Agent Teams --
   teamName?: string;
   agentName?: string;
@@ -115,6 +123,11 @@ export interface PersistedAgent {
   projectDir: string;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+
+  // -- Visual state --
+  palette: number;
+  hueShift: number;
+  workSeatId?: string;
 
   // -- Agent Teams --
   teamName?: string;

@@ -3,6 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
+import type { AgentsFile } from '../daemon/agentsPersistence.js';
+import { readAgents, writeAgents } from '../daemon/agentsPersistence.js';
 import { replaySnapshot } from '../daemon/snapshotReplay.js';
 import type { HookEvent } from '../server/src/hookEventHandler.js';
 import { HookEventHandler } from '../server/src/hookEventHandler.js';
@@ -61,6 +63,7 @@ import {
   LAYOUT_REVISION_KEY,
   TERMINAL_NAME_POLL_INTERVAL_MS,
   WORKSPACE_KEY_AGENT_SEATS,
+  WORKSPACE_KEY_AGENTS,
 } from './constants.js';
 import {
   adoptExternalSessionFromHook,
@@ -171,9 +174,107 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     return this.context.extensionUri;
   }
 
+  /** Path to the user-level agents.json file (shared across all VS Code windows). */
+  private readonly agentsFilePath = path.join(os.homedir(), '.pixel-agents', 'agents.json');
+
   private persistAgents = (): void => {
-    persistAgents(this.agents, this.context);
+    persistAgents(this.agents, this.agentsFilePath, this.nextAgentId, this.nextTerminalIndex);
   };
+
+  /**
+   * One-time migration: if agents.json doesn't exist yet but workspaceState has
+   * persisted agents, merge both workspaceState keys into the unified file format
+   * and write it. Subsequent reads go through the file only.
+   *
+   * If agents.json already exists, this is a no-op (file wins).
+   */
+  private migrateAgentsFromWorkspaceState(): void {
+    if (fs.existsSync(this.agentsFilePath)) return; // File already exists — skip migration
+
+    // Read legacy workspaceState keys
+    type LegacyAgent = {
+      id: number;
+      sessionId?: string;
+      terminalName: string;
+      isExternal?: boolean;
+      jsonlFile: string;
+      projectDir: string;
+      folderName?: string;
+      teamName?: string;
+      agentName?: string;
+      customTitle?: string;
+      isTeamLead?: boolean;
+      leadAgentId?: number;
+      teamUsesTmux?: boolean;
+    };
+    type SeatEntry = {
+      workSeatId?: string;
+      seatId?: string;
+      palette?: number;
+      hueShift?: number;
+    };
+
+    const legacyAgents = this.context.workspaceState.get<LegacyAgent[]>(WORKSPACE_KEY_AGENTS, []);
+    if (legacyAgents.length === 0) return; // Nothing to migrate
+
+    const rawSeats = this.context.workspaceState.get<Record<string, SeatEntry>>(
+      WORKSPACE_KEY_AGENT_SEATS,
+      {},
+    );
+
+    // Build merged PersistedAgent list (daemon schema)
+    const merged: AgentsFile['agents'] = legacyAgents.map((a) => {
+      const seat = rawSeats[String(a.id)] ?? {};
+      return {
+        id: a.id,
+        sessionId: a.sessionId,
+        terminalName: a.terminalName,
+        isExternal: a.isExternal,
+        jsonlFile: a.jsonlFile,
+        projectDir: a.projectDir,
+        // folderName intentionally dropped — not in daemon schema
+        palette: seat.palette ?? 0,
+        hueShift: seat.hueShift ?? 0,
+        workSeatId: seat.workSeatId ?? seat.seatId,
+        teamName: a.teamName,
+        agentName: a.agentName,
+        customTitle: a.customTitle,
+        isTeamLead: a.isTeamLead,
+        leadAgentId: a.leadAgentId,
+        teamUsesTmux: a.teamUsesTmux,
+      };
+    });
+
+    // Compute sensible next-ID/next-idx from the data
+    let maxId = 0;
+    let maxIdx = 0;
+    for (const a of legacyAgents) {
+      if (a.id > maxId) maxId = a.id;
+      const m = a.terminalName.match(/#(\d+)$/);
+      if (m) {
+        const idx = parseInt(m[1], 10);
+        if (idx > maxIdx) maxIdx = idx;
+      }
+    }
+
+    // Ensure .pixel-agents dir exists
+    const dir = path.dirname(this.agentsFilePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    writeAgents(this.agentsFilePath, {
+      version: 1,
+      nextAgentId: maxId + 1,
+      nextTerminalIndex: maxIdx + 1,
+      agents: merged,
+    });
+
+    console.log(
+      `[Pixel Agents] Migrated ${merged.length} agent(s) from workspaceState → ${this.agentsFilePath}`,
+    );
+    // NOTE: We intentionally leave workspaceState keys in place. Other VS Code windows
+    // that haven't upgraded yet may still be reading them, and clearing them here would
+    // cause data loss. File-based persistence takes precedence going forward.
+  }
 
   private initHooks(): void {
     this.hookEventHandler = new HookEventHandler(
@@ -579,9 +680,23 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
       }
     } else if (message.type === 'saveAgentSeats') {
-      // Store seat assignments in a separate key (never touched by persistAgents)
-      console.log(`[Pixel Agents] State: saveAgentSeats:`, JSON.stringify(message.seats));
-      this.context.workspaceState.update(WORKSPACE_KEY_AGENT_SEATS, message.seats);
+      // Update runtime agent state (palette, hueShift, workSeatId) from the webview's
+      // seat snapshot, then persist the full agents map to agents.json.
+      const seats = message.seats as Record<
+        number,
+        { palette: number; hueShift: number; workSeatId: string | null }
+      >;
+      console.log(`[Pixel Agents] State: saveAgentSeats:`, JSON.stringify(seats));
+      for (const [rawId, seat] of Object.entries(seats)) {
+        const id = Number(rawId);
+        const agent = this.agents.get(id);
+        if (agent) {
+          agent.palette = seat.palette ?? 0;
+          agent.hueShift = seat.hueShift ?? 0;
+          agent.workSeatId = seat.workSeatId ?? undefined;
+        }
+      }
+      this.persistAgents();
     } else if (message.type === 'saveLayout') {
       this.layoutWatcher?.markOwnWrite();
       writeLayoutToFile(message.layout as Record<string, unknown>);
@@ -686,8 +801,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       // Note: pty-backed agents are runtime-only in v1 — they're filtered out of
       // persistAgents() so restoreAgents never sees them. On reload, the user must
       // re-spawn them with + Agent. Future: re-attach via `claude --resume <id>`.
+      // One-time migration: copy workspaceState data into agents.json if needed.
+      this.migrateAgentsFromWorkspaceState();
       restoreAgents(
-        this.context,
+        () => readAgents(this.agentsFilePath),
         this.nextAgentId,
         this.nextTerminalIndex,
         this.agents,
@@ -922,7 +1039,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.startLayoutWatcher();
         }
       })();
-      sendExistingAgents(this.agents, this.context, this.broadcastSink);
+      sendExistingAgents(this.agents, this.broadcastSink);
       // Seed last-sent snapshot so we only push real changes
       for (const [id, agent] of this.agents) {
         if (agent.terminalRef?.name) {

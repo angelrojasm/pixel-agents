@@ -506,6 +506,8 @@ function adoptTerminalForFile(
     hookDelivered: false,
     inputTokens: 0,
     outputTokens: 0,
+    palette: 0,
+    hueShift: 0,
   };
 
   agents.set(id, agent);
@@ -696,6 +698,8 @@ export function scanForTeammateFiles(
       agentName: teammateName,
       leadAgentId: parentAgentId,
       teamName: parentAgent?.teamName,
+      palette: 0,
+      hueShift: 0,
     };
 
     agents.set(id, agent);
@@ -909,6 +913,8 @@ export function adoptExternalSessionFromHook(
       folderName,
       inputTokens: 0,
       outputTokens: 0,
+      palette: 0,
+      hueShift: 0,
     };
     agents.set(id, agent);
     persistAgents();
@@ -976,6 +982,8 @@ function adoptExternalSession(
     folderName,
     inputTokens: 0,
     outputTokens: 0,
+    palette: 0,
+    hueShift: 0,
   };
 
   agents.set(id, agent);
