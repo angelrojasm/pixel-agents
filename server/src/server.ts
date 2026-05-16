@@ -3,7 +3,10 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
+import { type WebSocket, WebSocketServer } from 'ws';
 
+import { acceptUpgrade } from '../../daemon/wsServer.js';
+import { WebSocketBroadcast, WebSocketSink, WebSocketSource } from '../../daemon/wsTransport.js';
 import {
   HOOK_API_PREFIX,
   HOOK_HEARTBEAT_INTERVAL_MS,
@@ -50,6 +53,25 @@ export class PixelAgentsServer {
   private healthMonitor: HealthMonitor | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private healthListener: ((state: HealthState) => void) | null = null;
+
+  private wss: WebSocketServer | null = null;
+  private wsClients = new Set<WebSocket>();
+  private wsBroadcast = new WebSocketBroadcast(this.wsClients);
+  private wsConnectHandler:
+    | ((src: WebSocketSource, perClientSink: WebSocketSink, broadcast: WebSocketBroadcast) => void)
+    | null = null;
+
+  /** Register a handler that fires for every new WebSocket connection. */
+  onWebSocketConnect(
+    cb: (src: WebSocketSource, perClientSink: WebSocketSink, broadcast: WebSocketBroadcast) => void,
+  ): void {
+    this.wsConnectHandler = cb;
+  }
+
+  /** Returns the shared broadcast sink that sends to all connected WebSocket clients. */
+  getBroadcastSink(): WebSocketBroadcast {
+    return this.wsBroadcast;
+  }
 
   /** Register a callback for incoming hook events from any provider. */
   onHookEvent(callback: HookEventCallback): void {
@@ -113,6 +135,31 @@ export class PixelAgentsServer {
           this.server!.on('error', (err) => {
             console.error(`[Pixel Agents] Server: error: ${err}`);
           });
+
+          // Wire WebSocket upgrade handler
+          this.wss = new WebSocketServer({ noServer: true });
+          this.server!.on('upgrade', (req, sock, head) => {
+            const port = this.config!.port;
+            const decision = acceptUpgrade(req, {
+              allowedOrigins: [`http://127.0.0.1:${port}`, `http://localhost:${port}`],
+              token: this.config!.token,
+            });
+            if (decision.kind === 'reject') {
+              sock.write(`HTTP/1.1 ${decision.code} ${decision.reason}\r\n\r\n`);
+              sock.destroy();
+              return;
+            }
+            this.wss!.handleUpgrade(req, sock, head, (ws) => {
+              this.wsClients.add(ws);
+              ws.on('close', () => this.wsClients.delete(ws));
+              this.wsConnectHandler?.(
+                new WebSocketSource(ws),
+                new WebSocketSink(ws),
+                this.wsBroadcast,
+              );
+            });
+          });
+
           console.log(`[Pixel Agents] Server: listening on 127.0.0.1:${addr.port}`);
           resolve(this.config);
         } else {
@@ -124,6 +171,11 @@ export class PixelAgentsServer {
 
   /** Stop the HTTP server and clean up server.json (only if we own it). */
   stop(): void {
+    if (this.wss) {
+      this.wss.close();
+      this.wss = null;
+    }
+    this.wsClients.clear();
     if (this.server) {
       this.server.close();
       this.server = null;
