@@ -1,5 +1,7 @@
 import type * as vscode from 'vscode';
 
+import type { Disposable } from './disposable.js';
+
 /**
  * Narrow abstraction over `vscode.Webview` for modules that only need to post
  * messages. In single-webview setups this is just the one webview; in
@@ -23,11 +25,11 @@ export interface MessageSink {
  * Today's implementation wraps `vscode.Webview` (see `webviewMessageSource`).
  * Phase 3 will swap in a WebSocket-backed source for the same handler.
  *
- * The interface returns `vscode.Disposable` rather than a custom shape so
- * consumers can register the result into `context.subscriptions`.
+ * The interface returns `Disposable` rather than `vscode.Disposable` so
+ * daemon-only modules don't incidentally import vscode. Structurally compatible.
  */
 export interface MessageSource {
-  onMessage(handler: (message: Record<string, unknown>) => unknown): vscode.Disposable;
+  onMessage(handler: (message: Record<string, unknown>) => unknown): Disposable;
 }
 
 export interface AgentState {
