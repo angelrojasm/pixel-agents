@@ -5,8 +5,20 @@ import * as os from 'os';
 import * as path from 'path';
 import { type WebSocket, WebSocketServer } from 'ws';
 
+import { injectMetaTag, serveStaticFile } from '../../daemon/staticServer.js';
 import { acceptUpgrade } from '../../daemon/wsServer.js';
 import { WebSocketBroadcast, WebSocketSink, WebSocketSource } from '../../daemon/wsTransport.js';
+
+/**
+ * Absolute path to the built SPA (webview-ui/dist/).
+ * esbuild bundles server.ts as CJS and injects __dirname; fall back to
+ * process.cwd() for unit-test environments that don't bundle.
+ */
+function getSpaRoot(): string {
+  const here: string =
+    ((global as unknown as Record<string, unknown>).__dirname as string) || process.cwd();
+  return path.join(here, '..', '..', 'webview-ui', 'dist');
+}
 import {
   HOOK_API_PREFIX,
   HOOK_HEARTBEAT_INTERVAL_MS,
@@ -229,6 +241,22 @@ export class PixelAgentsServer {
     if (req.method === 'POST' && url.startsWith(HOOK_API_PREFIX + '/')) {
       this.handleHookRequest(req, res, url);
       return;
+    }
+
+    // Static SPA serving: GET /* → webview-ui/dist/
+    if (req.method === 'GET') {
+      const result = serveStaticFile({ root: getSpaRoot(), urlPath: url });
+      if (result) {
+        // Inject the auth token into index.html so the SPA can include it in
+        // the WS URL without a separate API round-trip.
+        let body: Buffer = result.body;
+        if (result.contentType === 'text/html' && this.config) {
+          body = Buffer.from(injectMetaTag(body.toString(), this.config.token));
+        }
+        res.writeHead(200, { 'Content-Type': result.contentType });
+        res.end(body);
+        return;
+      }
     }
 
     res.writeHead(404);
