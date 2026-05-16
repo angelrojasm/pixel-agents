@@ -80,7 +80,7 @@ class WebSocketSource implements MessageSource {
 }
 ```
 
-The webview-side adapter swaps `acquireVsCodeApi()` for a small WebSocket client (`webview-ui/src/transport.ts`) with reconnect + offline-queue. Existing `useExtensionMessages.ts` consumes the same interface; no per-message refactor.
+The webview-side adapter lives in the existing `webview-ui/src/vscodeApi.ts` — its `isBrowserRuntime` branch becomes a real WebSocket transport (reconnect + offline-queue + inbound dispatch). The VS Code branch stays during phases 1–6 (safety net) and is deleted at cutover. Existing `useExtensionMessages.ts` consumes the same interface; no per-message refactor. See the dedicated `webview-ui/` section below for the both-directions details.
 
 **Library choice:** `ws` (zero deps, ~4kLoC, used by `vite-plugin-ws` and `@xterm/addon-attach`). Not Socket.IO (overkill, ships its own protocol).
 
