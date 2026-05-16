@@ -28,6 +28,25 @@ export type { CharacterDirectionSprites } from '../shared/assets/types.js';
 import { LAYOUT_REVISION_KEY } from './constants.js';
 import type { MessageSink } from './types.js';
 
+// ── Bundled asset path resolution ────────────────────────────
+
+/**
+ * Resolve a bundled asset by name relative to the running daemon module.
+ * Bundled assets live next to the daemon's built JS in `dist/assets/`.
+ * Works in both CJS (extension) and ESM (future daemon) contexts.
+ *
+ * @param name - Asset name relative to assets/ (e.g., 'floors.png')
+ * @returns Absolute path to the asset
+ */
+export function resolveBundledAssetPath(name: string): string {
+  // When esbuild transpiles to CJS, it injects __dirname.
+  // For ESM contexts (future), we'll use a dynamic import to resolve.
+  // For now in the CJS extension, __dirname is available.
+  const here: string =
+    ((global as unknown as Record<string, unknown>).__dirname as string) || process.cwd();
+  return path.join(here, 'assets', name);
+}
+
 export type { FurnitureAsset };
 
 export interface LoadedAssets {
@@ -187,9 +206,12 @@ export async function loadFurnitureAssets(workspaceRoot: string): Promise<Loaded
  * Scans for assets/default-layout-{N}.json files and picks the one
  * with the largest N. Falls back to assets/default-layout.json for
  * backward compatibility.
+ *
+ * @param _assetsRoot - Deprecated parameter; kept for backward compatibility with extension.
+ *                      The function resolves bundled assets via resolveBundledAssetPath().
  */
-export function loadDefaultLayout(assetsRoot: string): Record<string, unknown> | null {
-  const assetsDir = path.join(assetsRoot, 'assets');
+export function loadDefaultLayout(_assetsRoot: string): Record<string, unknown> | null {
+  const assetsDir = path.dirname(resolveBundledAssetPath('dummy.json'));
   try {
     // Scan for versioned default layouts: default-layout-{N}.json
     let bestRevision = 0;
@@ -250,10 +272,13 @@ interface LoadedWallTiles {
  * Load wall tile sets from assets/walls/ folder.
  * Each file is named wall_N.png (e.g. wall_0.png, wall_1.png, ...).
  * Files are loaded in numeric order; each PNG is a 64×128 grid of 16 bitmask pieces.
+ *
+ * @param _assetsRoot - Deprecated parameter; kept for backward compatibility with extension.
+ *                      The function resolves bundled assets via resolveBundledAssetPath().
  */
-export async function loadWallTiles(assetsRoot: string): Promise<LoadedWallTiles | null> {
+export async function loadWallTiles(_assetsRoot: string): Promise<LoadedWallTiles | null> {
   try {
-    const wallsDir = path.join(assetsRoot, 'assets', 'walls');
+    const wallsDir = path.dirname(resolveBundledAssetPath('walls/dummy.png'));
     if (!fs.existsSync(wallsDir)) {
       console.log('[AssetLoader] No walls/ directory found at:', wallsDir);
       return null;
@@ -317,10 +342,13 @@ interface LoadedFloorTiles {
  * Load floor tile patterns from assets/floors/ folder.
  * Each file is named floor_N.png (e.g. floor_0.png, floor_1.png, ...).
  * Files are loaded in numeric order; each PNG is a 16×16 grayscale tile.
+ *
+ * @param _assetsRoot - Deprecated parameter; kept for backward compatibility with extension.
+ *                      The function resolves bundled assets via resolveBundledAssetPath().
  */
-export async function loadFloorTiles(assetsRoot: string): Promise<LoadedFloorTiles | null> {
+export async function loadFloorTiles(_assetsRoot: string): Promise<LoadedFloorTiles | null> {
   try {
-    const floorsDir = path.join(assetsRoot, 'assets', 'floors');
+    const floorsDir = path.dirname(resolveBundledAssetPath('floors/dummy.png'));
     if (!fs.existsSync(floorsDir)) {
       console.log('[AssetLoader] No floors/ directory found at:', floorsDir);
       return null;
@@ -391,12 +419,15 @@ export function mergeCharacterSprites(
 /**
  * Load pre-colored character sprites from assets/characters/ (6 PNGs, each 112×96).
  * Each PNG has 3 direction rows (down, up, right) × 7 frames (16×32 each).
+ *
+ * @param _assetsRoot - Deprecated parameter; kept for backward compatibility with extension.
+ *                      The function resolves bundled assets via resolveBundledAssetPath().
  */
 export async function loadCharacterSprites(
-  assetsRoot: string,
+  _assetsRoot: string,
 ): Promise<LoadedCharacterSprites | null> {
   try {
-    const charDir = path.join(assetsRoot, 'assets', 'characters');
+    const charDir = path.dirname(resolveBundledAssetPath('characters/dummy.png'));
     const characters: CharacterDirectionSprites[] = [];
 
     for (let ci = 0; ci < CHAR_COUNT; ci++) {
