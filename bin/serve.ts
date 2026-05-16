@@ -1,12 +1,18 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { PixelAgentsServer } from '../server/src/server.js';
+import { ensureHookScript } from '../daemon/hookScriptInstaller.js';
 
 export async function startDaemon(opts: { open?: boolean } = {}): Promise<{
   server: PixelAgentsServer;
   stop: () => Promise<void>;
 }> {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const bundled = path.join(here, '..', 'dist', 'hooks', 'claude-hook.js');
+  ensureHookScript({ home: os.homedir(), bundledPath: bundled });
+
   const server = new PixelAgentsServer();
   const cfg = await server.start();
   if (opts.open ?? true) {

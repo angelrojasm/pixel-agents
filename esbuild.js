@@ -91,7 +91,8 @@ function buildHooks() {
     'server',
     'src',
     'providers',
-    'file',
+    'hook',
+    'claude',
     'hooks',
     'claude-hook.ts',
   );
