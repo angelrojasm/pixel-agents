@@ -47,13 +47,10 @@ export function useEditorKeyboard(
         onRotateSelected();
       } else if (e.key === 't' || e.key === 'T') {
         onToggleState();
-      } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      } else if (e.key === 'z' && e.altKey && !e.shiftKey) {
         e.preventDefault();
         onUndo();
-      } else if (
-        (e.key === 'y' && (e.ctrlKey || e.metaKey)) ||
-        (e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey)
-      ) {
+      } else if ((e.key === 'y' && e.altKey) || (e.key === 'z' && e.altKey && e.shiftKey)) {
         e.preventDefault();
         onRedo();
       }

@@ -79,8 +79,8 @@ export function TerminalPane({
 
     term.attachCustomKeyEventHandler((event) => {
       const s = searchHookRef.current;
-      // Cmd/Ctrl+F: open search bar (block xterm).
-      if (event.type === 'keydown' && event.key === 'f' && (event.metaKey || event.ctrlKey)) {
+      // Alt+F: open search bar (block xterm).
+      if (event.type === 'keydown' && event.key === 'f' && event.altKey) {
         s.open();
         return false;
       }

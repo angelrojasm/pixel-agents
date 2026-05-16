@@ -786,7 +786,7 @@ export function OfficeCanvas({
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
-      if (e.ctrlKey || e.metaKey) {
+      if (e.ctrlKey) {
         // Accumulate scroll delta, step zoom when threshold crossed
         zoomAccumulatorRef.current += e.deltaY;
         if (Math.abs(zoomAccumulatorRef.current) >= ZOOM_SCROLL_THRESHOLD) {
@@ -834,7 +834,7 @@ export function OfficeCanvas({
       if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.closest('.xterm'))) {
         return;
       }
-      if (!(e.metaKey || e.ctrlKey)) return;
+      if (!e.altKey) return;
       if (e.key >= '1' && e.key <= '9') {
         const n = parseInt(e.key, 10) - 1;
         const id = agentIds[n];

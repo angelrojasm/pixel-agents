@@ -56,7 +56,7 @@ A failure in any item ⇒ ping the orchestrator (me) with the file:line where it
 
 ### 2.1 Search bar
 
-- [ ] Focus the terminal. Press **Cmd+F (macOS) / Ctrl+F (Linux/Windows)**.
+- [ ] Focus the terminal. Press **Alt+F**.
 - [ ] A search bar overlays the top-right of the terminal: `PANEL_BG_CELL` bg, 1 px `PANEL_BORDER`, sharp corners.
 - [ ] Generate output: `seq 1 200 | awk '{print "line "$1" sample text"}'`
 - [ ] Type `line 42`. Match count shows `1/1`. The match is highlighted in xterm.
@@ -85,9 +85,9 @@ A failure in any item ⇒ ping the orchestrator (me) with the file:line where it
 - [ ] With **search closed**: press Esc in the terminal. Nothing visible happens (passthrough is correct — bash Esc has no visible effect).
 - [ ] With **search open**: Esc closes search (does not pass through).
 
-### 2.5 Cmd+F re-press
+### 2.5 Alt+F re-press
 
-- [ ] With search open, press Cmd+F again. The search stays open (idempotent), input keeps focus.
+- [ ] With search open, press Alt+F again. The search stays open (idempotent), input keeps focus.
 
 ---
 
@@ -145,10 +145,12 @@ A failure in any item ⇒ ping the orchestrator (me) with the file:line where it
 
 ### 3.8 Canvas keyboard shortcuts
 
-- [ ] Focus the canvas (click it, not a terminal). Press **Cmd+1 / Ctrl+1**. The first agent in rail order gets focused (halo + panel switches to its terminal).
-- [ ] Press **Cmd+2 / Ctrl+2** through **Cmd+9**. Same behavior for each rail-ordered agent.
-- [ ] Press **Cmd+' / Ctrl+'**. The panel **collapses** (equivalent to clicking `[hide]`).
-- [ ] Click into the terminal pane (xterm focus). Press Cmd+1. It does **NOT** focus another agent — xterm consumes the keystroke. The shortcut is canvas-context-only.
+> Browser tab claims Cmd/Ctrl+1..9, Cmd/Ctrl+F, etc.; canvas chords moved to Alt-based for the combined Phase 2+3 release.
+
+- [ ] Focus the canvas (click it, not a terminal). Press **Alt+1**. The first agent in rail order gets focused (halo + panel switches to its terminal).
+- [ ] Press **Alt+2** through **Alt+9**. Same behavior for each rail-ordered agent.
+- [ ] Press **Alt+'** (Alt+Apostrophe). The panel **collapses** (equivalent to clicking `[hide]`).
+- [ ] Click into the terminal pane (xterm focus). Press Alt+1. It does **NOT** focus another agent — xterm consumes the keystroke. The shortcut is canvas-context-only.
 
 ### 3.9 Multi-webview sync (focus is per-webview)
 

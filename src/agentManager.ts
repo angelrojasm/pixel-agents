@@ -174,7 +174,7 @@ export async function launchNewTerminal(
   agents.set(id, agent);
   activeAgentIdRef.current = id;
   persistAgents();
-  const terminalName = terminal?.name ?? `${TERMINAL_NAME_PREFIX} #${idx}`;
+  const terminalName = `${TERMINAL_NAME_PREFIX} #${idx}`;
   console.log(`[Pixel Agents] Terminal: Agent ${id} - created for terminal ${terminalName}`);
   webview?.postMessage({
     type: 'agentCreated',
