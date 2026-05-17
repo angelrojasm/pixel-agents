@@ -210,7 +210,7 @@ Toggle via "Layout" button. Tools: SELECT (default), Floor paint, Wall paint, Er
 
 **Canonical location:** [`docs/ROADMAP.md`](docs/ROADMAP.md) — phase status, sequencing decisions, queued ideas, and Phase-3 architectural principles all live there. Update it (not this file) when phase state changes.
 
-**Current phase:** 2 — terminal inside the office. Foundations (D1 + D2 in vsix 1.3.0) and the 2026-05-12 polish bundle (rename / splitter / 0.5 zoom / terminal-font customization) shipped. Remaining Phase 2 work follows the sequence in `docs/ROADMAP.md` § Phase 2 — Recommended sequence: visual chrome → terminal QoL → terminal ↔ character interaction → settings menu redesign last.
+**Current phase:** 3 — standalone daemon + browser SPA, coexisting with the VS Code extension. Phase 2 polish (visual chrome, terminal QoL, terminal ↔ character interaction, settings redesign) and Phase 3 (daemon, WebSocket transport, snapshot replay, file-based persistence, pty-only, Alt-based hotkeys, `daemon/orchestrator.ts` extraction) all shipped on `2026-05-12-terminal-polish` as one combined release. The VS Code extension is **NOT** deprecated — both runtimes are first-class. Cutover deferred indefinitely. See `docs/ROADMAP.md` § Phase 3 for commit-level details and the keep-both decision history.
 
 **Design compatibility note (still load-bearing for new work):** Keep the WebSocket replacement straightforward. Messages flow through `MessageSink` (outbound) and `MessageSource` (inbound). Persistence is webview-driven, not VS Code-setting-bound. Server boundaries stay clean — Phase 3 daemon + relay must slot in by swapping transports, not refactoring the protocol.
 

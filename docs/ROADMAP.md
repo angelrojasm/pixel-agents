@@ -112,33 +112,48 @@ Rationale: doing chrome before character-interaction prevents rework on bubbles/
 **Fallback / rollback**
 The `vscode.window.createTerminal` path remains the default and runs in parallel for every agent. If `node-pty` + xterm.js misbehaves on a given agent or platform, the user toggles `usePtyTerminal` off and new agents route through the native terminal path. Once Phase 2 is stable, the flag can be flipped to default-on or removed entirely in a subsequent release.
 
-## Phase 3 — Standalone remote app
+## Phase 3 — Standalone daemon + browser SPA (in flight; both runtimes coexist)
 
-**Intent**
-Use Pixel Agents from a browser, away from VS Code, without always-on laptop requirement if feasible.
+**What landed (2026-05-16, in the `2026-05-12-terminal-polish` branch)**
 
-**Recommended initial pattern (for launch)**
-**Daemon + relay.** A small service on the user's machine — the existing `PixelAgentsServer` from Phase 1, extended with Phase 2's `node-pty` workers — runs Claude locally. A coordinator in the cloud relays a WebSocket between the browser SPA and the daemon. Claude keeps reading `~/.claude/` for auth, so the user's company subscription flows through unchanged. Requires the laptop to be on (or a persistent machine the user owns).
+A localhost-only daemon (`bin/serve.ts`) now serves the existing `webview-ui/` SPA as a browser tab via HTTP + WebSocket. The VS Code extension is **NOT** deprecated — both runtimes are first-class. A shared `daemon/orchestrator.ts` (extracted from `PixelAgentsViewProvider`) runs the host-agnostic init for both. The combined Phase 2+3 release stacks ~20 task commits behind the polish branch.
 
-**Aspirational pattern (post-launch, if feasible)**
-**Hosted shell.** Spawn Claude in a per-user cloud container. Auth would have to be injected (OAuth, mounted `.claude/`, or similar). Depends on Anthropic TOS and on Claude Code supporting non-interactive auth for multi-tenant hosting.
+- Spec: [`docs/superpowers/specs/2026-05-16-phase-3-remote-app-design.md`](superpowers/specs/2026-05-16-phase-3-remote-app-design.md) (revised mid-execution for the keep-both decision).
+- Plan: [`docs/superpowers/plans/2026-05-16-phase-3-remote-app.md`](superpowers/plans/2026-05-16-phase-3-remote-app.md) — note that Tasks 20/21/22 are SUPERSEDED; T20' (orchestrator extraction) replaces them.
+- Key commits (Phase 3, mostly mechanical):
+  - `e019ccd` T1: Disposable interface
+  - `39598dc` T3: drop vscode.Uri for bundled assets
+  - `b836fb3` T5: WebSocketSink/Broadcast/Source
+  - `ef999a5` T6: PixelAgentsServer accepts WS upgrades (Origin + token check)
+  - `9c5f432` T7: snapshot-on-open replay
+  - `6c4c24e` T8: real WS transport in vscodeApi.ts browser branch
+  - `43cea8e` T9: PixelAgentsServer serves webview-ui/dist/
+  - `434140b`, `3062d7f`, `e937db8` T10–T12: bin/serve.ts CLI + hook script ownership
+  - `5e07801`, `c5ce786`, `bc608bc`, `c8f1ca4` T13–T16: agents.json + ConfigStore + settings backfill
+  - `896d76a` T17: pty-only (legacy createTerminal removed)
+  - `dbc9920` T18: canvas shortcuts remapped Cmd/Ctrl → Alt
+  - `275025b` T19: daemon startup PID-prune
+  - `716bb7f` **T20': extract daemon/orchestrator.ts; both hosts share orchestration**
 
-**Architectural prerequisites already in place**
+**Where Phase 3 stops for v1 (mid-execution decision, 2026-05-16)**
 
-- `MessageSink` — broadcasts abstract over transport.
-- `PixelAgentsServer` — HTTP endpoint with auth tokens, process PID discovery via `~/.pixel-agents/server.json`. Already designed to be the foundation (per existing `TODO(Standalone version)` comments).
-- Layout, config, and default-cwd already live in user-level paths, not VS Code workspaceState (or are migrated out when it matters).
+- **Scope: localhost-only.** Daemon binds `127.0.0.1`; no LAN, no relay, no third-party services.
+- **VS Code extension stays.** Cutover deferred indefinitely. The original "delete extension code" task is dropped.
+- **Personal tool.** No npm publish, installer, account system, or pairing UX.
+- **Cloud relay / "use Pixel Agents from anywhere"** is descoped from v1 → backlog. Architectural compatibility is preserved (token + Origin plumbing exists; pairing UI does not).
 
-**Auth boundary for Phase 3 v1**
+**Architectural prerequisites — all now realized**
 
-- Not in scope: a multi-tenant account system.
-- In scope: single-user **browser ↔ daemon pairing** (e.g. a pairing code or signed token the daemon prints once, the browser caches) so the relay can't mix up sessions across users. This is the minimum auth that daemon/relay needs to be safe, not a full account system.
+- `MessageSink` / `MessageSource` (Phase 1).
+- `PixelAgentsServer` extended with WebSocket upgrade + static SPA serving (T6, T9).
+- `agents.json`, `config.json`, `layout.json` at `~/.pixel-agents/` (T13–T15).
+- `daemon/orchestrator.ts` shared between both hosts (T20').
 
-**Non-goals for Phase 3 v1**
+**Future (descoped from v1)**
 
-- Multi-tenant accounts, billing, teams.
-- Cloud-side layout sync.
-- Mobile UI.
+- **LAN exposure.** Bind `0.0.0.0` + pairing UX (printed code, browser challenge).
+- **Cloud relay.** Coordinator-in-the-cloud pattern from the earlier vision; daemon's WS transport swaps for a coordinator-originated WS.
+- **Workspace picker in the SPA.** Scope the daemon's watcher and `defaultCwd` to a chosen folder.
 
 ## Queued feature ideas
 
