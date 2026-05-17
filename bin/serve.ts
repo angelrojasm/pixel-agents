@@ -6,6 +6,8 @@ import { PixelAgentsServer } from '../server/src/server.js';
 import { ensureHookScript } from '../daemon/hookScriptInstaller.js';
 import { readAgents, writeAgents } from '../daemon/agentsPersistence.js';
 import { pruneDeadAgents } from '../daemon/agentsBootCleanup.js';
+import { createConfigStore } from '../daemon/configStore.js';
+import { createOrchestrator } from '../daemon/orchestrator.js';
 
 export async function startDaemon(opts: { open?: boolean } = {}): Promise<{
   server: PixelAgentsServer;
@@ -30,6 +32,25 @@ export async function startDaemon(opts: { open?: boolean } = {}): Promise<{
 
   const server = new PixelAgentsServer();
   const cfg = await server.start();
+
+  // Resolve bundled assetsRoot: dist/assets lives next to the compiled JS
+  const assetsRoot = path.join(here, '..', 'dist');
+
+  // Wire up the host-agnostic orchestration (agent restore, file watchers,
+  // hook handler, snapshot-on-WS-connect, asset loading, layout watcher).
+  const configFile = path.join(os.homedir(), '.pixel-agents', 'config.json');
+  const config = createConfigStore(configFile);
+  const orchestrator = createOrchestrator({
+    broadcastSink: server.getBroadcastSink(),
+    server,
+    config,
+    agentsFilePath: agentsFile,
+    assetsRoot: fs.existsSync(path.join(assetsRoot, 'assets')) ? assetsRoot : null,
+    extensionVersion: '',
+  });
+
+  await orchestrator.start();
+
   if (opts.open ?? true) {
     const { default: open } = await import('open');
     await open(`http://127.0.0.1:${cfg.port}`);
@@ -38,6 +59,7 @@ export async function startDaemon(opts: { open?: boolean } = {}): Promise<{
   return {
     server,
     stop: async () => {
+      orchestrator.dispose();
       server.stop();
     },
   };
