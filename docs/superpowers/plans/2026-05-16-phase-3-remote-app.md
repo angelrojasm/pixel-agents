@@ -1,5 +1,7 @@
 # Phase 3 — Remote App v1 Implementation Plan
 
+> **2026-05-16 update (mid-execution):** Tasks 1–19 shipped as written. **Tasks 20, 21, and 22 are SUPERSEDED.** The original "cutover" plan called for deleting the VS Code extension entirely; mid-execution the decision was made to keep both runtimes (VS Code extension AND standalone daemon serving a browser tab). A single replacement task — **T20': Extract `daemon/orchestrator.ts`** — landed instead (commit `716bb7f`). See the [design spec](../specs/2026-05-16-phase-3-remote-app-design.md) (updated alongside) and `~/.claude/projects/.../memory/phase_3_scope_decisions.md` for the decision history. The original T20/T21/T22 sections below are kept for traceability but should NOT be executed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Lift Pixel Agents out of the VS Code extension into a standalone Node.js daemon that serves the existing `webview-ui/` SPA over HTTP + WebSocket. Localhost-only. Personal tool. Combined Phase 2+3 release.
@@ -2286,7 +2288,9 @@ git add daemon/agentsBootCleanup.ts daemon/__tests__/agentsBootCleanup.test.ts b
 git commit -m "phase-3 step 7: daemon startup prunes agents whose pty is no longer alive"
 ```
 
-### Task 20: Delete extension code
+### Task 20: Delete extension code [SUPERSEDED — DO NOT EXECUTE]
+
+> **Status:** Superseded mid-execution by **T20' (below)** — the maintainer chose to keep both runtimes (VS Code extension + standalone daemon) rather than delete the extension. T20' shipped as commit `716bb7f`. The text below is preserved for context only.
 
 **Files:**
 
@@ -2372,7 +2376,9 @@ git add -A
 git commit -m "phase-3 step 7 (CUTOVER): delete extension code; daemon is the only entry point"
 ```
 
-### Task 21: README + ROADMAP updates
+### Task 21: README + ROADMAP updates [SUPERSEDED — DO NOT EXECUTE]
+
+> **Status:** Superseded. The README rewrite this task prescribed framed Pixel Agents as a CLI-only product; the new direction is "extension + daemon coexist," which needs a different README treatment (if any — for a personal tool, the existing README is fine). The ROADMAP update is still valid; do that as a separate small commit alongside T20'.
 
 **Files:**
 
@@ -2412,7 +2418,9 @@ git commit -m "phase-3: README + roadmap reflect cutover (Pixel Agents is now a 
 
 ---
 
-## Task 22: Rewrite Playwright E2E for the browser tab
+## Task 22: Rewrite Playwright E2E for the browser tab [DEFERRED — OPTIONAL]
+
+> **Status:** Deferred indefinitely. With both runtimes alive, the existing Extension Dev Host E2E suite stays valid. A browser-tab-flavored E2E suite is optional — pick it up when daemon mode becomes a primary dogfood surface. The text below remains a usable starting point.
 
 **Files:**
 
@@ -2498,6 +2506,51 @@ Open `vitest.config.ts`; add `daemon/**/*.test.ts` to the `test.include` list.
 git add vitest.config.ts
 git commit -m "phase-3: extend vitest include glob to cover daemon/__tests__/"
 ```
+
+---
+
+---
+
+## Task 20' (REPLACES T20–T22): Extract `daemon/orchestrator.ts` so both hosts share orchestration
+
+**Status:** Shipped as commit `716bb7f`. Documented here for plan completeness.
+
+**Goal:** Lift host-agnostic init out of `src/PixelAgentsViewProvider.ts` into a new `daemon/orchestrator.ts`. Both `extension.ts` and `bin/serve.ts` call `createOrchestrator(...)` with host-specific deps. The VS Code extension stays a first-class runtime; the daemon now serves a working SPA end-to-end. No extension code is deleted.
+
+**Files:**
+
+- Create: `daemon/orchestrator.ts` (~980 lines — captures the previously-inlined orchestration)
+- Modify: `src/PixelAgentsViewProvider.ts` (-~620 lines; now mostly webview-view registration + window event glue)
+- Modify: `bin/serve.ts` (+~20 lines; calls `createOrchestrator` after `server.start()`)
+- New: `server/__mocks__/vscode.ts` + root `vitest.config.ts` (mocks vscode for the test environments that now exercise both hosts)
+
+**Public API:**
+
+```ts
+export interface OrchestratorHostDeps {
+  broadcastSink: MessageSink;
+  server: PixelAgentsServer;
+  config: ConfigStore;
+  agentsFilePath: string;
+  assetsRoot: string | null;
+  extensionVersion: string;
+  onReady?: () => void;
+  onTeammateRemoveRequest?: (teammateAgentId: number) => void;
+}
+
+export interface Orchestrator {
+  start(): Promise<void>;
+  dispose(): void;
+  readonly agents: ReadonlyMap<number, AgentState>;
+  // …per-host helpers for snapshot replay, agent operations, etc.
+}
+
+export function createOrchestrator(hostDeps: OrchestratorHostDeps): Orchestrator;
+```
+
+**Commit message:** `phase-3 step 7 (T20'): extract daemon/orchestrator.ts; both hosts share orchestration`
+
+**Verification:** 244 tests pass (extension + server). Build clean. Both runtimes still work — VS Code F5 + side panel; `node dist/bin/serve.js` + browser tab.
 
 ---
 

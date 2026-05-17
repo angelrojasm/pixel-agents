@@ -1,26 +1,26 @@
 # Phase 3 — Remote App v1 (Local Daemon + Browser SPA)
 
-**Date:** 2026-05-16
-**Status:** Draft
+**Date:** 2026-05-16 (revised mid-execution)
+**Status:** Draft — updated to reflect the keep-both-paths decision
 **Branch:** `2026-05-12-terminal-polish` (continues, no new branch)
 **Releases with:** Phase 2 (combined product release)
 
 ## Goal
 
-Lift Pixel Agents out of the VS Code extension. End state: a standalone daemon (`pixel-agents`) on the user's laptop that serves the existing `webview-ui/` SPA over HTTP and exchanges messages over a WebSocket. The browser tab is the only UI.
+Add a standalone daemon (`pixel-agents serve`) that exposes the existing `webview-ui/` SPA as a browser tab. The daemon and the VS Code extension are **both valid runtimes** — the daemon does not replace the extension. A shared `daemon/orchestrator.ts` runs the host-agnostic init (asset loading, agent restore, file watcher, hook event handler, snapshot replay); each host wires its host-specific glue (webview view + window events for the extension; static SPA serve + WebSocket broadcast for the daemon).
 
 ## Scope of v1
 
-| Aspect         | Decision                                                  |
-| -------------- | --------------------------------------------------------- |
-| Reach          | localhost-only (`127.0.0.1`)                              |
-| UI             | Browser tab, served by the daemon                         |
-| Distribution   | Personal tool. Run from the git checkout. No npm publish. |
-| Auth           | Same-origin + token check on WebSocket upgrade            |
-| VS Code role   | Deprecated; final cutover commit deletes extension code   |
-| Phase 2 polish | Carries over unchanged (lives in `webview-ui/`)           |
+| Aspect         | Decision                                                                       |
+| -------------- | ------------------------------------------------------------------------------ |
+| Reach          | localhost-only (`127.0.0.1`)                                                   |
+| UI             | Browser tab served by the daemon OR VS Code side panel/full-screen — both work |
+| Distribution   | Personal tool. Run from the git checkout. No npm publish.                      |
+| Auth           | Same-origin + token check on WebSocket upgrade                                 |
+| VS Code role   | First-class runtime; not deprecated. Cutover deferred indefinitely.            |
+| Phase 2 polish | Carries over unchanged (lives in `webview-ui/`)                                |
 
-**Non-goals (explicit):** multi-user, accounts, LAN exposure, cloud relay, installers, code-signing, public docs, telemetry, backward compatibility post-cutover.
+**Non-goals (explicit):** multi-user, accounts, LAN exposure, cloud relay, installers, code-signing, public docs, telemetry, deletion of the extension.
 
 ## Architecture
 
@@ -80,7 +80,7 @@ class WebSocketSource implements MessageSource {
 }
 ```
 
-The webview-side adapter lives in the existing `webview-ui/src/vscodeApi.ts` — its `isBrowserRuntime` branch becomes a real WebSocket transport (reconnect + offline-queue + inbound dispatch). The VS Code branch stays during phases 1–6 (safety net) and is deleted at cutover. Existing `useExtensionMessages.ts` consumes the same interface; no per-message refactor. See the dedicated `webview-ui/` section below for the both-directions details.
+The webview-side adapter lives in the existing `webview-ui/src/vscodeApi.ts` — its `isBrowserRuntime` branch becomes a real WebSocket transport (reconnect + offline-queue + inbound dispatch). The VS Code branch stays permanently (keep-both decision). Existing `useExtensionMessages.ts` consumes the same interface; no per-message refactor. See the dedicated `webview-ui/` section below for the both-directions details.
 
 **Library choice:** `ws` (zero deps, ~4kLoC, used by `vite-plugin-ws` and `@xterm/addon-attach`). Not Socket.IO (overkill, ships its own protocol).
 
@@ -88,26 +88,26 @@ The webview-side adapter lives in the existing `webview-ui/src/vscodeApi.ts` —
 
 Most of `src/` is already vscode-API-light. Phase 1 + Phase 2 did this on purpose.
 
-| Today                                              | Tomorrow                      | Change                                                                                                              |
-| -------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `src/extension.ts`                                 | (gone)                        | Activation merges into `bin/serve.ts`.                                                                              |
-| `src/PixelAgentsViewProvider.ts`                   | (gone)                        | Replaced by daemon's WS broadcast + HTTP server wiring.                                                             |
-| `src/agentManager.ts`                              | `daemon/agentManager.ts`      | Remove `vscode.window.createTerminal` path. Pty-only. Drop `workspaceState` param; take typed I/O.                  |
-| `src/configPersistence.ts`                         | `daemon/configPersistence.ts` | No change.                                                                                                          |
-| `src/layoutPersistence.ts`                         | `daemon/layoutPersistence.ts` | Drop `workspaceState` legacy-migration branch; file-only path remains.                                              |
-| `src/fileWatcher.ts`                               | `daemon/fileWatcher.ts`       | No change.                                                                                                          |
-| `src/transcriptParser.ts`                          | `daemon/transcriptParser.ts`  | No change.                                                                                                          |
-| `src/timerManager.ts`                              | `daemon/timerManager.ts`      | No change.                                                                                                          |
-| `src/assetLoader.ts`                               | `daemon/assetLoader.ts`       | Drop the `vscode.Uri`-based path resolver fallback; resolve bundled assets via `import.meta.url` + `fileURLToPath`. |
-| `src/settingsDefaults.ts`                          | `daemon/settingsDefaults.ts`  | Drop `GlobalStateLike` param; take a `ConfigStore` (file-backed) instead.                                           |
-| `src/pty/ptyManager.ts`, `src/pty/ptyWorker.ts`    | `daemon/pty/`                 | No change (already vscode-free).                                                                                    |
-| `src/types.ts`                                     | `daemon/types.ts`             | Drop `vscode.Terminal` from `AgentState`.                                                                           |
-| `src/constants.ts`                                 | `daemon/constants.ts`         | Drop VS Code-only keys (commands, view IDs).                                                                        |
-| `server/src/server.ts`                             | `daemon/server.ts`            | Add WebSocket + static serving (see below).                                                                         |
-| `server/src/hookEventHandler.ts`                   | `daemon/hookEventHandler.ts`  | No change.                                                                                                          |
-| `server/src/healthMonitor.ts`                      | `daemon/healthMonitor.ts`     | No change.                                                                                                          |
-| `server/src/teamProvider.ts`, `teamUtils.ts`       | `daemon/teams/`               | No change.                                                                                                          |
-| `server/src/providers/file/claudeHookInstaller.ts` | `daemon/hooks/installer.ts`   | Now invoked by the CLI (`pixel-agents install-hooks`) and on each `serve` startup for the script file (idempotent). |
+| Today                                              | Tomorrow                      | Change                                                                                                                                                                     |
+| -------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/extension.ts`                                 | unchanged (still entry point) | Stays. Activation now also builds a `daemon/orchestrator.ts` via `createOrchestrator(...)`. `bin/serve.ts` is the parallel daemon entry — both call the same orchestrator. |
+| `src/PixelAgentsViewProvider.ts`                   | trimmed (~620 lines lighter)  | Stays as the webview-view registration + window-events shell. Orchestration delegated to `daemon/orchestrator.ts`.                                                         |
+| `src/agentManager.ts`                              | `daemon/agentManager.ts`      | Remove `vscode.window.createTerminal` path. Pty-only. Drop `workspaceState` param; take typed I/O.                                                                         |
+| `src/configPersistence.ts`                         | `daemon/configPersistence.ts` | No change.                                                                                                                                                                 |
+| `src/layoutPersistence.ts`                         | `daemon/layoutPersistence.ts` | Drop `workspaceState` legacy-migration branch; file-only path remains.                                                                                                     |
+| `src/fileWatcher.ts`                               | `daemon/fileWatcher.ts`       | No change.                                                                                                                                                                 |
+| `src/transcriptParser.ts`                          | `daemon/transcriptParser.ts`  | No change.                                                                                                                                                                 |
+| `src/timerManager.ts`                              | `daemon/timerManager.ts`      | No change.                                                                                                                                                                 |
+| `src/assetLoader.ts`                               | `daemon/assetLoader.ts`       | Drop the `vscode.Uri`-based path resolver fallback; resolve bundled assets via `import.meta.url` + `fileURLToPath`.                                                        |
+| `src/settingsDefaults.ts`                          | `daemon/settingsDefaults.ts`  | Drop `GlobalStateLike` param; take a `ConfigStore` (file-backed) instead.                                                                                                  |
+| `src/pty/ptyManager.ts`, `src/pty/ptyWorker.ts`    | `daemon/pty/`                 | No change (already vscode-free).                                                                                                                                           |
+| `src/types.ts`                                     | `daemon/types.ts`             | Drop `vscode.Terminal` from `AgentState`.                                                                                                                                  |
+| `src/constants.ts`                                 | `daemon/constants.ts`         | Drop VS Code-only keys (commands, view IDs).                                                                                                                               |
+| `server/src/server.ts`                             | `daemon/server.ts`            | Add WebSocket + static serving (see below).                                                                                                                                |
+| `server/src/hookEventHandler.ts`                   | `daemon/hookEventHandler.ts`  | No change.                                                                                                                                                                 |
+| `server/src/healthMonitor.ts`                      | `daemon/healthMonitor.ts`     | No change.                                                                                                                                                                 |
+| `server/src/teamProvider.ts`, `teamUtils.ts`       | `daemon/teams/`               | No change.                                                                                                                                                                 |
+| `server/src/providers/file/claudeHookInstaller.ts` | `daemon/hooks/installer.ts`   | Now invoked by the CLI (`pixel-agents install-hooks`) and on each `serve` startup for the script file (idempotent).                                                        |
 
 The split between `src/` (extension) and `server/` (server) collapses into a single `daemon/` tree.
 
@@ -118,7 +118,7 @@ The split between `src/` (extension) and `server/` (server) collapses into a sin
 - `vscodeApi.ts`: replace the no-op browser branch with a real WebSocket-backed transport. **Both directions:**
   - Outbound: `postMessage()` writes to a `WebSocket` (single connection, queued while disconnected, replayed on open).
   - Inbound: today the hook uses `window.addEventListener('message', …)` to receive from the VS Code host. The browser branch must wire `ws.onmessage` to dispatch the same `MessageEvent`-shaped envelope to the existing handler. The webview-side gains a `MessageSource` adapter that mirrors the extension-side abstraction (symmetric with the server-side change).
-  - VS Code branch can stay in place during phases 1–6 (safety net); deleted at cutover (step 7).
+  - VS Code branch stays permanently — the extension is a first-class runtime alongside the daemon.
 - `useExtensionMessages.ts`: rename to `useDaemonMessages.ts`; consume the new transport. Public hook signature unchanged.
 - A handful of message names referencing "extension" become "daemon" — cosmetic, find/replace.
 - The 77 commits of Phase 2 polish (visual chrome, terminal pane, character interaction, settings redesign) all live here and carry over unchanged.
@@ -233,7 +233,7 @@ Threat model: another process on the same machine, single user. Not adversarial.
 
 ## Migration phases
 
-Phases 1–5 keep the extension fully functional as a safety net. **Phases 6 + 7 together are the cutover** — once they ship, the extension can no longer fall back to the legacy VS Code terminal path. Soak the pty backend on every active agent before starting phase 6.
+Phases 1–5 keep the extension fully functional as a safety net. **Phase 6 makes pty the only terminal backend** — both hosts route through `node-pty` after this point; there is no fallback to `vscode.window.createTerminal`. Phase 7 was originally framed as the cutover commit (delete extension code) — that's been superseded by a single "extract `daemon/orchestrator.ts`" task that lets both hosts share orchestration without deleting either. The extension stays a first-class runtime.
 
 1. **Module decoupling.** Drop `vscode.*` imports from every module that doesn't need them. Convert `vscode.Disposable` returns to a plain `Disposable` interface (already what `MessageSource.onMessage` returns; widen). Extension still functions through thin shims.
 2. **WebSocket transport.** Add `ws` to the daemon. Wire `WebSocketSink`, `WebSocketBroadcast`, `WebSocketSource`. Build the SPA-side transport adapter (`vscodeApi.ts` browser branch) with reconnect + offline-queue + symmetric inbound dispatch. The VS Code webview keeps using `acquireVsCodeApi()`; the SPA tab uses the new transport.
@@ -242,16 +242,17 @@ Phases 1–5 keep the extension fully functional as a safety net. **Phases 6 + 7
 4. **CLI entry point.** `bin/serve.ts` with `serve`, `install-hooks`, `uninstall-hooks`, `stop`, `status`. Open-browser-on-start via the `open` package. On `serve` startup, the daemon writes `~/.pixel-agents/hooks/claude-hook.js` from a bundled copy if missing or out of date (version constant embedded in the script); ownership of that file moves from the extension's activation step to the daemon's startup step.
 5. **File-based persistence.** New `daemon/agentsPersistence.ts`. Run the one-time `bin/import-extension-settings.ts` helper (or the `pixel-agents.exportSettings` VS Code command) to copy `globalState` values into `config.json`. Extension's `settingsDefaults.ts` is rewired to read/write `config.json` from this point on. During phases 2–5, daemon and extension share the same `~/.pixel-agents/server.json` via the existing PID-reuse logic; multi-window safety isn't regressed.
 6. **Pty-only.** Remove `vscode.window.createTerminal` path from `agentManager`. Delete the `usePtyTerminal` setting. The extension's webview still works; only behavior change is that all new agents are pty-backed. **Once this lands the legacy fallback is gone — there is no extension-side rollback after step 6.**
-7. **Cutover commit.** Delete `src/extension.ts`, `src/PixelAgentsViewProvider.ts`, the `vscodeApi.ts` VS Code branch, activation events + `contributes.*` in `package.json`, and any remaining vscode-API imports. Repo's `package.json` becomes the daemon's; `bin/serve.ts` becomes the package `bin`. README rewrites to a personal CLI. Add `daemon` startup logic that, on boot, enumerates `agents.json` and drops entries whose `sessionId`'s pty PID is no longer alive (verified via `process.kill(pid, 0)`); surviving JSONL sessions get re-adopted as externals by the project-level scanner.
+7. **PID-prune on daemon boot.** On startup, the daemon enumerates `agents.json` and drops entries whose `sessionId`'s pty PID is no longer alive (verified via `process.kill(pid, 0)`); surviving JSONL sessions get re-adopted as externals by the project-level scanner. (Originally tasked alongside "cutover" — see step 8 below for the cutover's status.)
+8. **Extract `daemon/orchestrator.ts` (T20', supersedes the cutover).** Lift host-agnostic init (asset loading, agent restore, file watcher, hook event handler, pty manager, snapshot replay wiring) out of `PixelAgentsViewProvider` into a new `daemon/orchestrator.ts`. Both `extension.ts` and `bin/serve.ts` call `createOrchestrator(...)` with host-specific deps. The VS Code extension stays a first-class runtime; the daemon now serves a working SPA end-to-end. **The original "delete extension code" cutover is dropped indefinitely** — see the [project memory](../../README.md#phase-3-keep-both-runtimes) for the decision history.
 
-Each phase commits independently. CI keeps both paths green through step 5. After step 6, the extension still runs but only the pty path is exercised.
+Each phase commits independently. Both runtimes (extension + daemon) stay green from step 5 onward. After step 6, native VS Code terminals are no longer used; both hosts spawn pty-backed agents.
 
 ## Testing
 
 - **Vitest server tests** carry over. New tests: WebSocket transport wire format, broadcast fan-out, Origin/token check on upgrade.
 - **Webview tests** carry over. New: a fake WebSocket transport for `useExtensionMessages` (now `useDaemonMessages`).
-- **Playwright E2E** is rewritten for a browser tab (Chromium pointed at `http://127.0.0.1:<port>`). Spins up the daemon as a subprocess, runs the existing flows.
-- **Manual QA.** Phase 2 checklist sections 1–4 carry over with one swap: "Extension Dev Host" becomes "browser tab against `pixel-agents serve`". New sections cover daemon lifecycle, multi-tab sync, hook install/uninstall, settings persistence to `config.json`.
+- **Playwright E2E.** Existing Extension Dev Host tests stay (extension is still a runtime). A new browser-tab-based suite is **optional** — add it when the daemon path becomes a primary dogfood surface.
+- **Manual QA.** Phase 2 checklist sections 1–4 stay as written for the extension path. Add a parallel section for the daemon path: launch `node dist/bin/serve.js`, open the browser, walk through the same flows (creates / persists / multi-tab sync / hook install / settings persistence to `config.json`).
 
 ## Risks + sharp edges
 
