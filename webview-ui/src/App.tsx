@@ -22,6 +22,7 @@ import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { characterLabel } from './office/engine/characters.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
+import { downloadSavedLayout, pickLayoutFile } from './office/layoutFile.js';
 import { HookHealthToast } from './office/panel/HookHealthToast.js';
 import { OfficePanel } from './office/panel/OfficePanel.js';
 import type { AgentSummary } from './office/panel/panelTypes.js';
@@ -535,8 +536,18 @@ function App() {
           onRemoveAssetDirectory={(path) =>
             vscode.postMessage({ type: 'removeExternalAssetDirectory', path })
           }
-          onExportLayout={() => vscode.postMessage({ type: 'exportLayout' })}
-          onImportLayout={() => vscode.postMessage({ type: 'importLayout' })}
+          onExportLayout={() =>
+            isBrowserRuntime
+              ? downloadSavedLayout(document)
+              : vscode.postMessage({ type: 'exportLayout' })
+          }
+          onImportLayout={() =>
+            isBrowserRuntime
+              ? pickLayoutFile(document, (layout) =>
+                  vscode.postMessage({ type: 'importLayout', layout }),
+                )
+              : vscode.postMessage({ type: 'importLayout' })
+          }
           extensionVersion={extensionVersion}
           onViewChangelog={() => setIsChangelogOpen(true)}
           onViewHooksInfo={() => setIsHooksInfoOpen(true)}

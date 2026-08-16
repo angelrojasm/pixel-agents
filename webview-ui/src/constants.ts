@@ -241,3 +241,6 @@ export const HOOK_HEALTH_DOT_SIZE_PX = 4;
 export const HOOK_HEALTH_TOAST_DURATION_MS = 0;
 export const HOOK_HEALTH_DOT_COLOR_DOWN = 'var(--color-danger)';
 export const HOOK_HEALTH_DOT_COLOR_DEGRADED = 'var(--color-warning)';
+
+// Layout export/import (browser runtime)
+export const LAYOUT_EXPORT_FILENAME = 'pixel-agents-layout.json';
