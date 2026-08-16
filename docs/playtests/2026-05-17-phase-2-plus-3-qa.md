@@ -40,7 +40,10 @@ webview sprite fallbacks (extension). Loaders now honor the host-passed `assetsR
 
 **Still pending:** Path A extension regression pass (needs an Extension Dev Host
 session) and Path C (extension-owned server + browser tab — now architecturally wired:
-WS bridging + dispatch registered in the provider; needs a live pass).
+WS bridging + dispatch registered in the provider; needs a live pass). Known Path C
+follow-up from code review: `PixelAgentsServer.stop()` does not close live upgraded
+sockets, so on extension deactivate (without host exit) browser-tab connections and
+their per-socket cleanups are stranded until the client closes.
 
 ## QA Session 1 — 2026-08-14 (Path B, automated via Playwright)
 

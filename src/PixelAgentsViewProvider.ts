@@ -318,6 +318,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     message: Record<string, unknown>,
     originWebview?: vscode.Webview,
   ): Promise<void> {
+    // GUARD: every current call site passes originWebview. If a future caller
+    // omits it, replySink degrades to the broadcast sink — a webviewReady
+    // through that path would replay the full snapshot to EVERY client.
     const replySink: MessageSink = originWebview
       ? { postMessage: (m) => Promise.resolve(originWebview.postMessage(m)) }
       : this.broadcastSink;

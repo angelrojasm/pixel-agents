@@ -794,6 +794,7 @@ export function getTeamInfoSummary(agents: Map<number, AgentState>): Array<{
   agentName?: string;
   isTeamLead?: boolean;
   leadAgentId?: number;
+  teamUsesTmux?: boolean;
 }> {
   const result: Array<{
     id: number;
@@ -801,6 +802,7 @@ export function getTeamInfoSummary(agents: Map<number, AgentState>): Array<{
     agentName?: string;
     isTeamLead?: boolean;
     leadAgentId?: number;
+    teamUsesTmux?: boolean;
   }> = [];
   for (const [id, agent] of agents) {
     if (agent.teamName) {
@@ -810,6 +812,7 @@ export function getTeamInfoSummary(agents: Map<number, AgentState>): Array<{
         agentName: agent.agentName,
         isTeamLead: agent.isTeamLead,
         leadAgentId: agent.leadAgentId,
+        teamUsesTmux: agent.teamUsesTmux,
       });
     }
   }

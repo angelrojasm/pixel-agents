@@ -116,4 +116,29 @@ describe('orchestrator', () => {
     expect(fs.existsSync(path.join(tmpHome, '.pixel-agents', 'agents.json'))).toBe(true);
     o.dispose();
   });
+
+  it('replaySnapshotToSink falls back to the bundled default layout on fresh installs', async () => {
+    // Real bundled assets from the source tree; the mocked HOME has no layout.json.
+    const fixtureRoot = path.resolve(__dirname, '..', '..', 'webview-ui', 'public');
+    const o = createOrchestrator({
+      broadcastSink: { postMessage: async (m: unknown) => void sinkMessages.push(m) },
+      server: stubServer(),
+      config: createConfigStore(path.join(tmpHome, '.pixel-agents', 'config.json')),
+      agentsFilePath: path.join(tmpHome, '.pixel-agents', 'agents.json'),
+      assetsRoot: fixtureRoot,
+      extensionVersion: '',
+    });
+    try {
+      await o.start(); // loads + caches defaultLayout from the fixture assets
+      const replayed: Array<Record<string, unknown>> = [];
+      await o.replaySnapshotToSink({
+        postMessage: async (m: unknown) => void replayed.push(m as Record<string, unknown>),
+      });
+      const layoutMsg = replayed.find((m) => m.type === 'layoutLoaded');
+      expect(layoutMsg).toBeDefined();
+      expect((layoutMsg!.layout as Record<string, unknown>).version).toBe(1);
+    } finally {
+      o.dispose();
+    }
+  });
 });

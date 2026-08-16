@@ -208,7 +208,9 @@ export interface Orchestrator {
     payload: Record<string, unknown>,
   ): 'broadcast-settings' | 'handled' | 'unknown';
 
-  /** Update hook install/uninstall based on new enabled state (extension-only; daemon no-op). */
+  /** Update hook install/uninstall based on new enabled state. Both hosts route
+   *  here via the shared dispatch; `extensionPath` (copyHookScript source) is
+   *  extension-only — the daemon's hook script is managed at boot. */
   setHooksEnabled(enabled: boolean, extensionPath?: string): void;
 
   /** Run restoreCategoryDefaults for a settings category. */
@@ -870,17 +872,17 @@ export function createOrchestrator(hostDeps: OrchestratorHostDeps): Orchestrator
         // Dynamic import to avoid pulling vscode into daemon path
         import('../server/src/providers/hook/claude/claudeHookInstaller.js')
           .then((m) => m.installHooks())
-          .catch(() => {});
+          .catch((e) => console.error('[Orchestrator] installHooks failed:', e));
         if (extensionPath) {
           import('../server/src/providers/index.js')
             .then((m) => m.copyHookScript(extensionPath))
-            .catch(() => {});
+            .catch((e) => console.error('[Orchestrator] copyHookScript failed:', e));
         }
         console.log('[Orchestrator] Hooks enabled');
       } else {
         import('../server/src/providers/hook/claude/claudeHookInstaller.js')
           .then((m) => m.uninstallHooks())
-          .catch(() => {});
+          .catch((e) => console.error('[Orchestrator] uninstallHooks failed:', e));
         console.log('[Orchestrator] Hooks disabled');
       }
     },

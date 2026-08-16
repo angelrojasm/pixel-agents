@@ -190,14 +190,16 @@ export function useExtensionMessages(
       const os = getOfficeState();
 
       if (msg.type === 'layoutLoaded') {
+        // Keep the raw (pre-migration) payload for browser-runtime export.
+        // MUST happen before the dirty guard: export promises last-SAVED state
+        // even when this tab's editor skips the visual update below.
+        rememberSavedLayout(msg.layout);
         // Skip external layout updates while editor has unsaved changes
         if (layoutReadyRef.current && isEditDirty?.()) {
           console.log('[Webview] Skipping external layout update — editor has unsaved changes');
           return;
         }
         const rawLayout = msg.layout as OfficeLayout | null;
-        // Keep the raw (pre-migration) payload for browser-runtime export.
-        rememberSavedLayout(rawLayout);
         const layout = rawLayout && rawLayout.version === 1 ? migrateLayoutColors(rawLayout) : null;
         if (layout) {
           os.rebuildFromLayout(layout);

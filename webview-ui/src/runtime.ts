@@ -6,6 +6,8 @@
  * in a browser.
  */
 
+import { PX_TOKEN_META_SELECTOR } from './constants';
+
 declare function acquireVsCodeApi(): unknown;
 
 type Runtime = 'vscode' | 'browser';
@@ -22,5 +24,5 @@ export const isBrowserRuntime = runtime === 'browser';
  * running the mock there would build the office twice and mask transport bugs.
  */
 export function shouldUseBrowserMock(doc: Pick<Document, 'querySelector'>): boolean {
-  return isBrowserRuntime && doc.querySelector('meta[name="px-token"]') === null;
+  return isBrowserRuntime && doc.querySelector(PX_TOKEN_META_SELECTOR) === null;
 }

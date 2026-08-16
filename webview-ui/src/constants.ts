@@ -244,3 +244,7 @@ export const HOOK_HEALTH_DOT_COLOR_DEGRADED = 'var(--color-warning)';
 
 // Layout export/import (browser runtime)
 export const LAYOUT_EXPORT_FILENAME = 'pixel-agents-layout.json';
+
+/** Meta tag injected by the daemon's static server; presence means a real WS
+ *  transport serves this page (used by both the token reader and mock gate). */
+export const PX_TOKEN_META_SELECTOR = 'meta[name="px-token"]';

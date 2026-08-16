@@ -1,3 +1,4 @@
+import { PX_TOKEN_META_SELECTOR } from './constants';
 import { isBrowserRuntime } from './runtime';
 import { createWsClient } from './wsClient';
 
@@ -27,7 +28,7 @@ function buildBrowserApi(): VSCodeApi {
   }
 
   const wsUrl = `ws://${location.host}/ws?token=${encodeURIComponent(
-    document.querySelector<HTMLMetaElement>('meta[name="px-token"]')?.content ?? '',
+    document.querySelector<HTMLMetaElement>(PX_TOKEN_META_SELECTOR)?.content ?? '',
   )}`;
 
   const client = createWsClient({

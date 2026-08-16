@@ -28,6 +28,7 @@ export interface SnapshotDeps {
     agentName?: string;
     isTeamLead?: boolean;
     leadAgentId?: number;
+    teamUsesTmux?: boolean;
   }>;
   getTerminalNameChanges: () => Array<{ id: number; terminalName: string }>;
   getActiveAgentStatuses: () => Array<{ id: number; status: string; [k: string]: unknown }>;
