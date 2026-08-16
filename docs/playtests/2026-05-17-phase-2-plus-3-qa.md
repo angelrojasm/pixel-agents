@@ -1,8 +1,46 @@
 # Phase 2 + Phase 3 — Combined QA Checklist
 
-> **Status: FAIL — 2026-08-14.** First functional QA of Path B (standalone daemon), run
-> via Playwright against a fresh build of `2026-05-12-terminal-polish` (incl. the
-> uncommitted hostBridge work). Two release-blocking bugs found. See results below.
+> **Status: Path B PASS — 2026-08-16** (QA Session 2, after the blocker fixes). Path A
+> regression + Path C remain to be re-run. Session 1 (2026-08-14) result was FAIL with
+> two release blockers; both fixed. See both session blocks below.
+
+## QA Session 2 — 2026-08-16 (Path B re-run, automated via Playwright)
+
+Run against the blocker-fix stack (`ee5a89a..` on `2026-05-12-terminal-polish`): shared
+`daemon/uiDispatch.ts`, snapshot-replay contract fixes + contract test, per-client pty
+scrollback, WS close disposal, browser layout export/import, BrowserMock gating, tab
+identity riders, and the `resolveBundledAssetPath` fix found during this session.
+
+**Everything below verified live in a real browser tab:**
+
+- **B.2/B.3 PASS**: tab titled "Pixel Agents"; zero console errors; single replay per
+  connect; ALL assets over the WS (6 characters, 9 floors, 1 wall set, 38 furniture) —
+  BrowserMock no longer runs on daemon-served pages.
+- **B.6 PASS (the former blocker)**: **+ Agent spawns a pty-backed agent from the
+  browser** — character spawns, rail cell "Claude Code #1" appears, clicking it opens a
+  live xterm pane running the real `claude` CLI (trust prompt visible). Keystrokes flow
+  (ArrowDown moved the prompt selector; Enter exited cleanly); `[pty exited]` marker +
+  ↻ Restart button rendered on exit.
+- **Settings over WS PASS**: Sound toggle wrote `~/.pixel-agents/config.json` (both
+  directions).
+- **Multi-tab mutation sync PASS** (spec amendment 1): painting a floor tile + Save in
+  tab 1 appeared in tab 2 within a second via the `saveLayout` → `layoutLoaded`
+  broadcast.
+- **Browser export/import PASS**: Export downloaded `pixel-agents-layout.json`
+  (validated: version 1, 37 furniture); Import via file picker round-tripped it —
+  `~/.pixel-agents/layout.json` rewritten by the daemon, byte-identical restore.
+- **B.4 PASS**: reload → clean single replay, zero errors.
+- **B.8 PASS**: `status`/`stop` exits + `server.json` cleanup re-verified.
+
+**New bug found & fixed during this session:** `resolveBundledAssetPath` read
+`global.__dirname` (never set in either esbuild bundle) → character/floor/wall/default-
+layout loaders silently loaded nothing in BOTH hosts; masked by BrowserMock (daemon) and
+webview sprite fallbacks (extension). Loaders now honor the host-passed `assetsRoot`
+(commit `fix(assets): bundled loaders honor assetsRoot`), regression-tested.
+
+**Still pending:** Path A extension regression pass (needs an Extension Dev Host
+session) and Path C (extension-owned server + browser tab — now architecturally wired:
+WS bridging + dispatch registered in the provider; needs a live pass).
 
 ## QA Session 1 — 2026-08-14 (Path B, automated via Playwright)
 
