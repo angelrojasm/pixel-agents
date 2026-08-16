@@ -590,11 +590,14 @@ export function restoreAgents(
   }
 }
 
-export function sendExistingAgents(
-  agents: Map<number, AgentState>,
-  webview: MessageSink | undefined,
-): void {
-  if (!webview) return;
+export function buildExistingAgentsPayload(agents: Map<number, AgentState>): {
+  agents: number[];
+  agentMeta: Record<number, { palette: number; hueShift: number; workSeatId?: string }>;
+  folderNames: Record<number, string>;
+  externalAgents: Record<number, boolean>;
+  terminalNames: Record<number, string>;
+  ptyBackedAgents: Record<number, boolean>;
+} {
   const agentIds: number[] = [];
   for (const id of agents.keys()) {
     agentIds.push(id);
@@ -635,19 +638,26 @@ export function sendExistingAgents(
     }
   }
 
-  console.log(
-    `[Pixel Agents] sendExistingAgents: agents=${JSON.stringify(agentIds)}, meta=${JSON.stringify(agentMeta)}`,
-  );
-
-  webview.postMessage({
-    type: 'existingAgents',
+  return {
     agents: agentIds,
     agentMeta,
     folderNames,
     externalAgents,
     terminalNames,
     ptyBackedAgents,
-  });
+  };
+}
+
+export function sendExistingAgents(
+  agents: Map<number, AgentState>,
+  webview: MessageSink | undefined,
+): void {
+  if (!webview) return;
+  const payload = buildExistingAgentsPayload(agents);
+  console.log(
+    `[Pixel Agents] sendExistingAgents: agents=${JSON.stringify(payload.agents)}, meta=${JSON.stringify(payload.agentMeta)}`,
+  );
+  webview.postMessage({ type: 'existingAgents', ...payload });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
   // so that agentStatus/agentToolStart messages arrive after characters are created.
 }
