@@ -314,3 +314,22 @@ VS Code runtime keeps native dialogs (no inline payload ⇒
   the optional-parameter design keeps old behavior where not passed.
 - Extension broadcast bridging (WS clients) is new surface on the extension path; it is
   additive (one more sink) and Path C QA remains explicitly pending.
+
+## Amendments (2026-08-16, from plan review)
+
+1. **`saveLayout` broadcasts `layoutLoaded` to all clients** after writing the file.
+   `markLayoutWrite()` suppresses the file-watcher echo, which in single-process daemon
+   mode was the only sync channel — without this broadcast, a save in tab A never
+   reaches tab B, and browser export goes stale. The origin client receives the echo
+   too; the webview's dirty-editor guard keeps last-save-wins semantics. This also
+   covers the extension's own multi-webview sync, which had the same latent gap.
+2. **`DispatchContext.isWsClient?: boolean`.** WS-origin messages are marked by the
+   host's connect wiring. The extension's `onWebviewReady` returns immediately for WS
+   clients — they already got their replay on connect (prevents Path C double replay,
+   and prevents a WS client's `webviewReady` from triggering the extension's first-boot
+   init block).
+3. **`HostActions.onAgentsLaunched(newAgents: AgentState[]): void`.** The provider's
+   `openClaude` branch seeds its private `lastSentTerminalNames` map for new agents;
+   that side effect moves behind this hook (extension seeds the map; daemon no-op).
+4. `cachedFurnitureAssets` is retyped `{ catalog: unknown; sprites?: unknown } | null`
+   so the replay dep type-checks without casts.
