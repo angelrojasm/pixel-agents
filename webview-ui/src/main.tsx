@@ -5,10 +5,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import App from './App.tsx';
-import { isBrowserRuntime } from './runtime';
+import { shouldUseBrowserMock } from './runtime';
 
 async function main() {
-  if (isBrowserRuntime) {
+  if (shouldUseBrowserMock(document)) {
     const { initBrowserMock } = await import('./browserMock.js');
     await initBrowserMock();
   }

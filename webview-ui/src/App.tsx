@@ -29,7 +29,7 @@ import type { AgentSummary } from './office/panel/panelTypes.js';
 import { useCharacterPtyActivity } from './office/panel/useCharacterPtyActivity.js';
 import { usePanelState } from './office/panel/usePanelState.js';
 import { EditTool } from './office/types.js';
-import { isBrowserRuntime } from './runtime.js';
+import { isBrowserRuntime, shouldUseBrowserMock } from './runtime.js';
 import { vscode } from './vscodeApi.js';
 
 // Game state lives outside React — updated imperatively by message handlers
@@ -44,10 +44,11 @@ function getOfficeState(): OfficeState {
 }
 
 function App() {
-  // Browser runtime (dev or static dist): dispatch mock messages after the
-  // useExtensionMessages listener has been registered.
+  // Vite-dev browser pages (no daemon transport): dispatch mock messages after
+  // the useExtensionMessages listener has been registered. Daemon-served pages
+  // get the real snapshot over the WebSocket instead.
   useEffect(() => {
-    if (isBrowserRuntime) {
+    if (shouldUseBrowserMock(document)) {
       void import('./browserMock.js').then(({ dispatchMockMessages }) => dispatchMockMessages());
     }
   }, []);
