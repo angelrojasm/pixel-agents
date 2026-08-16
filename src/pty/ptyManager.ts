@@ -10,7 +10,12 @@ import { PtyWorker } from './ptyWorker.js';
 
 interface PtyManagerOptions {
   sink: MessageSink;
-  source: MessageSource;
+  /** Initial inbound source. Optional — hosts may attach every source
+   *  (including the first) via attachSource() instead. */
+  source?: MessageSource;
+  /** Reply sink paired with the initial `source` — ptyScrollback replies go
+   *  here rather than the broadcast sink (per-client scrollback). */
+  replySink?: MessageSink;
   /** Optional override for the constructor used to spawn a worker — exposed
    *  for tests so they can pass a fake; defaults to PtyWorker. */
   workerFactory?: (opts: PtyWorkerOptions) => PtyWorker;
@@ -49,7 +54,9 @@ export class PtyManager {
 
   constructor(private readonly opts: PtyManagerOptions) {
     this.factory = opts.workerFactory ?? ((o) => new PtyWorker(o));
-    this.subscription = opts.source.onMessage((m) => this.handleInbound(m));
+    this.subscription = opts.source
+      ? opts.source.onMessage((m) => this.handleInbound(m, opts.replySink))
+      : { dispose: () => {} };
   }
 
   start(agentId: number, startOpts: PtyStartOptions): void {
@@ -122,8 +129,8 @@ export class PtyManager {
    *  in addition to messages from any sources already attached. The returned
    *  disposable detaches just this attachment; the manager's primary source
    *  subscription is unaffected. */
-  attachSource(source: MessageSource): { dispose(): void } {
-    return source.onMessage((m) => this.handleInbound(m));
+  attachSource(source: MessageSource, replySink?: MessageSink): { dispose(): void } {
+    return source.onMessage((m) => this.handleInbound(m, replySink));
   }
 
   private emitData(agentId: number, chunk: string): void {
@@ -142,7 +149,7 @@ export class PtyManager {
     void this.opts.sink.postMessage({ type: 'ptyData', agentId, data: remaining });
   }
 
-  private handleInbound(message: Record<string, unknown>): void {
+  private handleInbound(message: Record<string, unknown>, replySink?: MessageSink): void {
     if (isPtyInputMessage(message)) {
       const w = this.workers.get(message.agentId);
       w?.write(message.data);
@@ -156,7 +163,9 @@ export class PtyManager {
     if (isTerminalPaneReadyMessage(message)) {
       const w = this.workers.get(message.agentId);
       if (!w) return;
-      void this.opts.sink.postMessage({
+      // Scrollback answers the requesting client only — broadcasting it would
+      // duplicate history into every other client's already-live pane.
+      void (replySink ?? this.opts.sink).postMessage({
         type: 'ptyScrollback',
         agentId: message.agentId,
         lines: w.scrollback(),

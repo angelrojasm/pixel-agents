@@ -31,10 +31,15 @@ function makeSource() {
     handlers,
     onMessage(h: Handler) {
       handlers.push(h);
-      return { dispose: () => {} };
+      return {
+        dispose: () => {
+          const i = handlers.indexOf(h);
+          if (i >= 0) handlers.splice(i, 1);
+        },
+      };
     },
     emit(message: Record<string, unknown>) {
-      for (const h of handlers) h(message);
+      for (const h of [...handlers]) h(message);
     },
   };
 }
@@ -43,13 +48,15 @@ function makeSource() {
  *  can drive the manager deterministically without spawning a real subprocess. */
 interface FakeWorker {
   worker: PtyWorker;
+  writes: string[];
   fireData: (chunk: string) => void;
   fireExit: (info: { code: number; signal?: string }) => void;
 }
 
-function makeFakeWorker(): FakeWorker {
+function makeFakeWorker(scrollbackLines: string[] = []): FakeWorker {
   const dataHandlers: ((c: string) => void)[] = [];
   const exitHandlers: ((info: { code: number; signal?: string }) => void)[] = [];
+  const writes: string[] = [];
   const worker = {
     onData: (h: (c: string) => void) => {
       dataHandlers.push(h);
@@ -57,14 +64,17 @@ function makeFakeWorker(): FakeWorker {
     onExit: (h: (info: { code: number; signal?: string }) => void) => {
       exitHandlers.push(h);
     },
-    write: () => {},
+    write: (data: string) => {
+      writes.push(data);
+    },
     resize: () => {},
     kill: () => {},
-    scrollback: () => [],
+    scrollback: () => scrollbackLines,
     isAlive: () => true,
   } as unknown as PtyWorker;
   return {
     worker,
+    writes,
     fireData: (chunk) => dataHandlers.forEach((h) => h(chunk)),
     fireExit: (info) => exitHandlers.forEach((h) => h(info)),
   };
@@ -241,6 +251,53 @@ describe('PtyManager', () => {
         }
       }, 10);
     });
+  });
+
+  it('sends ptyScrollback to the requesting subscription replySink, not broadcast', () => {
+    const broadcast = makeSink();
+    const replyA = makeSink();
+    const fake = makeFakeWorker(['old-line-1', 'old-line-2']);
+    const manager = new PtyManager({ sink: broadcast, workerFactory: () => fake.worker });
+
+    const srcA = makeSource();
+    manager.attachSource(srcA, replyA);
+    manager.start(20, {
+      shell: '/bin/sh',
+      args: [],
+      cwd: process.cwd(),
+      env: {},
+      cols: 80,
+      rows: 24,
+    });
+
+    srcA.emit({ type: 'terminalPaneReady', agentId: 20 });
+
+    expect(replyA.sent.filter((m) => m.type === 'ptyScrollback')).toHaveLength(1);
+    expect(broadcast.sent.filter((m) => m.type === 'ptyScrollback')).toHaveLength(0);
+
+    manager.disposeAll();
+  });
+
+  it('a disposed attachment stops receiving inbound messages', () => {
+    const fake = makeFakeWorker();
+    const manager = new PtyManager({ sink: makeSink(), workerFactory: () => fake.worker });
+
+    const src = makeSource();
+    const sub = manager.attachSource(src);
+    manager.start(21, {
+      shell: '/bin/sh',
+      args: [],
+      cwd: process.cwd(),
+      env: {},
+      cols: 80,
+      rows: 24,
+    });
+
+    sub.dispose();
+    src.emit({ type: 'ptyInput', agentId: 21, data: 'x' });
+    expect(fake.writes).toEqual([]);
+
+    manager.disposeAll();
   });
 
   it('non-zero exit broadcasts both ptyExit and agentCrashed', () => {
