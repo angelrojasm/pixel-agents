@@ -2,22 +2,28 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Revision note (2026-08-16):** revised after plan review — 13 findings folded in
+> (multi-tab saveLayout broadcast, `isWsClient` marker, `onAgentsLaunched` hook, real
+> test-helper names, harness scaffolding for Tasks 5–8, corrected file paths/types).
+> Spec amendments recorded at the end of the spec document.
+
 **Goal:** Make the standalone daemon consume inbound WebSocket messages through a dispatch shared with the VS Code extension, fix all snapshot-replay message shapes with a contract test, and add browser layout import/export.
 
 **Architecture:** A new `daemon/uiDispatch.ts` owns the UI message switch for both hosts; host-only actions (dialogs, terminal reveal) route through a `HostActions` interface. WS-connect wiring moves out of the orchestrator into each host (`bin/serve.ts`, provider), which resolves the dispatch↔orchestrator circular dependency and gives WS sockets close-time cleanup. Snapshot replay reuses the live-path payload builders so shapes cannot drift, guarded by a contract test.
 
 **Tech Stack:** TypeScript (strict, `verbatimModuleSyntax`, no enums), Vitest (root: `src/`, `bin/`, `daemon/`, `server/`), node test runner (`webview-ui/test/`), esbuild + Vite.
 
-**Spec:** `docs/superpowers/specs/2026-08-16-daemon-inbound-dispatch-design.md`
+**Spec:** `docs/superpowers/specs/2026-08-16-daemon-inbound-dispatch-design.md` (including its Amendments section)
 
 ## Global Constraints
 
-- The daemon must never import `vscode`. Shared modules reach the host only via `src/hostBridge.ts` (`host()`). `import type * as vscode` is allowed (erased).
+- The daemon must never import `vscode`. Shared modules reach the host only via `src/hostBridge.ts` (`host()`). `import type * as vscode` is allowed (erased). `host().workspaceFolders()` returns `string[]` (paths, not objects).
 - `import type` for type-only imports; no `enum`; `noUnusedLocals`/`noUnusedParameters`.
-- No inline magic numbers/strings — constants live in `src/constants.ts` / `server/src/constants.ts` / `webview-ui/src/constants.ts`.
+- No inline magic numbers/strings — constants live in `src/constants.ts` / `server/src/constants.ts` / `webview-ui/src/constants.ts`. Import `GLOBAL_KEY_SOUND_ENABLED` etc. rather than writing key strings.
+- Test isolation policy: deps objects use hand-rolled recording stubs (repo style). `vi.mock` is allowed for exactly two purposes: (a) HOME isolation (`vi.mock('os')` pointing `homedir()` at a temp dir — the pattern already in `daemon/__tests__/wsServer.integration.test.ts`), and (b) intercepting module-level imports that are not injectable (`src/agentManager` for `launchNewTerminal`/`restartPty`, `src/layoutPersistence` for `writeLayoutToFile`/`readLayoutFromFile`). Never let a test touch the real `~/.pixel-agents/`.
 - A pre-commit hook runs prettier/eslint on staged files — never bypass it.
 - Full check between tasks: `npm test` (vitest root suites) and, when webview files changed, `cd webview-ui && npm test`.
-- Replay trigger semantics (spec): WS clients replay on connect ONLY; VS Code webviews replay on `webviewReady`. Daemon `onWebviewReady` is a no-op.
+- Replay trigger semantics (spec): WS clients replay on connect ONLY (`ctx.isWsClient === true` suppresses `webviewReady` replay/init); VS Code webviews replay on `webviewReady`. Daemon `onWebviewReady` is a no-op.
 - Browser export exports **last-saved** layout state, never live editor state.
 
 ---
@@ -91,29 +97,9 @@ Expected: FAIL — `buildExistingAgentsPayload` is not exported.
 
 - [ ] **Step 3: Implement by extraction**
 
-In `src/agentManager.ts`, move the body of `sendExistingAgents` between the guard and the `postMessage` into a new exported function; `sendExistingAgents` becomes:
+In `src/agentManager.ts`, move the body of `sendExistingAgents` between the guard and the `postMessage` (the agentIds sort, agentMeta, folderNames/externalAgents/ptyBackedAgents, terminalNames loops — moved verbatim) into the new exported function; `sendExistingAgents` becomes:
 
 ```ts
-export function buildExistingAgentsPayload(agents: Map<number, AgentState>): {
-  agents: number[];
-  agentMeta: Record<number, { palette: number; hueShift: number; workSeatId?: string }>;
-  folderNames: Record<number, string>;
-  externalAgents: Record<number, boolean>;
-  terminalNames: Record<number, string>;
-  ptyBackedAgents: Record<number, boolean>;
-} {
-  // …verbatim body currently in sendExistingAgents (agentIds sort, agentMeta,
-  // folderNames/externalAgents/ptyBackedAgents, terminalNames loops)…
-  return {
-    agents: agentIds,
-    agentMeta,
-    folderNames,
-    externalAgents,
-    terminalNames,
-    ptyBackedAgents,
-  };
-}
-
 export function sendExistingAgents(
   agents: Map<number, AgentState>,
   webview: MessageSink | undefined,
@@ -127,7 +113,7 @@ export function sendExistingAgents(
 }
 ```
 
-- [ ] **Step 4: Run the test + the whole extension suite**
+- [ ] **Step 4: Run the test + the whole suite**
 
 Run: `npx vitest run src/__tests__/existingAgentsPayload.test.ts && npm test`
 Expected: PASS everywhere (extraction is behavior-preserving).
@@ -146,7 +132,7 @@ git commit -m "refactor: extract buildExistingAgentsPayload from sendExistingAge
 **Files:**
 
 - Modify: `daemon/snapshotReplay.ts` (whole `SnapshotDeps` + `replaySnapshot`)
-- Modify: `daemon/orchestrator.ts` — BOTH dep sites: the `server.onWebSocketConnect` block (~407–423) and `replaySnapshotToSink` (~690–706)
+- Modify: `daemon/orchestrator.ts` — BOTH dep sites: the `server.onWebSocketConnect` block (~407–423) and `replaySnapshotToSink` (~690–706); also retype the cache at ~line 268
 - Modify: `daemon/__tests__/snapshotReplay.test.ts` (asserts the old wrong shapes)
 - Test: `daemon/__tests__/snapshotReplay.contract.test.ts` (create)
 
@@ -278,7 +264,7 @@ describe('snapshotReplay message contract', () => {
     expect((existing.agents as unknown[]).every((id) => typeof id === 'number')).toBe(true);
   });
 
-  it('falls back is caller-provided: emits layoutLoaded whenever getLayout returns non-null', async () => {
+  it('skips layoutLoaded when getLayout returns null (fallback lives in the caller)', async () => {
     const messages: Array<Record<string, unknown>> = [];
     const d = deps({ postMessage: async (m) => void messages.push(m as Record<string, unknown>) });
     d.getLayout = () => null;
@@ -315,9 +301,11 @@ if (health) await deps.sink.postMessage({ type: 'hookHealthChanged', ...health }
 
 Phase 3 (per-agent replays) is unchanged.
 
-- [ ] **Step 4: Update the two orchestrator dep sites**
+- [ ] **Step 4: Update the two orchestrator dep sites + the cache type**
 
-In `daemon/orchestrator.ts`, in BOTH `server.onWebSocketConnect` (~407) and `replaySnapshotToSink` (~690), replace:
+Retype the cache at ~line 268: `let cachedFurnitureAssets: { catalog: unknown; sprites?: unknown } | null = null;` (the assignments at ~588/~974 already produce that shape).
+
+In BOTH `server.onWebSocketConnect` (~407) and `replaySnapshotToSink` (~690), replace:
 
 ```ts
 getExistingAgents: () => getAgentIds(agents).map((id) => ({ id })),
@@ -336,7 +324,7 @@ getHookHealth: () => {
 },
 ```
 
-Add `buildExistingAgentsPayload` to the existing `../src/agentManager.js` import. Delete the now-unused `getAgentIds` helper if nothing else uses it.
+`getFurnitureAssets` keeps its `?? { catalog: [] }` fallback (now type-correct via the retyped cache). Add `buildExistingAgentsPayload` to the existing `../src/agentManager.js` import. Delete the now-unused `getAgentIds` helper if nothing else uses it.
 
 - [ ] **Step 5: Update `daemon/__tests__/snapshotReplay.test.ts`**
 
@@ -361,47 +349,60 @@ git commit -m "fix(daemon): snapshot replay speaks the webview contract; add con
 **Files:**
 
 - Modify: `src/pty/ptyManager.ts`
-- Test: extend `src/pty/__tests__/ptyManager.test.ts` (existing file; add cases)
+- Modify+Test: `src/pty/__tests__/ptyManager.test.ts` — existing helpers are `makeSink` / `makeSource` / `makeFakeWorker` (NOT `fakeSource`/`fakeStartOpts`)
 
 **Interfaces:**
 
 - Produces: `PtyManagerOptions.source` becomes optional; `PtyManagerOptions.replySink?: MessageSink`; `attachSource(source: MessageSource, replySink?: MessageSink): { dispose(): void }` — `ptyScrollback` goes to that subscription's `replySink ?? opts.sink`; `ptyData`/`ptyExit` stay on `opts.sink`. Consumed by Task 5's `ensurePtyManager`.
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Upgrade `makeSource` so dispose is real**
 
-Add to `src/pty/__tests__/ptyManager.test.ts` (reuse the file's existing fake worker/source helpers — follow its local patterns):
+The current `makeSource().onMessage` returns a no-op `{ dispose: () => {} }`. Since `attachSource` returns `source.onMessage(...)` directly, disposal semantics live in the source. Change `makeSource` to keep a handler list and return a dispose that removes the handler; `emit` calls every registered handler:
 
 ```ts
-it('sends ptyScrollback to the requesting subscription replySink, not broadcast', async () => {
-  const broadcast: unknown[] = [];
-  const replyA: unknown[] = [];
-  const mgr = new PtyManager({ sink: { postMessage: async (m) => void broadcast.push(m) } });
-  const srcA = fakeSource(); // file-local helper: { onMessage(h) {…}, emit(m) {…} }
-  mgr.attachSource(srcA, { postMessage: async (m) => void replyA.push(m) });
-  mgr.start(1, fakeStartOpts());
+function makeSource() {
+  const handlers: Array<(m: Record<string, unknown>) => void> = [];
+  return {
+    onMessage(h: (m: Record<string, unknown>) => void) {
+      handlers.push(h);
+      return { dispose: () => handlers.splice(handlers.indexOf(h), 1) };
+    },
+    emit: (m: Record<string, unknown>) => [...handlers].forEach((h) => h(m)),
+  };
+}
+```
+
+- [ ] **Step 2: Write failing tests** (use `makeFakeWorker` + the `workerFactory` option so no real `PtyWorker` spawns — follow how the file's existing tests construct `PtyManager`):
+
+```ts
+it('sends ptyScrollback to the requesting subscription replySink, not broadcast', () => {
+  const broadcast = makeSink();
+  const replyA = makeSink();
+  const mgr = new PtyManager({ sink: broadcast, workerFactory: () => makeFakeWorker() });
+  const srcA = makeSource();
+  mgr.attachSource(srcA, replyA);
+  mgr.start(1, startOpts()); // the file's existing start-options helper/literal
   srcA.emit({ type: 'terminalPaneReady', agentId: 1 });
-  expect(replyA.some((m) => (m as { type: string }).type === 'ptyScrollback')).toBe(true);
-  expect(broadcast.some((m) => (m as { type: string }).type === 'ptyScrollback')).toBe(false);
+  expect(replyA.messages.some((m) => m.type === 'ptyScrollback')).toBe(true);
+  expect(broadcast.messages.some((m) => m.type === 'ptyScrollback')).toBe(false);
 });
 
 it('a disposed attachment stops receiving inbound messages', () => {
-  const written: string[] = [];
-  const mgr = new PtyManager({ sink: { postMessage: async () => {} } });
-  const src = fakeSource();
+  const worker = makeFakeWorker();
+  const mgr = new PtyManager({ sink: makeSink(), workerFactory: () => worker });
+  const src = makeSource();
   const sub = mgr.attachSource(src);
-  mgr.start(1, fakeStartOpts({ onWrite: (d) => written.push(d) }));
+  mgr.start(1, startOpts());
   sub.dispose();
   src.emit({ type: 'ptyInput', agentId: 1, data: 'x' });
-  expect(written).toEqual([]);
+  expect(worker.writes).toEqual([]); // makeFakeWorker records writes
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+(Adapt property names to `makeSink`/`makeFakeWorker`'s actual recording fields — read the helpers first; extend `makeFakeWorker` with a `writes` array if it lacks one.)
 
-Run: `npx vitest run src/pty/__tests__/ptyManager.test.ts`
-Expected: FAIL — constructor requires `source`; scrollback goes to broadcast.
-
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Run to verify they fail** — constructor requires `source`; scrollback goes to broadcast.
+- [ ] **Step 4: Implement**
 
 ```ts
 // PtyManagerOptions: source?: MessageSource; replySink?: MessageSink;
@@ -431,8 +432,8 @@ private handleInbound(message: Record<string, unknown>, replySink?: MessageSink)
 }
 ```
 
-- [ ] **Step 4: Run pty tests + full suite** — `npm test` → PASS.
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run pty tests + full suite** — `npm test` → PASS.
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/pty/
@@ -446,15 +447,38 @@ git commit -m "fix(pty): per-client scrollback replies; disposable source attach
 **Files:**
 
 - Modify: `server/src/server.ts` (`wsConnectHandler` type ~line 62, `onWebSocketConnect` ~line 80, upgrade handler ~line 166)
-- Test: extend `daemon/__tests__/wsServer.integration.test.ts`
+- Test: extend `daemon/__tests__/wsServer.integration.test.ts` — and ADD the shared helpers this file lacks (it currently hand-rolls raw `new WebSocket(...)` + inline promises per test; keep its `vi.mock('os')` HOME-isolation pattern)
 
 **Interfaces:**
 
-- Produces: `onWebSocketConnect(cb: (src: WebSocketSource, perClientSink: WebSocketSink, broadcast: WebSocketBroadcast) => (() => void) | void)` — the returned function runs when that socket closes. Consumed by Tasks 7–8.
+- Produces: `onWebSocketConnect(cb: (src: WebSocketSource, perClientSink: WebSocketSink, broadcast: WebSocketBroadcast) => (() => void) | void)` — the returned function runs when that socket closes. Also produces the test helpers `connectClient(cfg): Promise<WebSocket>` and `waitFor(pred, ms?): Promise<void>` used by Task 8. Consumed by Tasks 7–8.
 
-- [ ] **Step 1: Write failing integration test**
+- [ ] **Step 1: Add the test helpers (top of the integration test file)**
 
-Add to `daemon/__tests__/wsServer.integration.test.ts` (follow its existing start-server/connect-client helpers):
+```ts
+async function connectClient(cfg: { port: number; token: string }): Promise<WebSocket> {
+  const ws = new WebSocket(`ws://127.0.0.1:${cfg.port}/ws?token=${cfg.token}`, {
+    headers: { origin: `http://127.0.0.1:${cfg.port}` },
+  });
+  await new Promise<void>((res, rej) => {
+    ws.on('open', res);
+    ws.on('error', rej);
+  });
+  return ws;
+}
+
+async function waitFor(pred: () => boolean, ms = 2000): Promise<void> {
+  const start = Date.now();
+  while (!pred()) {
+    if (Date.now() - start > ms) throw new Error('waitFor timeout');
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+```
+
+(Match the Origin-header/token mechanics to what the file's existing two tests already do — reuse their exact connection incantation.)
+
+- [ ] **Step 2: Write the failing test**
 
 ```ts
 it('invokes the connect callback cleanup when the socket closes', async () => {
@@ -462,17 +486,17 @@ it('invokes the connect callback cleanup when the socket closes', async () => {
   server.onWebSocketConnect(() => () => {
     cleaned += 1;
   });
-  const ws = await connectClient(); // existing helper
+  const ws = await connectClient(cfg);
   ws.close();
-  await waitFor(() => cleaned === 1); // existing polling helper
+  await waitFor(() => cleaned === 1);
   expect(cleaned).toBe(1);
 });
 ```
 
-- [ ] **Step 2: Run to verify failure** — cleanup never invoked; test times out/fails.
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Run to verify failure** — cleanup never invoked; `waitFor` times out.
+- [ ] **Step 4: Implement**
 
-In the upgrade handler:
+In the upgrade handler (the current separate `ws.on('close', …)` registration merges into this one):
 
 ```ts
 this.wss!.handleUpgrade(req, sock, head, (ws) => {
@@ -489,10 +513,8 @@ this.wss!.handleUpgrade(req, sock, head, (ws) => {
 });
 ```
 
-(The current separate `ws.on('close', …)` registration merges into this one.)
-
-- [ ] **Step 4: Run** `npm test` → PASS.
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run** `npm test` → PASS.
+- [ ] **Step 6: Commit**
 
 ```bash
 git add server/src/server.ts daemon/__tests__/wsServer.integration.test.ts
@@ -501,25 +523,78 @@ git commit -m "feat(server): WS connect callbacks may return close-time cleanup"
 
 ---
 
-### Task 5: Orchestrator — workspace-aware Watch-All prune, new `ensurePtyManager`, drop connect block
+### Task 5: Orchestrator — workspace-aware Watch-All prune, new `ensurePtyManager`, `persistNow`, drop connect block
 
 **Files:**
 
 - Modify: `daemon/orchestrator.ts`
-- Test: extend `daemon/__tests__/orchestrator.test.ts` (exists; follow its stub patterns)
+- Test: `daemon/__tests__/orchestrator.test.ts` (CREATE — it does not exist; scaffolding below)
 
 **Interfaces:**
 
-- Produces: `ensurePtyManager(source: MessageSource, replySink?: MessageSink): { dispose(): void }` (interface ~line 171 + impl ~line 479); `handleSettingsMessage('setWatchAllSessions', …)` prunes only externals whose `projectDir` is outside `host().workspaceFolders()`. The orchestrator no longer registers `server.onWebSocketConnect` (hosts do, Tasks 7–8).
+- Produces: `ensurePtyManager(source: MessageSource, replySink?: MessageSink): { dispose(): void }` (interface ~line 171 + impl ~line 479); `persistNow(): void` (exposes the private `doPersist` closure — Task 8 needs it); `handleSettingsMessage('setWatchAllSessions', …)` prunes only externals whose `projectDir` is outside `host().workspaceFolders()`. The orchestrator no longer registers `server.onWebSocketConnect` (hosts do, Tasks 7–8; grep confirms no existing test references that block).
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Create the test file with a minimal server stub**
+
+`createOrchestrator` calls `server.onHookEvent` / `server.onHealthChange` at construction and `server.getHealthState` during replay — stub them:
+
+```ts
+// daemon/__tests__/orchestrator.test.ts
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as os from 'node:os';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { createOrchestrator } from '../orchestrator';
+import { createConfigStore } from '../configStore';
+import { setHostBridge, daemonHostBridge } from '../../src/hostBridge';
+import type { PixelAgentsServer } from '../../server/src/server';
+
+vi.mock('os', async (orig) => {
+  const real = (await orig()) as typeof os;
+  return { ...real, homedir: () => TEMP_HOME, default: { ...real, homedir: () => TEMP_HOME } };
+});
+let TEMP_HOME: string;
+
+function stubServer(): PixelAgentsServer {
+  return {
+    onHookEvent: () => {},
+    onHealthChange: () => {},
+    onWebSocketConnect: () => {},
+    getHealthState: () => null,
+    getBroadcastSink: () => ({ postMessage: async () => {} }),
+  } as unknown as PixelAgentsServer;
+}
+
+function makeOrchestrator(sinkMessages: unknown[]) {
+  const home = TEMP_HOME;
+  return createOrchestrator({
+    broadcastSink: { postMessage: async (m) => void sinkMessages.push(m) },
+    server: stubServer(),
+    config: createConfigStore(path.join(home, '.pixel-agents', 'config.json')),
+    agentsFilePath: path.join(home, '.pixel-agents', 'agents.json'),
+    assetsRoot: null,
+    extensionVersion: '',
+  });
+}
+
+beforeEach(() => {
+  TEMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'px-orch-'));
+});
+afterEach(() => {
+  setHostBridge(daemonHostBridge);
+  fs.rmSync(TEMP_HOME, { recursive: true, force: true });
+});
+```
+
+(Adjust to `createOrchestrator`'s ACTUAL dep names/`setHostBridge` export names — read `daemon/orchestrator.ts` deps interface and `src/hostBridge.ts` first; the vi.mock('os') shape must match what `wsServer.integration.test.ts` already does.)
+
+- [ ] **Step 2: Write the failing tests**
 
 ```ts
 it('setWatchAllSessions(false) keeps externals inside the host workspace', () => {
-  // Arrange: hostBridge stub returning one workspace folder whose
-  // getProjectDirPath(...) equals agentInWorkspace.projectDir (use setHostBridge
-  // from src/hostBridge with a test double; restore defaultbridge in afterEach).
-  // Two external agents: one inside, one outside.
+  setHostBridge({ ...daemonHostBridge, workspaceFolders: () => ['/ws/proj'] });
+  // seed o.agents (cast to Map) with two externals: one whose projectDir equals
+  // getProjectDirPath('/ws/proj'), one foreign; then:
   o.handleSettingsMessage('setWatchAllSessions', { enabled: false });
   expect(agents.has(insideId)).toBe(true);
   expect(agents.has(outsideId)).toBe(false);
@@ -531,20 +606,21 @@ it('setWatchAllSessions(false) with empty workspace prunes all externals (daemon
 });
 
 it('ensurePtyManager returns a disposable per source', () => {
-  const sub = o.ensurePtyManager(fakeSource());
+  const sub = o.ensurePtyManager({ onMessage: () => ({ dispose: () => {} }) });
   expect(typeof sub.dispose).toBe('function');
 });
 ```
 
-- [ ] **Step 2: Run to verify failures.**
+Run to verify failures.
+
 - [ ] **Step 3: Implement**
 
-(a) In `handleSettingsMessage`'s `setWatchAllSessions` disable branch, replace `if (agent.isExternal)` with the workspace-aware filter (mirrors the provider's `handleSetWatchAllSessions`, which Task 7 deletes):
+(a) In `handleSettingsMessage`'s `setWatchAllSessions` disable branch, replace `if (agent.isExternal)` with the workspace-aware filter (mirrors the provider's `handleSetWatchAllSessions`, which Task 7 deletes). `host().workspaceFolders()` returns `string[]`:
 
 ```ts
 const workspaceDirs = new Set<string>();
 for (const folder of host().workspaceFolders()) {
-  const dir = getProjectDirPath(folder.path);
+  const dir = getProjectDirPath(folder);
   if (dir) workspaceDirs.add(dir);
 }
 for (const [id, agent] of agents) {
@@ -552,9 +628,9 @@ for (const [id, agent] of agents) {
 }
 ```
 
-Import `host` from `../src/hostBridge.js`; match `getProjectDirPath`'s actual signature/location (used by the provider — import from the same module). Note the `HostBridge.workspaceFolders()` return element type — use its real field name for the fs path (check `src/hostBridge.ts`; adjust `folder.path` accordingly).
+Import `host` from `../src/hostBridge.js` and `getProjectDirPath` from wherever the provider imports it.
 
-(b) `ensurePtyManager`:
+(b) `ensurePtyManager` (update the interface declaration at ~line 171 to match):
 
 ```ts
 ensurePtyManager(source: MessageSource, replySink?: MessageSink): { dispose(): void } {
@@ -565,15 +641,15 @@ ensurePtyManager(source: MessageSource, replySink?: MessageSink): { dispose(): v
 },
 ```
 
-Update the interface declaration (~line 171) to match.
+(c) Add `persistNow(): void { doPersist(); }` to the returned object + interface.
 
-(c) Delete the whole `server.onWebSocketConnect((_src, perClientSink, _broadcast) => …)` block (~406–423). `replaySnapshotToSink` remains the single replay entry point.
+(d) Delete the whole `server.onWebSocketConnect((_src, perClientSink, _broadcast) => …)` block (~406–423). `replaySnapshotToSink` remains the single replay entry point.
 
-- [ ] **Step 4: Run** `npm test` → PASS (some orchestrator tests may reference the removed block's behavior — update them to call `replaySnapshotToSink` directly).
+- [ ] **Step 4: Run** `npm test` → PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add daemon/orchestrator.ts daemon/__tests__/
+git add daemon/orchestrator.ts daemon/__tests__/orchestrator.test.ts
 git commit -m "refactor(orchestrator): workspace-aware watch-all prune; disposable ensurePtyManager; hosts own WS wiring"
 ```
 
@@ -601,10 +677,17 @@ export interface HostActions {
   openSessionsFolder(): void;
   pickExternalAssetDirectory(): Promise<string | null>;
   getBypassPermissions(): boolean;
+  /** Post-launch side effects for newly created agents (extension seeds its
+   *  lastSentTerminalNames map here; daemon no-op). */
+  onAgentsLaunched(newAgents: AgentState[]): void;
   onWebviewReady(ctx: DispatchContext): Promise<void>;
 }
 export interface DispatchContext {
   replySink: MessageSink;
+  /** true when the message arrived over a WebSocket (hosts set it in their
+   *  connect wiring). Suppresses webviewReady replay/init — WS clients already
+   *  replayed on connect. */
+  isWsClient?: boolean;
 }
 export function createUiDispatch(deps: {
   orchestrator: Orchestrator;
@@ -617,31 +700,44 @@ export function createUiDispatch(deps: {
 }): { handle(message: Record<string, unknown>, ctx: DispatchContext): Promise<void> };
 ```
 
-- [ ] **Step 1: Write the failing table test** (one `it` per routing row; stub orchestrator records calls)
+- [ ] **Step 1: Write the failing table test** — one `it` per routing row; deps objects are hand-rolled recording stubs. Module-level imports that cannot be injected are intercepted per the Global Constraints policy:
 
 ```ts
-// daemon/__tests__/uiDispatch.test.ts — representative cases; cover EVERY row:
-it('openClaude calls launchNewTerminal-path and registers new agents', async () => { /* stub agents map gains id 7 during launch; expect registerAgentHook(7) */ });
-it('focusAgent routes to hostActions.focusTerminal with lead fallback', async () => { … });
-it('closeAgent: ptyBacked → closeExternalOrPtyAgent', async () => { … });
-it('closeAgent: terminalRef → hostActions.disposeTerminal', async () => { … });
-it('closeAgent: external → closeExternalOrPtyAgent', async () => { … });
-it('saveLayout marks own write then persists', async () => { … });
-it('setHooksEnabled forwards deps.hookScriptSourcePath', async () => { … });
-it('setWatchAllSessions goes through o.handleSettingsMessage (not the provider copy)', async () => { … });
-it('requestDiagnostics posts agentDiagnostics to ctx.replySink, not broadcast', async () => { … });
-it('webviewReady calls hostActions.onWebviewReady', async () => { … });
-it('importLayout with valid inline layout writes file + broadcasts layoutLoaded', async () => { … });
-it('importLayout with bad payload (version !== 1) writes nothing', async () => { … });
-it('importLayout without payload → hostActions.importLayoutViaDialog', async () => { … });
-it('openExternal reads message.uri', async () => { … });
-it('restartAgent uses hostActions.getBypassPermissions and broadcasts agentRestarted on success', async () => { … });
-it('addExternalAssetDirectory: null pick is a no-op', async () => { … });
-it('removeExternalAssetDirectory filters config and rebroadcasts dirs', async () => { … });
-it('unknown set* falls through to o.handleSettingsMessage', async () => { … });
+vi.mock('../../src/agentManager.js', async (orig) => ({
+  ...(await orig()),
+  launchNewTerminal: vi.fn(async () => {}),
+  restartPty: vi.fn(() => true),
+}));
+vi.mock('../../src/layoutPersistence.js', async (orig) => ({
+  ...(await orig()),
+  writeLayoutToFile: vi.fn(),
+}));
 ```
 
-Write real stub objects (plain objects with recording arrays); no mocking library — the repo's daemon tests use hand-rolled stubs.
+(Adjust specifiers to how `uiDispatch.ts` actually imports them.) Cases to cover — every routing row:
+
+```ts
+it('openClaude launches, registers new agents, and calls hostActions.onAgentsLaunched', …);
+it('focusAgent routes to hostActions.focusTerminal with lead fallback', …);
+it('closeAgent: ptyBacked → closeExternalOrPtyAgent', …);
+it('closeAgent: terminalRef → hostActions.disposeTerminal', …);
+it('closeAgent: external → closeExternalOrPtyAgent', …);
+it('saveLayout: markLayoutWrite → writeLayoutToFile → broadcasts layoutLoaded to ALL clients', …); // spec amendment 1
+it('setHooksEnabled forwards deps.hookScriptSourcePath', …);
+it('setWatchAllSessions goes through o.handleSettingsMessage', …);
+it('requestDiagnostics posts agentDiagnostics to ctx.replySink, not broadcast', …);
+it('webviewReady calls hostActions.onWebviewReady with ctx (incl. isWsClient)', …);
+it('importLayout with valid inline layout writes file + broadcasts layoutLoaded', …);
+it('importLayout with bad payload (version !== 1) writes nothing', …);
+it('importLayout without payload → hostActions.importLayoutViaDialog', …);
+it('openExternal reads message.uri', …);
+it('restartAgent uses hostActions.getBypassPermissions and broadcasts agentRestarted on success', …);
+it('addExternalAssetDirectory: null pick is a no-op', …);
+it('removeExternalAssetDirectory filters config and rebroadcasts dirs', …);
+it('unknown set* falls through to o.handleSettingsMessage', …);
+```
+
+(`removeExternalAssetDirectory` touches `readConfig`/`writeConfig` → run under the vi.mock('os') temp-HOME pattern so no real `~/.pixel-agents/config.json` is touched.)
 
 - [ ] **Step 2: Run to verify failures** (module doesn't exist).
 - [ ] **Step 3: Implement `createUiDispatch`**
@@ -649,8 +745,10 @@ Write real stub objects (plain objects with recording arrays); no mocking librar
 Port each branch from `PixelAgentsViewProvider.handleWebviewMessage` (lines 301–701) verbatim, with these substitutions:
 
 - `this.agents` → `deps.agents`; `this.broadcastSink` → `deps.broadcastSink`; `this.config` → `deps.config`; `this.persistAgentsFn` → `deps.persistAgents`; `o` → `deps.orchestrator`.
-- `focusAgent`: keep the agent/lead resolution, end with `deps.hostActions.focusTerminal(agent, lead)` (host decides what "show" means).
+- `openClaude`: after the launch + `registerAgentHook` loop, replace the provider's `lastSentTerminalNames` seeding (lines 325–327) with `deps.hostActions.onAgentsLaunched(newAgents)` where `newAgents` is the collected list of agents not in `prevAgentIds`.
+- `focusAgent`: keep the agent/lead resolution, end with `deps.hostActions.focusTerminal(agent, lead)`.
 - `closeAgent`: `ptyBacked` → `o.closeExternalOrPtyAgent`; `agent.terminalRef` → `deps.hostActions.disposeTerminal(agent)`; else `o.closeExternalOrPtyAgent`.
+- `saveLayout` (spec amendment 1): after `o.markLayoutWrite(); writeLayoutToFile(layout);` add `deps.broadcastSink.postMessage({ type: 'layoutLoaded', layout });` — single-process daemon has no cross-process file watcher, so the broadcast IS the sync channel. The origin client's dirty-editor guard preserves last-save-wins.
 - `setHooksEnabled`: `o.setHooksEnabled(enabled, deps.hookScriptSourcePath)` — the orchestrator method already wraps install/uninstall + copyHookScript; do NOT re-implement the provider's inline copy.
 - `setWatchAllSessions`: forward to `o.handleSettingsMessage('setWatchAllSessions', message)`.
 - `requestDiagnostics`: identical body, final post to `ctx.replySink`.
@@ -677,7 +775,8 @@ git commit -m "feat(daemon): shared UI message dispatch with HostActions seam"
 **Files:**
 
 - Modify: `src/PixelAgentsViewProvider.ts` (delete the 301–701 switch + `handleSetWatchAllSessions`; add hostActions + dispatch + WS connect registration + broadcast bridging)
-- Test: `src/__tests__/providerDispatch.test.ts` (create — delegation smoke test with a stubbed dispatch)
+- Modify: `server/__mocks__/vscode.ts` (add `window.onDidChangeActiveTerminal` / `window.onDidCloseTerminal` returning `{ dispose() {} }` — the provider constructor calls both and the mock lacks them)
+- Test: `src/__tests__/providerDispatch.test.ts` (create)
 
 **Interfaces:**
 
@@ -697,8 +796,19 @@ private buildHostActions(): HostActions {
     pickExternalAssetDirectory: async () => { /* dialog part of 620–628; return fsPath or null */ },
     getBypassPermissions: () =>
       !!this.context.workspaceState.get<boolean>('pixel-agents.bypassPermissions', false),
-    onWebviewReady: async (ctx) => { /* moved lines 387–575 verbatim; the per-view replay
-      at 557–562 uses ctx.replySink instead of building perViewSink from originWebview */ },
+    onAgentsLaunched: (newAgents) => {
+      for (const a of newAgents) {
+        if (a.terminalRef?.name) this.lastSentTerminalNames.set(a.id, a.terminalRef.name);
+      }
+    },
+    onWebviewReady: async (ctx) => {
+      if (ctx.isWsClient) return; // WS clients replayed on connect; never run first-boot init for them
+      /* moved lines 387–575 verbatim, with TWO adaptations:
+         (1) the per-view replay at 557–562 uses ctx.replySink instead of building
+             perViewSink from originWebview;
+         (2) the hook-health post at 567–574 posts to ctx.replySink instead of
+             originWebview (drop the originWebview null-check accordingly). */
+    },
   };
 }
 ```
@@ -722,7 +832,9 @@ Construct `this.uiDispatch = createUiDispatch({ orchestrator, agents: this.agent
 // in the provider constructor, after the server exists:
 this.pixelAgentsServer.onWebSocketConnect((src, perClientSink) => {
   const ptySub = this.orchestrator.ensurePtyManager(src, perClientSink);
-  const uiSub = src.onMessage((m) => void this.uiDispatch.handle(m, { replySink: perClientSink }));
+  const uiSub = src.onMessage(
+    (m) => void this.uiDispatch.handle(m, { replySink: perClientSink, isWsClient: true }),
+  );
   void this.orchestrator.replaySnapshotToSink(perClientSink);
   return () => {
     ptySub.dispose();
@@ -737,12 +849,17 @@ Also update the two `ensurePtyManager(webviewMessageSource(...))` call sites (~2
 
 - [ ] **Step 3: Delegation test**
 
+Construction needs: the extended vscode mock (Step 0 edit above) AND the `vi.mock('os')` temp-HOME pattern (the constructor runs `createConfigStore` under `homedir()` and `pixelAgentsServer.start()` reads/writes `server.json` — never let it see the real `~/.pixel-agents/`). Stop the server in `afterEach`.
+
 ```ts
-// src/__tests__/providerDispatch.test.ts — with the vscode stub the suite already uses:
+// src/__tests__/providerDispatch.test.ts
 it('provider forwards a webview message to the shared dispatch with a per-view replySink', async () => {
-  // instantiate provider with stubbed deps; swap this.uiDispatch for a recorder;
-  // call the private handler via (provider as any).handleWebviewMessage({type:'saveLayout',layout:{}}, fakeWebview);
-  // assert recorder got the message and ctx.replySink posts to fakeWebview.
+  // construct provider with stubbed context (workspaceState.get → false, extensionPath: '/x');
+  // swap (provider as any).uiDispatch = { handle: recorder };
+  await (provider as any).handleWebviewMessage({ type: 'saveLayout', layout: {} }, fakeWebview);
+  expect(recorded[0].message.type).toBe('saveLayout');
+  recorded[0].ctx.replySink.postMessage({ type: 'x' });
+  expect(fakeWebview.posted).toEqual([{ type: 'x' }]);
 });
 ```
 
@@ -750,7 +867,7 @@ it('provider forwards a webview message to the shared dispatch with a per-view r
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/
+git add src/ server/__mocks__/vscode.ts
 git commit -m "refactor(extension): provider delegates to shared uiDispatch; WS clients bridged into broadcast"
 ```
 
@@ -762,11 +879,11 @@ git commit -m "refactor(extension): provider delegates to shared uiDispatch; WS 
 
 - Modify: `bin/serve.ts` (after `createOrchestrator`, before `orchestrator.start()`)
 - Create: `daemon/daemonHostActions.ts`
-- Test: extend `daemon/__tests__/wsServer.integration.test.ts`
+- Test: extend `daemon/__tests__/wsServer.integration.test.ts` (helpers from Task 4; NEW harness below)
 
 **Interfaces:**
 
-- Consumes: everything above. Produces the working daemon.
+- Consumes: everything above. `orchestrator.agents` is a `ReadonlyMap` on the interface — cast `orchestrator.agents as Map<number, AgentState>` (same cast the provider uses); `orchestrator.persistNow` from Task 5. Produces the working daemon.
 
 - [ ] **Step 1: `daemon/daemonHostActions.ts`**
 
@@ -789,6 +906,7 @@ export function createDaemonHostActions(): HostActions {
       return null;
     },
     getBypassPermissions: () => false,
+    onAgentsLaunched: () => {}, // extension-only side effect
     onWebviewReady: async () => {}, // replay happens on WS connect only (spec)
   };
 }
@@ -799,15 +917,17 @@ export function createDaemonHostActions(): HostActions {
 ```ts
 const dispatch = createUiDispatch({
   orchestrator,
-  agents: orchestrator.agents,
+  agents: orchestrator.agents as Map<number, AgentState>,
   broadcastSink: server.getBroadcastSink(),
   config,
-  persistAgents: orchestrator.doPersist,
+  persistAgents: () => orchestrator.persistNow(),
   hostActions: createDaemonHostActions(),
 });
 server.onWebSocketConnect((src, perClientSink) => {
   const ptySub = orchestrator.ensurePtyManager(src, perClientSink);
-  const uiSub = src.onMessage((m) => void dispatch.handle(m, { replySink: perClientSink }));
+  const uiSub = src.onMessage(
+    (m) => void dispatch.handle(m, { replySink: perClientSink, isWsClient: true }),
+  );
   void orchestrator.replaySnapshotToSink(perClientSink);
   return () => {
     ptySub.dispose();
@@ -816,38 +936,38 @@ server.onWebSocketConnect((src, perClientSink) => {
 });
 ```
 
-(If the orchestrator interface does not currently expose `agents`/`doPersist`, add typed getters — check `daemon/orchestrator.ts`'s public interface and extend it minimally.)
-
-- [ ] **Step 3: Failing integration tests, then run them**
+- [ ] **Step 3: Build the daemon-shaped test harness** in `wsServer.integration.test.ts` — a `describe('daemon dispatch over WS')` block whose `beforeEach` mirrors bin/serve.ts under the file's temp-HOME: real `PixelAgentsServer` (started), real `createConfigStore` (temp HOME), `createOrchestrator` with the server + config (assetsRoot: null; do NOT call `orchestrator.start()` — scanners are irrelevant here), `createUiDispatch` with `createDaemonHostActions()`, and the exact `onWebSocketConnect` wiring from Step 2. Then the failing tests:
 
 ```ts
+import { GLOBAL_KEY_SOUND_ENABLED } from '../../src/constants';
+
 it('setSoundEnabled over WS persists to the config store', async () => {
-  const ws = await connectClient();
+  const ws = await connectClient(cfg);
   ws.send(JSON.stringify({ type: 'setSoundEnabled', enabled: false }));
-  await waitFor(() => config.get('pixel-agents.soundEnabled') === false);
+  await waitFor(() => config.get(GLOBAL_KEY_SOUND_ENABLED) === false);
 });
 
 it('connect/close cycles do not leak pty or dispatch subscriptions', async () => {
-  for (let i = 0; i < 3; i++) {
-    const ws = await connectClient();
-    ws.close();
-    await waitFor(closed);
-  }
-  // assert via a counting fake in ensurePtyManager / recorded cleanups: 3 attach, 3 dispose
+  // count via wrapper: wrap orchestrator.ensurePtyManager to record returned
+  // disposables' dispose() calls; 3× (connect → close) ⇒ 3 attaches, 3 disposes
 });
 
 it('two clients: terminalPaneReady replies only to the requester', async () => {
-  const a = await connectClient();
-  const b = await connectClient();
+  // Needs a live worker: call (orchestrator.ptyManager ?? after ensurePtyManager)
+  //   .start(1, { shell: '/bin/cat', args: [], cwd: os.tmpdir(), cols: 80, rows: 24 })
+  // (match PtyStartOptions — read src/pty/types; /bin/cat echoes and exits clean).
+  const a = await connectClient(cfg);
+  const b = await connectClient(cfg);
   b.send(JSON.stringify({ type: 'terminalPaneReady', agentId: 1 }));
-  // collect frames on both sockets for 200ms:
+  // collect parsed frames on both sockets for ~300ms:
   expect(framesOf(a).filter((f) => f.type === 'ptyScrollback')).toHaveLength(0);
+  expect(framesOf(b).filter((f) => f.type === 'ptyScrollback')).toHaveLength(1);
 });
 ```
 
 (For `openClaude` end-to-end, spawning a real pty running `claude` is not test-safe; the dispatch-level openClaude behavior is covered in Task 6, and the manual QA re-run covers it live.)
 
-- [ ] **Step 4: Run** `npm test` and a smoke boot: `npm run build && node dist/bin/serve.js --no-open` then `node dist/bin/serve.js status` + `node dist/bin/serve.js stop`. Expected: boots, status OK, stops clean.
+- [ ] **Step 4: Run** `npm test` and a smoke boot: `npm run build && node dist/bin/serve.js --no-open`, then `node dist/bin/serve.js status` + `node dist/bin/serve.js stop` (mind the running-VS-Code `server.json` caveat from the QA doc). Expected: boots, status OK, stops clean.
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -862,7 +982,7 @@ git commit -m "feat(daemon): wire inbound WS dispatch — browser tab can act, n
 **Files:**
 
 - Create: `webview-ui/src/office/layoutFile.ts`
-- Modify: `webview-ui/src/hooks/useExtensionMessages.ts` (layoutLoaded handler ~line 197), `webview-ui/src/App.tsx` (onExportLayout/onImportLayout ~line 538)
+- Modify: `webview-ui/src/hooks/useExtensionMessages.ts` (layoutLoaded handler ~line 197), `webview-ui/src/App.tsx` (onExportLayout/onImportLayout ~line 538), `webview-ui/src/constants.ts` (add `LAYOUT_EXPORT_FILENAME = 'pixel-agents-layout.json'`)
 - Test: `webview-ui/test/layout-file.test.ts` (create)
 
 **Interfaces:**
@@ -876,6 +996,8 @@ export function isValidLayout(x: unknown): x is { version: 1; tiles: unknown[] }
 export function downloadSavedLayout(doc: Document): boolean; // false when nothing saved
 export function pickLayoutFile(doc: Document, onLayout: (layout: unknown) => void): void;
 ```
+
+Freshness note: Task 6's `saveLayout` row broadcasts `layoutLoaded` after every save, so `rememberSavedLayout` (hooked into the `layoutLoaded` handler) always tracks the last-saved state — no extra hook at the save site is needed.
 
 - [ ] **Step 1: Failing tests (node test runner — pure parts only)**
 
@@ -893,7 +1015,7 @@ test('isValidLayout accepts version-1 layouts with tiles', () => {
 });
 
 test('rememberSavedLayout stores the raw payload verbatim', () => {
-  const raw = { version: 1, tiles: [0], tileColors: undefined };
+  const raw = { version: 1, tiles: [0] };
   rememberSavedLayout(raw);
   assert.equal(getSavedLayout(), raw); // same reference — never the migrated copy
 });
@@ -904,6 +1026,8 @@ Run: `cd webview-ui && npm test` → FAIL (module missing).
 - [ ] **Step 2: Implement `layoutFile.ts`**
 
 ```ts
+import { LAYOUT_EXPORT_FILENAME } from '../constants';
+
 let savedLayout: unknown | null = null;
 export function rememberSavedLayout(layout: unknown): void {
   savedLayout = layout;
@@ -924,7 +1048,7 @@ export function downloadSavedLayout(doc: Document): boolean {
   const blob = new Blob([JSON.stringify(savedLayout, null, 2)], { type: 'application/json' });
   const a = doc.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = LAYOUT_EXPORT_FILENAME; // add to webview-ui/src/constants.ts: 'pixel-agents-layout.json'
+  a.download = LAYOUT_EXPORT_FILENAME;
   a.click();
   URL.revokeObjectURL(a.href);
   return true;
@@ -982,7 +1106,7 @@ git commit -m "feat(webview): browser layout export (download) and import (file 
 
 **Interfaces:**
 
-- Produces: `export function shouldUseBrowserMock(doc: Pick<Document, 'querySelector'>): boolean` in `runtime.ts` — true only when browser runtime AND no `meta[name="px-token"]`.
+- Produces: `export function shouldUseBrowserMock(doc: Pick<Document, 'querySelector'>): boolean` in `runtime.ts` — true only when `isBrowserRuntime` AND no `meta[name="px-token"]`. (Under the node test runner `acquireVsCodeApi` is undefined, so `isBrowserRuntime` is `true` — both test branches exercise the real flag; no parameter hedge needed.)
 
 - [ ] **Step 1: Failing test**
 
@@ -1003,8 +1127,6 @@ test('mock is skipped on daemon-served pages (px-token present)', () => {
 });
 ```
 
-(If `isBrowserRuntime` is a module const that is false under node, have `shouldUseBrowserMock` take the runtime flag as an optional second parameter defaulting to `isBrowserRuntime`, and pass `true` in tests.)
-
 - [ ] **Step 2: Implement + guard call sites**
 
 `main.tsx`: `if (shouldUseBrowserMock(document)) { const { initBrowserMock } = await import('./browserMock.js'); await initBrowserMock(); }`. Same guard replaces the `isBrowserRuntime` check around `dispatchMockMessages()` in `App.tsx`.
@@ -1023,7 +1145,7 @@ git commit -m "fix(webview): browser mock only runs when no daemon transport is 
 
 **Files:**
 
-- Modify: `webview-ui/index.html`, `webview-ui/src/components/TerminalPaneStub.tsx` (~line 41)
+- Modify: `webview-ui/index.html`, `webview-ui/src/office/panel/TerminalPaneStub.tsx` (~line 41 — note the path: office/panel/, NOT components/)
 
 - [ ] **Step 1: index.html**
 
@@ -1046,10 +1168,10 @@ but there is no terminal to attach here.
 
 - [ ] **Step 3: Verify + commit**
 
-Run: `cd webview-ui && npx tsc --noEmit && npm run build` (root) — confirm `dist/webview/index.html` contains the new title.
+Run: `cd webview-ui && npx tsc --noEmit` then root `npm run build` — confirm `dist/webview/index.html` contains the new title.
 
 ```bash
-git add webview-ui/index.html webview-ui/src/components/TerminalPaneStub.tsx
+git add webview-ui/index.html webview-ui/src/office/panel/TerminalPaneStub.tsx
 git commit -m "polish: Pixel Agents tab identity; fix stale watch-only terminal copy"
 ```
 
@@ -1058,7 +1180,7 @@ git commit -m "polish: Pixel Agents tab identity; fix stale watch-only terminal 
 ### Task 12: Full verification + live re-QA
 
 - [ ] **Step 1:** `npm test` (root) and `cd webview-ui && npm test` — everything green.
-- [ ] **Step 2:** `npm run build` — clean; `node esbuild.js` daemon bundle has no vscode.
-- [ ] **Step 3:** Live daemon smoke (mirrors QA doc Path B; note the "quit VS Code first" / back-up `server.json` caveat): boot `node dist/bin/serve.js --no-open`, drive the browser: **+ Agent spawns a character AND an xterm pane; typing echoes; Settings sound-toggle writes `~/.pixel-agents/config.json`; layout edit syncs to a second tab; export downloads; import round-trips; reload replays once with zero console TypeErrors.**
+- [ ] **Step 2:** `npm run build` — clean; daemon bundle builds with no vscode.
+- [ ] **Step 3:** Live daemon smoke (mirrors QA doc Path B; note the "quit VS Code first" / back-up `server.json` caveat): boot `node dist/bin/serve.js --no-open`, drive the browser: **+ Agent spawns a character AND an xterm pane; typing echoes; Settings sound-toggle writes `~/.pixel-agents/config.json`; layout edit syncs to a second tab (Task 6's saveLayout broadcast); export downloads; import round-trips; reload replays once with zero console TypeErrors.**
 - [ ] **Step 4:** Update `docs/playtests/2026-05-17-phase-2-plus-3-qa.md` with a "QA Session 2" block recording the re-run results.
 - [ ] **Step 5:** Commit docs; run the requesting-code-review flow for the whole branch delta.
