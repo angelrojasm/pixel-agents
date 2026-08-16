@@ -59,7 +59,11 @@ export class PixelAgentsServer {
   private wsClients = new Set<WebSocket>();
   private wsBroadcast = new WebSocketBroadcast(this.wsClients);
   private wsConnectHandler:
-    | ((src: WebSocketSource, perClientSink: WebSocketSink, broadcast: WebSocketBroadcast) => void)
+    | ((
+        src: WebSocketSource,
+        perClientSink: WebSocketSink,
+        broadcast: WebSocketBroadcast,
+      ) => (() => void) | void)
     | null = null;
 
   /** Absolute path to the built SPA served at `/`. Injected by the host. */
@@ -75,9 +79,15 @@ export class PixelAgentsServer {
     this.spaRoot = opts.spaRoot ?? null;
   }
 
-  /** Register a handler that fires for every new WebSocket connection. */
+  /** Register a handler that fires for every new WebSocket connection. The
+   *  handler may return a cleanup function, invoked when that socket closes
+   *  (dispose per-client subscriptions there). */
   onWebSocketConnect(
-    cb: (src: WebSocketSource, perClientSink: WebSocketSink, broadcast: WebSocketBroadcast) => void,
+    cb: (
+      src: WebSocketSource,
+      perClientSink: WebSocketSink,
+      broadcast: WebSocketBroadcast,
+    ) => (() => void) | void,
   ): void {
     this.wsConnectHandler = cb;
   }
@@ -165,12 +175,15 @@ export class PixelAgentsServer {
             }
             this.wss!.handleUpgrade(req, sock, head, (ws) => {
               this.wsClients.add(ws);
-              ws.on('close', () => this.wsClients.delete(ws));
-              this.wsConnectHandler?.(
+              const cleanup = this.wsConnectHandler?.(
                 new WebSocketSource(ws),
                 new WebSocketSink(ws),
                 this.wsBroadcast,
               );
+              ws.on('close', () => {
+                this.wsClients.delete(ws);
+                if (typeof cleanup === 'function') cleanup();
+              });
             });
           });
 

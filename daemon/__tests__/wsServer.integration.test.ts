@@ -21,6 +21,26 @@ vi.mock('node:os', async () => {
 
 const { PixelAgentsServer } = await import('../../server/src/server.js');
 
+async function connectClient(cfg: { port: number; token: string }): Promise<WebSocket> {
+  const ws = new WebSocket(`ws://127.0.0.1:${cfg.port}/ws?token=${cfg.token}`, {
+    origin: `http://127.0.0.1:${cfg.port}`,
+  });
+  await new Promise<void>((resolve, reject) => {
+    ws.on('open', () => resolve());
+    ws.on('error', reject);
+    setTimeout(() => reject(new Error('connect timeout')), 1000);
+  });
+  return ws;
+}
+
+async function waitFor(pred: () => boolean, ms = 2000): Promise<void> {
+  const start = Date.now();
+  while (!pred()) {
+    if (Date.now() - start > ms) throw new Error('waitFor timeout');
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 describe('PixelAgentsServer WebSocket', () => {
   beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(realOs.tmpdir(), 'px-ws-'));
@@ -70,6 +90,23 @@ describe('PixelAgentsServer WebSocket', () => {
       ]);
       expect(result).toBe('closed');
       expect(ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING).toBe(true);
+    } finally {
+      server.stop();
+    }
+  });
+
+  it('invokes the connect callback cleanup when the socket closes', async () => {
+    const server = new PixelAgentsServer();
+    const cfg = await server.start();
+    try {
+      let cleaned = 0;
+      server.onWebSocketConnect(() => () => {
+        cleaned += 1;
+      });
+      const ws = await connectClient(cfg);
+      ws.close();
+      await waitFor(() => cleaned === 1);
+      expect(cleaned).toBe(1);
     } finally {
       server.stop();
     }
