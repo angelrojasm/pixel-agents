@@ -28,7 +28,7 @@ import { HookEventHandler } from '../server/src/hookEventHandler.js';
 import { claudeProvider } from '../server/src/providers/index.js';
 import type { PixelAgentsServer } from '../server/src/server.js';
 import {
-  getAgentIds,
+  buildExistingAgentsPayload,
   getActiveAgentStatusesSummary,
   getRenamedAgentsSummary,
   getTeamInfoSummary,
@@ -265,7 +265,7 @@ export function createOrchestrator(hostDeps: OrchestratorHostDeps): Orchestrator
   let cachedCharacterSprites: unknown = null;
   let cachedFloorTiles: unknown = null;
   let cachedWallTiles: unknown = null;
-  let cachedFurnitureAssets: unknown = null;
+  let cachedFurnitureAssets: { catalog: unknown; sprites?: unknown } | null = null;
   let defaultLayout: Record<string, unknown> | null = null;
 
   // ── Sub-systems (lazy-init) ────────────────────────────────
@@ -411,10 +411,13 @@ export function createOrchestrator(hostDeps: OrchestratorHostDeps): Orchestrator
       getFloorTiles: () => cachedFloorTiles ?? [],
       getWallTiles: () => cachedWallTiles ?? [],
       getFurnitureAssets: () => cachedFurnitureAssets ?? { catalog: [] },
-      getExistingAgents: () => getAgentIds(agents).map((id) => ({ id })),
-      getLayout: () => readLayoutFromFile(),
+      getExistingAgentsPayload: () => buildExistingAgentsPayload(agents),
+      getLayout: () => readLayoutFromFile() ?? defaultLayout,
       getSettings: () => self.buildSettingsPayload(),
-      getHookHealth: () => server.getHealthState()?.status ?? null,
+      getHookHealth: () => {
+        const h = server.getHealthState();
+        return h ? { status: h.status, reason: h.reason, since: h.since } : null;
+      },
       getRenamedAgents: () => getRenamedAgentsSummary(agents),
       getTeamInfo: () => getTeamInfoSummary(agents),
       getTerminalNameChanges: () => getTerminalNamesSummary(agents),
@@ -694,10 +697,13 @@ export function createOrchestrator(hostDeps: OrchestratorHostDeps): Orchestrator
         getFloorTiles: () => cachedFloorTiles ?? [],
         getWallTiles: () => cachedWallTiles ?? [],
         getFurnitureAssets: () => cachedFurnitureAssets ?? { catalog: [] },
-        getExistingAgents: () => getAgentIds(agents).map((id) => ({ id })),
-        getLayout: () => readLayoutFromFile(),
+        getExistingAgentsPayload: () => buildExistingAgentsPayload(agents),
+        getLayout: () => readLayoutFromFile() ?? defaultLayout,
         getSettings: () => self.buildSettingsPayload(),
-        getHookHealth: () => server.getHealthState()?.status ?? null,
+        getHookHealth: () => {
+          const h = server.getHealthState();
+          return h ? { status: h.status, reason: h.reason, since: h.since } : null;
+        },
         getRenamedAgents: () => getRenamedAgentsSummary(agents),
         getTeamInfo: () => getTeamInfoSummary(agents),
         getTerminalNameChanges: () => getTerminalNamesSummary(agents),

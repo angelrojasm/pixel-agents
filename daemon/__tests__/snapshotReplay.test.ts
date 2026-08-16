@@ -9,10 +9,17 @@ function makeDeps(over: Partial<SnapshotDeps> = {}): SnapshotDeps {
     getFloorTiles: () => [{ pattern: 0 }],
     getWallTiles: () => [{ bitmask: 0 }],
     getFurnitureAssets: () => ({ catalog: [] }),
-    getExistingAgents: () => [{ id: 1, sessionId: 'a' }],
+    getExistingAgentsPayload: () => ({
+      agents: [1],
+      agentMeta: { 1: { palette: 0, hueShift: 0 } },
+      folderNames: {},
+      externalAgents: {},
+      terminalNames: {},
+      ptyBackedAgents: {},
+    }),
     getLayout: () => ({ version: 1, cols: 20, rows: 11, tiles: [], furniture: [] }),
     getSettings: () => ({ soundEnabled: true, watchAllSessions: false }),
-    getHookHealth: () => 'ok',
+    getHookHealth: () => ({ status: 'ok' }),
     getRenamedAgents: () => [],
     getTeamInfo: () => [],
     getActiveAgentStatuses: () => [],
@@ -43,7 +50,7 @@ describe('replaySnapshot', () => {
     const settings = { soundEnabled: false, watchAllSessions: true, defaultCwd: '~' };
     await replaySnapshot(makeDeps({ sink: { postMessage: post }, getSettings: () => settings }));
     const call = post.mock.calls.find((c) => (c[0] as { type: string }).type === 'settingsLoaded');
-    expect(call?.[0]).toEqual({ type: 'settingsLoaded', settings });
+    expect(call?.[0]).toEqual({ type: 'settingsLoaded', ...settings });
   });
 
   it('skips layoutLoaded when getLayout returns null', async () => {

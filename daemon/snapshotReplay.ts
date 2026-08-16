@@ -1,16 +1,26 @@
 // daemon/snapshotReplay.ts
 import type { MessageSink } from '../src/types.js';
 
+// Output field names are CONTRACT-BOUND to the webview parsers in
+// webview-ui/src/hooks/useExtensionMessages.ts — see
+// daemon/__tests__/snapshotReplay.contract.test.ts before changing any shape.
 export interface SnapshotDeps {
   sink: MessageSink;
+  /** Sent as `{ characters }`. */
   getCharacterSprites: () => unknown;
+  /** Sent as `{ sprites }`. */
   getFloorTiles: () => unknown;
+  /** Sent as `{ sets }`. */
   getWallTiles: () => unknown;
-  getFurnitureAssets: () => unknown;
-  getExistingAgents: () => Array<{ id: number; sessionId?: string; [k: string]: unknown }>;
+  /** Spread into the message: `{ catalog, sprites }`. */
+  getFurnitureAssets: () => { catalog: unknown; sprites?: unknown };
+  /** Spread into the message — build with agentManager.buildExistingAgentsPayload. */
+  getExistingAgentsPayload: () => Record<string, unknown>;
   getLayout: () => Record<string, unknown> | null;
+  /** Spread FLAT into settingsLoaded (webview reads msg.soundEnabled etc.). */
   getSettings: () => Record<string, unknown>;
-  getHookHealth: () => string | null;
+  /** Spread into hookHealthChanged as `{ status, reason, since }`. */
+  getHookHealth: () => { status: string; reason?: string; since?: number } | null;
   getRenamedAgents: () => Array<{ id: number; customTitle: string }>;
   getTeamInfo: () => Array<{
     id: number;
@@ -37,22 +47,22 @@ export async function replaySnapshot(deps: SnapshotDeps): Promise<void> {
   // Phase 1: assets (renderer needs them before layoutLoaded paints).
   await deps.sink.postMessage({
     type: 'characterSpritesLoaded',
-    sprites: deps.getCharacterSprites(),
+    characters: deps.getCharacterSprites(),
   });
-  await deps.sink.postMessage({ type: 'floorTilesLoaded', tiles: deps.getFloorTiles() });
-  await deps.sink.postMessage({ type: 'wallTilesLoaded', tiles: deps.getWallTiles() });
-  await deps.sink.postMessage({ type: 'furnitureAssetsLoaded', assets: deps.getFurnitureAssets() });
+  await deps.sink.postMessage({ type: 'floorTilesLoaded', sprites: deps.getFloorTiles() });
+  await deps.sink.postMessage({ type: 'wallTilesLoaded', sets: deps.getWallTiles() });
+  await deps.sink.postMessage({ type: 'furnitureAssetsLoaded', ...deps.getFurnitureAssets() });
 
   // Phase 2: state.
-  await deps.sink.postMessage({ type: 'existingAgents', agents: deps.getExistingAgents() });
+  await deps.sink.postMessage({ type: 'existingAgents', ...deps.getExistingAgentsPayload() });
   const layout = deps.getLayout();
   if (layout) {
     await deps.sink.postMessage({ type: 'layoutLoaded', layout });
   }
-  await deps.sink.postMessage({ type: 'settingsLoaded', settings: deps.getSettings() });
+  await deps.sink.postMessage({ type: 'settingsLoaded', ...deps.getSettings() });
   const health = deps.getHookHealth();
   if (health) {
-    await deps.sink.postMessage({ type: 'hookHealthChanged', state: health });
+    await deps.sink.postMessage({ type: 'hookHealthChanged', ...health });
   }
 
   // Phase 3: per-agent replays.
