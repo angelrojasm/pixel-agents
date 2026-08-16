@@ -8,7 +8,10 @@ import { ensureHookScript } from '../daemon/hookScriptInstaller.js';
 import { readAgents, writeAgents } from '../daemon/agentsPersistence.js';
 import { pruneDeadAgents } from '../daemon/agentsBootCleanup.js';
 import { createConfigStore } from '../daemon/configStore.js';
+import { createDaemonHostActions } from '../daemon/daemonHostActions.js';
 import { createOrchestrator } from '../daemon/orchestrator.js';
+import { createUiDispatch } from '../daemon/uiDispatch.js';
+import type { AgentState } from '../src/types.js';
 
 export async function startDaemon(opts: { open?: boolean } = {}): Promise<{
   server: PixelAgentsServer;
@@ -50,6 +53,27 @@ export async function startDaemon(opts: { open?: boolean } = {}): Promise<{
     agentsFilePath: agentsFile,
     assetsRoot: fs.existsSync(path.join(assetsRoot, 'assets')) ? assetsRoot : null,
     extensionVersion: '',
+  });
+
+  // Inbound UI dispatch + pty attach + snapshot replay, per WS client.
+  const dispatch = createUiDispatch({
+    orchestrator,
+    agents: orchestrator.agents as Map<number, AgentState>,
+    broadcastSink: server.getBroadcastSink(),
+    config,
+    persistAgents: () => orchestrator.persistNow(),
+    hostActions: createDaemonHostActions(),
+  });
+  server.onWebSocketConnect((src, perClientSink) => {
+    const ptySub = orchestrator.ensurePtyManager(src, perClientSink);
+    const uiSub = src.onMessage(
+      (m) => void dispatch.handle(m, { replySink: perClientSink, isWsClient: true }),
+    );
+    void orchestrator.replaySnapshotToSink(perClientSink);
+    return () => {
+      ptySub.dispose();
+      uiSub.dispose();
+    };
   });
 
   await orchestrator.start();

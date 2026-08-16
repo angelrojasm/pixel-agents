@@ -112,3 +112,119 @@ describe('PixelAgentsServer WebSocket', () => {
     }
   });
 });
+
+// Mirrors bin/serve.ts wiring: real server + config store + orchestrator +
+// shared dispatch, exercised over real WebSockets.
+describe('daemon dispatch over WS', () => {
+  let server: InstanceType<typeof PixelAgentsServer>;
+  let cfg: { port: number; token: string };
+  let orchestrator: import('../orchestrator.js').Orchestrator;
+  let config: import('../configStore.js').ConfigStore;
+  /** Per-test counter OBJECT, captured by that test's connect-handler closure.
+   *  A socket from a previous test whose close event lands late increments its
+   *  own (dead) object instead of contaminating the current test's counts. */
+  let counters: { attach: number; dispose: number };
+
+  beforeEach(async () => {
+    tmpHome = fs.mkdtempSync(path.join(realOs.tmpdir(), 'px-ws-'));
+    fs.mkdirSync(path.join(tmpHome, '.pixel-agents'), { recursive: true });
+    const { createOrchestrator } = await import('../orchestrator.js');
+    const { createConfigStore } = await import('../configStore.js');
+    const { createUiDispatch } = await import('../uiDispatch.js');
+    const { createDaemonHostActions } = await import('../daemonHostActions.js');
+
+    server = new PixelAgentsServer();
+    cfg = await server.start();
+    config = createConfigStore(path.join(tmpHome, '.pixel-agents', 'config.json'));
+    orchestrator = createOrchestrator({
+      broadcastSink: server.getBroadcastSink(),
+      server,
+      config,
+      agentsFilePath: path.join(tmpHome, '.pixel-agents', 'agents.json'),
+      assetsRoot: null,
+      extensionVersion: '',
+    });
+    const dispatch = createUiDispatch({
+      orchestrator,
+      agents: orchestrator.agents as Map<number, import('../../src/types.js').AgentState>,
+      broadcastSink: server.getBroadcastSink(),
+      config,
+      persistAgents: () => orchestrator.persistNow(),
+      hostActions: createDaemonHostActions(),
+    });
+    const local = { attach: 0, dispose: 0 };
+    counters = local;
+    server.onWebSocketConnect((src, perClientSink) => {
+      local.attach += 1;
+      const ptySub = orchestrator.ensurePtyManager(src, perClientSink);
+      const uiSub = src.onMessage(
+        (m) => void dispatch.handle(m, { replySink: perClientSink, isWsClient: true }),
+      );
+      void orchestrator.replaySnapshotToSink(perClientSink);
+      return () => {
+        local.dispose += 1;
+        ptySub.dispose();
+        uiSub.dispose();
+      };
+    });
+  });
+
+  afterEach(() => {
+    orchestrator.dispose();
+    server.stop();
+    try {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  it('setSoundEnabled over WS persists to the config store', async () => {
+    const { GLOBAL_KEY_SOUND_ENABLED } = await import('../../src/constants.js');
+    const ws = await connectClient(cfg);
+    ws.send(JSON.stringify({ type: 'setSoundEnabled', enabled: false }));
+    await waitFor(() => config.get(GLOBAL_KEY_SOUND_ENABLED) === false);
+    ws.close();
+    await waitFor(() => counters.dispose === 1); // drain the close before afterEach
+  });
+
+  it('connect/close cycles do not leak pty or dispatch subscriptions', async () => {
+    for (let i = 0; i < 3; i++) {
+      const ws = await connectClient(cfg);
+      ws.close();
+      const target = i + 1;
+      await waitFor(() => counters.dispose === target);
+    }
+    expect(counters.attach).toBe(3);
+    expect(counters.dispose).toBe(3);
+  });
+
+  it('two clients: terminalPaneReady replies only to the requester', async () => {
+    const a = await connectClient(cfg);
+    const b = await connectClient(cfg);
+    const framesA: Array<{ type: string }> = [];
+    const framesB: Array<{ type: string }> = [];
+    a.on('message', (d) => framesA.push(JSON.parse(String(d)) as { type: string }));
+    b.on('message', (d) => framesB.push(JSON.parse(String(d)) as { type: string }));
+
+    // A live worker to answer the scrollback request: /bin/cat stays alive.
+    orchestrator.ensurePtyManager({ onMessage: () => ({ dispose: () => {} }) });
+    orchestrator.ptyManager!.start(1, {
+      shell: '/bin/cat',
+      args: [],
+      cwd: realOs.tmpdir(),
+      env: {},
+      cols: 80,
+      rows: 24,
+    });
+
+    b.send(JSON.stringify({ type: 'terminalPaneReady', agentId: 1 }));
+    await waitFor(() => framesB.some((f) => f.type === 'ptyScrollback'));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(framesA.filter((f) => f.type === 'ptyScrollback')).toHaveLength(0);
+    expect(framesB.filter((f) => f.type === 'ptyScrollback')).toHaveLength(1);
+    a.close();
+    b.close();
+    await waitFor(() => counters.dispose === 2); // drain closes before afterEach
+  });
+});
