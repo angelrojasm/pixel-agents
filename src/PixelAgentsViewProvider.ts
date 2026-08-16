@@ -85,7 +85,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   constructor(private readonly context: vscode.ExtensionContext) {
     this.config = createConfigStore(path.join(os.homedir(), '.pixel-agents', 'config.json'));
 
-    this.pixelAgentsServer = new PixelAgentsServer();
+    // The SPA is served at `/` for browser tabs that connect to this
+    // extension-owned server (both runtimes share one server per machine).
+    this.pixelAgentsServer = new PixelAgentsServer({
+      spaRoot: path.join(this.context.extensionUri.fsPath, 'dist', 'webview'),
+    });
 
     // Resolve assetsRoot from extensionUri (available synchronously in constructor)
     const extensionPath = this.context.extensionUri.fsPath;

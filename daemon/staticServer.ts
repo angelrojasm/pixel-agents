@@ -18,6 +18,37 @@ export interface StaticResult {
 }
 
 /**
+ * Resolve the build output directory (`dist/`) from the directory of the running
+ * entrypoint. There are exactly two layouts to support:
+ *
+ *   - bundled: `dist/bin/serve.js`  → `..`        = `dist/`
+ *   - source:  `bin/serve.ts` (tsx) → `../dist`   = `dist/`
+ *
+ * A candidate only wins if it carries a real build artifact (`webview/index.html`
+ * from vite, or `hooks/claude-hook.js` from esbuild), so an empty same-named
+ * directory can't shadow the real one. Falls back to the bundled candidate so the
+ * caller gets a stable path when nothing is built yet.
+ *
+ * Deliberately does NOT consult `process.cwd()` — the daemon must resolve the same
+ * files no matter which directory it was launched from.
+ */
+export function resolveDistRoot(entryDir: string): string {
+  const candidates = [path.join(entryDir, '..'), path.join(entryDir, '..', 'dist')];
+  const isDistRoot = (dir: string): boolean =>
+    fs.existsSync(path.join(dir, 'webview', 'index.html')) ||
+    fs.existsSync(path.join(dir, 'hooks', 'claude-hook.js'));
+  return candidates.find(isDistRoot) ?? candidates[0];
+}
+
+/**
+ * Resolve the built SPA directory served at `/`. Vite writes it to `dist/webview`
+ * (`webview-ui/vite.config.ts` → `build.outDir`).
+ */
+export function resolveSpaRoot(entryDir: string): string {
+  return path.join(resolveDistRoot(entryDir), 'webview');
+}
+
+/**
  * Serve a static file from a root directory. Returns null when the file is
  * missing or the URL escapes the root (path-traversal guard).
  *

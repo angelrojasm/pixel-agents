@@ -110,6 +110,47 @@ function buildHooks() {
 }
 
 /**
+ * Bundle the standalone daemon CLI to dist/bin/serve.js.
+ *
+ * Output is CJS so `node dist/bin/serve.js` works without a `"type": "module"`
+ * field in package.json. `bin/serve.ts` is ESM source (it uses
+ * `import.meta.url` to locate its own directory, and is loaded as ESM under
+ * vitest), so `import.meta.url` is rewritten to a CJS-safe equivalent built from
+ * `__filename`.
+ *
+ * `vscode` is deliberately NOT external here. It has no installable
+ * implementation (VS Code injects it at runtime), so if a VS Code dependency
+ * ever leaks back into the daemon's import graph, this build fails immediately
+ * with the offending file — instead of producing a bundle that only crashes when
+ * a user runs it. Shared modules reach the host through `src/hostBridge.ts`.
+ */
+function buildDaemon() {
+  const entry = path.join(__dirname, 'bin', 'serve.ts');
+  if (!fs.existsSync(entry)) return;
+  require('esbuild').buildSync({
+    entryPoints: [entry],
+    bundle: true,
+    platform: 'node',
+    target: 'node18',
+    format: 'cjs',
+    minify: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    outfile: path.join(__dirname, 'dist', 'bin', 'serve.js'),
+    external: ['node-pty'],
+    banner: {
+      js: [
+        '#!/usr/bin/env node',
+        "const __px_import_meta_url = require('url').pathToFileURL(__filename).href;",
+      ].join('\n'),
+    },
+    define: { 'import.meta.url': '__px_import_meta_url' },
+  });
+  fs.chmodSync(path.join(__dirname, 'dist', 'bin', 'serve.js'), 0o755);
+  console.log('✓ Built bin/serve.ts → dist/bin/serve.js');
+}
+
+/**
  * @type {import('esbuild').Plugin}
  */
 const esbuildProblemMatcherPlugin = {
@@ -155,6 +196,7 @@ async function main() {
     copyAssets();
     copyNodePty();
     buildHooks();
+    buildDaemon();
   }
 }
 

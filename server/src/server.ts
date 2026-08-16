@@ -8,17 +8,6 @@ import { type WebSocket, WebSocketServer } from 'ws';
 import { injectMetaTag, serveStaticFile } from '../../daemon/staticServer.js';
 import { acceptUpgrade } from '../../daemon/wsServer.js';
 import { WebSocketBroadcast, WebSocketSink, WebSocketSource } from '../../daemon/wsTransport.js';
-
-/**
- * Absolute path to the built SPA (webview-ui/dist/).
- * esbuild bundles server.ts as CJS and injects __dirname; fall back to
- * process.cwd() for unit-test environments that don't bundle.
- */
-function getSpaRoot(): string {
-  const here: string =
-    ((global as unknown as Record<string, unknown>).__dirname as string) || process.cwd();
-  return path.join(here, '..', '..', 'webview-ui', 'dist');
-}
 import {
   HOOK_API_PREFIX,
   HOOK_HEARTBEAT_INTERVAL_MS,
@@ -72,6 +61,19 @@ export class PixelAgentsServer {
   private wsConnectHandler:
     | ((src: WebSocketSource, perClientSink: WebSocketSink, broadcast: WebSocketBroadcast) => void)
     | null = null;
+
+  /** Absolute path to the built SPA served at `/`. Injected by the host. */
+  private readonly spaRoot: string | null;
+
+  /**
+   * @param opts.spaRoot Absolute path to the built SPA (`dist/webview`). Hosts
+   * resolve this themselves — the daemon via {@link resolveSpaRoot}, the
+   * extension from its `extensionUri`. When omitted, static SPA serving is
+   * disabled and `GET /` 404s (hook-only mode).
+   */
+  constructor(opts: { spaRoot?: string } = {}) {
+    this.spaRoot = opts.spaRoot ?? null;
+  }
 
   /** Register a handler that fires for every new WebSocket connection. */
   onWebSocketConnect(
@@ -243,9 +245,9 @@ export class PixelAgentsServer {
       return;
     }
 
-    // Static SPA serving: GET /* → webview-ui/dist/
-    if (req.method === 'GET') {
-      const result = serveStaticFile({ root: getSpaRoot(), urlPath: url });
+    // Static SPA serving: GET /* → the injected SPA root (dist/webview)
+    if (req.method === 'GET' && this.spaRoot) {
+      const result = serveStaticFile({ root: this.spaRoot, urlPath: url });
       if (result) {
         // Inject the auth token into index.html so the SPA can include it in
         // the WS URL without a separate API round-trip.

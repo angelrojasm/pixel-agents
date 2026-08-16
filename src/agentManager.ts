@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as vscode from 'vscode';
+// Type-only: erased at build time, so this does NOT put `vscode` in the daemon's
+// bundle graph. Only `sendLayout`'s ExtensionContext passthrough still needs it.
+import type * as vscode from 'vscode';
 
 import type {
   AgentsFile,
@@ -16,6 +18,7 @@ import {
   reassignAgentToFile,
   startFileWatching,
 } from './fileWatcher.js';
+import { host, type HostTerminal } from './hostBridge.js';
 import { migrateAndLoadLayout } from './layoutPersistence.js';
 import type { PtyManager } from './pty/ptyManager.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -27,7 +30,7 @@ export function getProjectDirPath(cwd?: string): string {
   // (e.g. `code` with no arguments). Claude Code writes JSONL files to
   // ~/.claude/projects/<hash>/ where <hash> is derived from the process cwd, so we
   // must use the same directory as the terminal's working directory.
-  const workspacePath = cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
+  const workspacePath = cwd || host().workspaceFolders()[0] || os.homedir();
   const dirName = workspacePath.replace(/[^a-zA-Z0-9-]/g, '-');
   const projectDir = path.join(os.homedir(), '.claude', 'projects', dirName);
   console.log(`[Pixel Agents] Terminal: Project dir: ${workspacePath} → ${dirName}`);
@@ -97,15 +100,14 @@ export async function launchNewTerminal(
   defaultCwd?: string,
   ptyManager?: PtyManager | null,
 ): Promise<void> {
-  const folders = vscode.workspace.workspaceFolders;
+  const folders = host().workspaceFolders();
   // Resolution order:
   //   1. explicit folderPath argument (e.g. multi-root folder picker)
-  //   2. first workspace folder, if any
+  //   2. first workspace folder, if any (never in daemon mode — the list is empty)
   //   3. user-configured defaultCwd (from the in-app Settings modal, supports `~`)
   //   4. home directory
-  const cwd =
-    folderPath || folders?.[0]?.uri.fsPath || resolveDefaultCwd(defaultCwd) || os.homedir();
-  const isMultiRoot = !!(folders && folders.length > 1);
+  const cwd = folderPath || folders[0] || resolveDefaultCwd(defaultCwd) || os.homedir();
+  const isMultiRoot = folders.length > 1;
   const idx = nextTerminalIndexRef.current++;
 
   const sessionId = crypto.randomUUID();
@@ -113,7 +115,7 @@ export async function launchNewTerminal(
     ? ['--session-id', sessionId, '--dangerously-skip-permissions']
     : ['--session-id', sessionId];
 
-  const terminal: vscode.Terminal | undefined = undefined;
+  const terminal: HostTerminal | undefined = undefined;
   const ptyAgentId = nextAgentIdRef.current;
 
   // Spawn via node-pty so the terminal renders inside the office panel.
@@ -385,7 +387,7 @@ export function restoreAgents(
   const persisted = file.agents;
   if (persisted.length === 0) return;
 
-  const liveTerminals = vscode.window.terminals;
+  const liveTerminals = host().terminals();
   let maxId = 0;
   let maxIdx = 0;
   let restoredProjectDir: string | null = null;
@@ -398,7 +400,7 @@ export function restoreAgents(
       continue;
     }
 
-    let terminal: vscode.Terminal | undefined;
+    let terminal: HostTerminal | undefined;
     const isExternal = p.isExternal ?? false;
 
     if (isExternal) {
@@ -735,8 +737,7 @@ export function restartPty(
   const agent = agents.get(agentId);
   if (!agent || !agent.ptyBacked) return false;
   ptyManager.stop(agentId);
-  const folders = vscode.workspace.workspaceFolders;
-  const cwd = folders?.[0]?.uri.fsPath || resolveDefaultCwd(defaultCwd) || os.homedir();
+  const cwd = host().workspaceFolders()[0] || resolveDefaultCwd(defaultCwd) || os.homedir();
   const shell = process.env.SHELL ?? (process.platform === 'win32' ? 'cmd.exe' : '/bin/zsh');
   const claudeArgs = bypassPermissions
     ? ['--session-id', agent.sessionId, '--dangerously-skip-permissions']

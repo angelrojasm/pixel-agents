@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { PixelAgentsServer } from '../server/src/server.js';
+import { resolveDistRoot, resolveSpaRoot } from '../daemon/staticServer.js';
 import { ensureHookScript } from '../daemon/hookScriptInstaller.js';
 import { readAgents, writeAgents } from '../daemon/agentsPersistence.js';
 import { pruneDeadAgents } from '../daemon/agentsBootCleanup.js';
@@ -14,7 +15,9 @@ export async function startDaemon(opts: { open?: boolean } = {}): Promise<{
   stop: () => Promise<void>;
 }> {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const bundled = path.join(here, '..', 'dist', 'hooks', 'claude-hook.js');
+  // Works from both layouts: source (bin/serve.ts via tsx) and bundled (dist/bin/serve.js).
+  const distRoot = resolveDistRoot(here);
+  const bundled = path.join(distRoot, 'hooks', 'claude-hook.js');
   ensureHookScript({ home: os.homedir(), bundledPath: bundled });
 
   // Prune agents whose pty is no longer alive on daemon startup
@@ -30,11 +33,11 @@ export async function startDaemon(opts: { open?: boolean } = {}): Promise<{
   });
   if (after.agents.length !== before.agents.length) writeAgents(agentsFile, after);
 
-  const server = new PixelAgentsServer();
+  const server = new PixelAgentsServer({ spaRoot: resolveSpaRoot(here) });
   const cfg = await server.start();
 
   // Resolve bundled assetsRoot: dist/assets lives next to the compiled JS
-  const assetsRoot = path.join(here, '..', 'dist');
+  const assetsRoot = distRoot;
 
   // Wire up the host-agnostic orchestration (agent restore, file watchers,
   // hook handler, snapshot-on-WS-connect, asset loading, layout watcher).
@@ -142,8 +145,18 @@ async function loadInstaller(): Promise<HookInstaller> {
   };
 }
 
+/**
+ * Pick the subcommand out of argv. `serve` is the default, and a leading flag
+ * (`node dist/bin/serve.js --no-open`) means "serve with that flag" rather than
+ * a subcommand literally named `--no-open`.
+ */
+export function parseCommand(argv: string[]): string {
+  const first = argv[2];
+  return !first || first.startsWith('-') ? 'serve' : first;
+}
+
 async function main() {
-  const cmd = process.argv[2] ?? 'serve';
+  const cmd = parseCommand(process.argv);
   switch (cmd) {
     case 'serve': {
       const noOpen = process.argv.includes('--no-open');

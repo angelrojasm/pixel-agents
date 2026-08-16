@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runInstallHooks, runUninstallHooks, runStop, runStatus } from '../serve.js';
+import { parseCommand, runInstallHooks, runUninstallHooks, runStop, runStatus } from '../serve.js';
 
 describe('install-hooks', () => {
   it('delegates to claudeHookInstaller and returns exit code 0', async () => {
@@ -49,5 +49,27 @@ describe('stop', () => {
     });
     expect(kill).toHaveBeenCalledWith(99999, 'SIGTERM');
     expect(code).toBe(0);
+  });
+});
+
+describe('parseCommand', () => {
+  it('defaults to serve when no argument is given', () => {
+    expect(parseCommand(['node', 'serve.js'])).toBe('serve');
+  });
+
+  it('treats a leading flag as the implicit serve command', () => {
+    // `node dist/bin/serve.js --no-open` must not be read as a subcommand named
+    // "--no-open" (which used to exit 1 with "Unknown command").
+    expect(parseCommand(['node', 'serve.js', '--no-open'])).toBe('serve');
+  });
+
+  it('still recognises explicit subcommands', () => {
+    expect(parseCommand(['node', 'serve.js', 'status'])).toBe('status');
+    expect(parseCommand(['node', 'serve.js', 'stop'])).toBe('stop');
+    expect(parseCommand(['node', 'serve.js', 'serve', '--no-open'])).toBe('serve');
+  });
+
+  it('passes an unknown subcommand through so the caller can reject it', () => {
+    expect(parseCommand(['node', 'serve.js', 'frobnicate'])).toBe('frobnicate');
   });
 });

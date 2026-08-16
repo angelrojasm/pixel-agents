@@ -252,3 +252,54 @@ describe('PixelAgentsServer', () => {
     }
   });
 });
+
+describe('PixelAgentsServer SPA serving', () => {
+  let server: InstanceType<typeof PixelAgentsServer>;
+  let spaRoot: string;
+
+  beforeEach(() => {
+    tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-spa-test-'));
+    fs.mkdirSync(path.join(tmpBase, '.pixel-agents'), { recursive: true });
+    spaRoot = path.join(tmpBase, 'dist', 'webview');
+    fs.mkdirSync(spaRoot, { recursive: true });
+    fs.writeFileSync(
+      path.join(spaRoot, 'index.html'),
+      '<!doctype html><html><head><title>px</title></head><body>office</body></html>',
+    );
+  });
+
+  afterEach(() => {
+    server?.stop();
+    try {
+      fs.rmSync(tmpBase, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  it('serves index.html from an injected spaRoot regardless of cwd', async () => {
+    server = new PixelAgentsServer({ spaRoot });
+    const cfg = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${cfg.port}/`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/html');
+    expect(await res.text()).toContain('office');
+  });
+
+  it('injects the px-token meta tag into the served index.html', async () => {
+    server = new PixelAgentsServer({ spaRoot });
+    const cfg = await server.start();
+
+    const html = await (await fetch(`http://127.0.0.1:${cfg.port}/`)).text();
+    expect(html).toContain(`<meta name="px-token" content="${cfg.token}">`);
+  });
+
+  it('404s for a path that does not exist in the SPA build', async () => {
+    server = new PixelAgentsServer({ spaRoot });
+    const cfg = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${cfg.port}/nope.js`);
+    expect(res.status).toBe(404);
+  });
+});

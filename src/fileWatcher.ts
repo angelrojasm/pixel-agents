@@ -21,7 +21,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as vscode from 'vscode';
+
+import { host, type HostTerminal } from './hostBridge.js';
 
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
@@ -371,7 +372,7 @@ function scanForNewJsonlFiles(
     // check can find them when the idle check passes (up to 5s later).
 
     // Try to adopt the focused terminal (only if it's a Claude-named terminal)
-    const activeTerminal = vscode.window.activeTerminal;
+    const activeTerminal = host().activeTerminal();
     if (activeTerminal && activeTerminal.name.startsWith(TERMINAL_NAME_PREFIX)) {
       let owned = false;
       for (const agent of agents.values()) {
@@ -400,7 +401,7 @@ function scanForNewJsonlFiles(
         // Active terminal is owned -- scan for untracked Claude-named terminals.
         // Only adopt terminals with TERMINAL_NAME_PREFIX to avoid grabbing
         // pre-existing shells ("zsh", "bash") for /clear files.
-        for (const terminal of vscode.window.terminals) {
+        for (const terminal of host().terminals()) {
           if (!terminal.name.startsWith(TERMINAL_NAME_PREFIX)) continue;
           let owned = false;
           for (const agent of agents.values()) {
@@ -456,7 +457,7 @@ function scanForNewJsonlFiles(
 }
 
 function adoptTerminalForFile(
-  terminal: vscode.Terminal,
+  terminal: HostTerminal,
   jsonlFile: string,
   projectDir: string,
   nextAgentIdRef: { current: number },

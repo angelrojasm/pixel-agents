@@ -1,6 +1,5 @@
-import type * as vscode from 'vscode';
-
 import type { Disposable } from './disposable.js';
+import type { HostTerminal } from './hostBridge.js';
 
 /**
  * Narrow abstraction over `vscode.Webview` for modules that only need to post
@@ -35,8 +34,13 @@ export interface MessageSource {
 export interface AgentState {
   id: number;
   sessionId: string;
-  /** Terminal reference — undefined for extension panel sessions */
-  terminalRef?: vscode.Terminal;
+  /**
+   * Terminal reference — undefined for extension panel sessions, and always
+   * undefined in daemon mode (the daemon owns ptys, not host terminals).
+   * Typed as `HostTerminal` rather than `vscode.Terminal` so this file — and
+   * everything importing it — stays loadable outside the extension host.
+   */
+  terminalRef?: HostTerminal;
   /** Whether this agent was detected from an external source (VS Code extension panel, etc.) */
   isExternal: boolean;
   projectDir: string;

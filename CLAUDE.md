@@ -16,6 +16,8 @@ src/                          — Extension backend (Node.js, VS Code API)
   fileWatcher.ts              — fs.watch + polling, readNewLines, /clear detection, terminal adoption
   transcriptParser.ts         — JSONL parsing: tool_use/tool_result → webview messages
   timerManager.ts             — Waiting/permission timer logic
+  hostBridge.ts               — HostBridge/HostTerminal + daemonHostBridge + setHostBridge/host(); the only route from shared modules to VS Code's workspace/terminal APIs
+  vscodeHostBridge.ts         — VS Code impl of HostBridge. Imported ONLY by extension.ts — importing it anywhere the daemon reaches re-breaks the daemon bundle
   types.ts                    — Shared interfaces (AgentState, PersistedAgent, MessageSink)
 
 server/                       — Standalone server (Node.js, no VS Code deps except types)
@@ -211,6 +213,14 @@ Toggle via "Layout" button. Tools: SELECT (default), Floor paint, Wall paint, Er
 **Canonical location:** [`docs/ROADMAP.md`](docs/ROADMAP.md) — phase status, sequencing decisions, queued ideas, and Phase-3 architectural principles all live there. Update it (not this file) when phase state changes.
 
 **Current phase:** 3 — standalone daemon + browser SPA, coexisting with the VS Code extension. Phase 2 polish (visual chrome, terminal QoL, terminal ↔ character interaction, settings redesign) and Phase 3 (daemon, WebSocket transport, snapshot replay, file-based persistence, pty-only, Alt-based hotkeys, `daemon/orchestrator.ts` extraction) all shipped on `2026-05-12-terminal-polish` as one combined release. The VS Code extension is **NOT** deprecated — both runtimes are first-class. Cutover deferred indefinitely. See `docs/ROADMAP.md` § Phase 3 for commit-level details and the keep-both decision history.
+
+**The daemon must never import `vscode`.** `bin/serve.ts` → `daemon/orchestrator.ts` pulls in `src/agentManager` and `src/fileWatcher`, which are shared by both hosts. `vscode` has no installable implementation (VS Code injects it at runtime), so a value import anywhere in that graph makes `node dist/bin/serve.js` die with `Cannot find module 'vscode'`. The unit suite will NOT catch this — vitest aliases `vscode` to a stub. Guards:
+
+- Shared modules reach the host through `src/hostBridge.ts` (`host().workspaceFolders()` / `.terminals()` / `.activeTerminal()`), never through `vscode` directly. The extension installs `vscodeHostBridge` in `activate()`; the daemon gets `daemonHostBridge` (empty workspace, no terminals — literally true outside VS Code, and every call site already falls back to `defaultCwd`/`os.homedir()`).
+- `import type * as vscode` is fine — type-only imports are erased and never reach the bundle.
+- `buildDaemon()` in `esbuild.js` does NOT mark `vscode` external, so a regression fails the build with the offending file. `bin/__tests__/no-vscode-dependency.test.ts` asserts the same thing in the test suite.
+
+**Entrypoint path resolution:** `bin/serve.ts` runs from two layouts — `dist/bin/serve.js` (bundled) and `bin/serve.ts` (tsx, via `npm run serve:dev`). Resolve build outputs with `resolveDistRoot()` / `resolveSpaRoot()` from `daemon/staticServer.ts`, never from `process.cwd()`. The SPA lives at `dist/webview/` (vite `build.outDir`); `webview-ui/dist/` does not exist.
 
 **Design compatibility note (still load-bearing for new work):** Keep the WebSocket replacement straightforward. Messages flow through `MessageSink` (outbound) and `MessageSource` (inbound). Persistence is webview-driven, not VS Code-setting-bound. Server boundaries stay clean — Phase 3 daemon + relay must slot in by swapping transports, not refactoring the protocol.
 

@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { serveStaticFile, injectMetaTag } from '../staticServer.js';
+import {
+  serveStaticFile,
+  injectMetaTag,
+  resolveSpaRoot,
+  resolveDistRoot,
+} from '../staticServer.js';
 
 describe('serveStaticFile', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'px-static-'));
@@ -26,6 +31,76 @@ describe('serveStaticFile', () => {
   it('rejects path traversal attempts', () => {
     const result = serveStaticFile({ root: tmp, urlPath: '/../../../etc/passwd' });
     expect(result).toBeNull();
+  });
+});
+
+describe('resolveSpaRoot', () => {
+  /** Build a fake repo/install tree with the SPA at dist/webview (vite's outDir). */
+  function makeTree(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'px-spa-'));
+    const spa = path.join(root, 'dist', 'webview');
+    fs.mkdirSync(spa, { recursive: true });
+    fs.writeFileSync(path.join(spa, 'index.html'), '<!doctype html><head></head>');
+    return root;
+  }
+
+  it('resolves dist/webview when running from the bundled dist/bin/ layout', () => {
+    const root = makeTree();
+    expect(resolveSpaRoot(path.join(root, 'dist', 'bin'))).toBe(path.join(root, 'dist', 'webview'));
+  });
+
+  it('resolves dist/webview when running from source via tsx (bin/ layout)', () => {
+    const root = makeTree();
+    expect(resolveSpaRoot(path.join(root, 'bin'))).toBe(path.join(root, 'dist', 'webview'));
+  });
+
+  it('does not depend on process.cwd()', () => {
+    const root = makeTree();
+    const fromCwdA = resolveSpaRoot(path.join(root, 'dist', 'bin'));
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue('/some/unrelated/place');
+    const fromCwdB = resolveSpaRoot(path.join(root, 'dist', 'bin'));
+    spy.mockRestore();
+    expect(fromCwdB).toBe(fromCwdA);
+  });
+
+  it('ignores a sibling directory that has no index.html', () => {
+    const root = makeTree();
+    // A stray dist/bin/../webview with no index.html must not win over the real SPA.
+    fs.mkdirSync(path.join(root, 'webview'), { recursive: true });
+    expect(resolveSpaRoot(path.join(root, 'bin'))).toBe(path.join(root, 'dist', 'webview'));
+  });
+
+  it('falls back to the bundled-layout candidate when no SPA build exists', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'px-spa-empty-'));
+    expect(resolveSpaRoot(path.join(root, 'dist', 'bin'))).toBe(path.join(root, 'dist', 'webview'));
+  });
+});
+
+describe('resolveDistRoot', () => {
+  function makeTree(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'px-dist-'));
+    const spa = path.join(root, 'dist', 'webview');
+    fs.mkdirSync(spa, { recursive: true });
+    fs.writeFileSync(path.join(spa, 'index.html'), '<!doctype html><head></head>');
+    return root;
+  }
+
+  it('resolves dist/ from the bundled dist/bin/ layout', () => {
+    const root = makeTree();
+    expect(resolveDistRoot(path.join(root, 'dist', 'bin'))).toBe(path.join(root, 'dist'));
+  });
+
+  it('resolves dist/ from the source bin/ layout', () => {
+    const root = makeTree();
+    expect(resolveDistRoot(path.join(root, 'bin'))).toBe(path.join(root, 'dist'));
+  });
+
+  it('recognises a dist root by its bundled hook script alone', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'px-dist-hooks-'));
+    const hooks = path.join(root, 'dist', 'hooks');
+    fs.mkdirSync(hooks, { recursive: true });
+    fs.writeFileSync(path.join(hooks, 'claude-hook.js'), '#!/usr/bin/env node\n');
+    expect(resolveDistRoot(path.join(root, 'bin'))).toBe(path.join(root, 'dist'));
   });
 });
 

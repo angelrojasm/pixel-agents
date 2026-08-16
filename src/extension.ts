@@ -21,12 +21,21 @@ import {
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   VIEW_ID,
 } from './constants.js';
+import { setHostBridge } from './hostBridge.js';
 import { PixelAgentsViewProvider } from './PixelAgentsViewProvider.js';
+import { vscodeHostBridge } from './vscodeHostBridge.js';
 
 let providerInstance: PixelAgentsViewProvider | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
   console.log(`[Pixel Agents] PIXEL_AGENTS_DEBUG=${process.env.PIXEL_AGENTS_DEBUG ?? 'not set'}`);
+
+  // Install the VS Code host bridge before anything constructs agents or
+  // watchers. Shared modules (agentManager, fileWatcher) resolve workspace
+  // folders and host terminals through it; without this they'd fall back to the
+  // daemon bridge and behave as if no workspace and no terminals existed.
+  setHostBridge(vscodeHostBridge);
+
   const provider = new PixelAgentsViewProvider(context);
   providerInstance = provider;
 

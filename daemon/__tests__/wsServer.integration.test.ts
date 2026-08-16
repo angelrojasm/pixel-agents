@@ -1,8 +1,40 @@
-import { describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as realOs from 'node:os';
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import WebSocket from 'ws';
-import { PixelAgentsServer } from '../../server/src/server.js';
+
+// Isolated HOME. Without it, PixelAgentsServer.start() finds the ambient
+// ~/.pixel-agents/server.json and REUSES a live server owned by a running VS Code
+// extension host — these assertions would then run against that process instead
+// of the one under test (a 404 on the WS upgrade, since older builds have no /ws).
+let tmpHome: string;
+vi.mock('os', async () => {
+  const actual = await vi.importActual<typeof import('os')>('os');
+  return { ...actual, homedir: () => tmpHome, default: { ...actual, homedir: () => tmpHome } };
+});
+vi.mock('node:os', async () => {
+  const actual = await vi.importActual<typeof import('os')>('node:os');
+  return { ...actual, homedir: () => tmpHome, default: { ...actual, homedir: () => tmpHome } };
+});
+
+const { PixelAgentsServer } = await import('../../server/src/server.js');
 
 describe('PixelAgentsServer WebSocket', () => {
+  beforeEach(() => {
+    tmpHome = fs.mkdtempSync(path.join(realOs.tmpdir(), 'px-ws-'));
+    fs.mkdirSync(path.join(tmpHome, '.pixel-agents'), { recursive: true });
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
   it('accepts a connection from an allowed origin with the correct token', async () => {
     const server = new PixelAgentsServer();
     const cfg = await server.start();
