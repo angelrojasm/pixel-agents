@@ -14,6 +14,13 @@ export const workspace = {
 export const window = {
   terminals: [] as Array<{ name: string; exitStatus: unknown }>,
   activeTerminal: undefined as { name: string; exitStatus: unknown } | undefined,
+  onDidChangeActiveTerminal: () => ({ dispose: () => undefined }),
+  onDidCloseTerminal: () => ({ dispose: () => undefined }),
+  showWarningMessage: () => Promise.resolve(undefined),
+  showInformationMessage: () => Promise.resolve(undefined),
+  showErrorMessage: () => Promise.resolve(undefined),
+  showSaveDialog: () => Promise.resolve(undefined),
+  showOpenDialog: () => Promise.resolve(undefined),
 };
 
 export const Uri = {
