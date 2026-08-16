@@ -27,9 +27,11 @@ import type { HookEvent } from '../server/src/hookEventHandler.js';
 import { HookEventHandler } from '../server/src/hookEventHandler.js';
 import { claudeProvider } from '../server/src/providers/index.js';
 import type { PixelAgentsServer } from '../server/src/server.js';
+import { host } from '../src/hostBridge.js';
 import {
   buildExistingAgentsPayload,
   getActiveAgentStatusesSummary,
+  getProjectDirPath,
   getRenamedAgentsSummary,
   getTeamInfoSummary,
   getTerminalNamesSummary,
@@ -166,9 +168,14 @@ export interface Orchestrator {
   /** Current PtyManager instance (null until first ensurePtyManager call). */
   readonly ptyManager: PtyManager | null;
 
-  /** Lazy-init the PtyManager (first call creates it; subsequent calls attach
-   *  the new source to the same manager). Called by the extension on each new webview. */
-  ensurePtyManager(source: MessageSource): void;
+  /** Lazy-init the PtyManager (first call creates it; every call attaches the
+   *  source to the same manager). `replySink` receives that client's
+   *  ptyScrollback replies. Returns the attachment's disposable — hosts must
+   *  dispose it when the client (webview / WS socket) goes away. */
+  ensurePtyManager(source: MessageSource, replySink?: MessageSink): { dispose(): void };
+
+  /** Persist the agents map to agents.json immediately. */
+  persistNow(): void;
 
   /** Layout watcher — exposes markOwnWrite() to the host (e.g. on saveLayout). */
   readonly layoutWatcher: LayoutWatcher | null;
@@ -403,27 +410,9 @@ export function createOrchestrator(hostDeps: OrchestratorHostDeps): Orchestrator
     });
   });
 
-  // Snapshot-on-WS-connect: every new WebSocket client gets a full replay
-  server.onWebSocketConnect((_src, perClientSink, _broadcast) => {
-    void replaySnapshot({
-      sink: perClientSink,
-      getCharacterSprites: () => cachedCharacterSprites ?? [],
-      getFloorTiles: () => cachedFloorTiles ?? [],
-      getWallTiles: () => cachedWallTiles ?? [],
-      getFurnitureAssets: () => cachedFurnitureAssets ?? { catalog: [] },
-      getExistingAgentsPayload: () => buildExistingAgentsPayload(agents),
-      getLayout: () => readLayoutFromFile() ?? defaultLayout,
-      getSettings: () => self.buildSettingsPayload(),
-      getHookHealth: () => {
-        const h = server.getHealthState();
-        return h ? { status: h.status, reason: h.reason, since: h.since } : null;
-      },
-      getRenamedAgents: () => getRenamedAgentsSummary(agents),
-      getTeamInfo: () => getTeamInfoSummary(agents),
-      getTerminalNameChanges: () => getTerminalNamesSummary(agents),
-      getActiveAgentStatuses: () => getActiveAgentStatusesSummary(agents),
-    });
-  });
+  // NOTE: WS-connect wiring (snapshot replay, pty attach, UI dispatch) is
+  // host-owned — see bin/serve.ts (daemon) and PixelAgentsViewProvider
+  // (extension). Both call replaySnapshotToSink(perClientSink) on connect.
 
   // ── Asset loading helpers ──────────────────────────────────
 
@@ -479,12 +468,15 @@ export function createOrchestrator(hostDeps: OrchestratorHostDeps): Orchestrator
     get ptyManager() {
       return ptyRef.manager;
     },
-    ensurePtyManager(source: MessageSource): void {
+    ensurePtyManager(source: MessageSource, replySink?: MessageSink): { dispose(): void } {
       if (ptyRef.manager === null) {
-        ptyRef.manager = new PtyManager({ sink: broadcastSink, source });
-      } else {
-        ptyRef.manager.attachSource(source);
+        ptyRef.manager = new PtyManager({ sink: broadcastSink });
       }
+      return ptyRef.manager.attachSource(source, replySink);
+    },
+
+    persistNow(): void {
+      doPersist();
     },
     get layoutWatcher() {
       return layoutWatcher;
@@ -823,10 +815,17 @@ export function createOrchestrator(hostDeps: OrchestratorHostDeps): Orchestrator
           }
           globalDismissedFiles.clear();
         } else {
-          // Remove external agents not from the current workspace
+          // Remove external agents not from the current workspace. The daemon
+          // host bridge reports no workspace folders, so every external is
+          // "outside" there — same behavior as before unification.
+          const workspaceDirs = new Set<string>();
+          for (const folder of host().workspaceFolders()) {
+            const dir = getProjectDirPath(folder);
+            if (dir) workspaceDirs.add(dir);
+          }
           const toRemove: number[] = [];
           for (const [id, agent] of agents) {
-            if (agent.isExternal) {
+            if (agent.isExternal && !workspaceDirs.has(agent.projectDir)) {
               toRemove.push(id);
             }
           }
