@@ -38,14 +38,10 @@ import type { MessageSink } from './types.js';
  * @param name - Asset name relative to assets/ (e.g., 'floors.png')
  * @returns Absolute path to the asset
  */
-export function resolveBundledAssetPath(name: string): string {
-  // When esbuild transpiles to CJS, it injects __dirname.
-  // For ESM contexts (future), we'll use a dynamic import to resolve.
-  // For now in the CJS extension, __dirname is available.
-  const here: string =
-    ((global as unknown as Record<string, unknown>).__dirname as string) || process.cwd();
-  return path.join(here, 'assets', name);
-}
+// NOTE: bundled asset resolution goes through the host-provided assetsRoot
+// (extension: <extension>/dist, daemon: distRoot). A previous helper here read
+// `global.__dirname` — which nothing sets in either bundle — silently falling
+// back to process.cwd() and loading nothing. Loaders take assetsRoot instead.
 
 export type { FurnitureAsset };
 
@@ -207,11 +203,10 @@ export async function loadFurnitureAssets(workspaceRoot: string): Promise<Loaded
  * with the largest N. Falls back to assets/default-layout.json for
  * backward compatibility.
  *
- * @param _assetsRoot - Deprecated parameter; kept for backward compatibility with extension.
- *                      The function resolves bundled assets via resolveBundledAssetPath().
+ * @param assetsRoot - Host-resolved root containing the `assets/` directory.
  */
-export function loadDefaultLayout(_assetsRoot: string): Record<string, unknown> | null {
-  const assetsDir = path.dirname(resolveBundledAssetPath('dummy.json'));
+export function loadDefaultLayout(assetsRoot: string): Record<string, unknown> | null {
+  const assetsDir = path.join(assetsRoot, 'assets');
   try {
     // Scan for versioned default layouts: default-layout-{N}.json
     let bestRevision = 0;
@@ -273,12 +268,11 @@ interface LoadedWallTiles {
  * Each file is named wall_N.png (e.g. wall_0.png, wall_1.png, ...).
  * Files are loaded in numeric order; each PNG is a 64×128 grid of 16 bitmask pieces.
  *
- * @param _assetsRoot - Deprecated parameter; kept for backward compatibility with extension.
- *                      The function resolves bundled assets via resolveBundledAssetPath().
+ * @param assetsRoot - Host-resolved root containing the `assets/` directory.
  */
-export async function loadWallTiles(_assetsRoot: string): Promise<LoadedWallTiles | null> {
+export async function loadWallTiles(assetsRoot: string): Promise<LoadedWallTiles | null> {
   try {
-    const wallsDir = path.dirname(resolveBundledAssetPath('walls/dummy.png'));
+    const wallsDir = path.join(assetsRoot, 'assets', 'walls');
     if (!fs.existsSync(wallsDir)) {
       console.log('[AssetLoader] No walls/ directory found at:', wallsDir);
       return null;
@@ -343,12 +337,11 @@ interface LoadedFloorTiles {
  * Each file is named floor_N.png (e.g. floor_0.png, floor_1.png, ...).
  * Files are loaded in numeric order; each PNG is a 16×16 grayscale tile.
  *
- * @param _assetsRoot - Deprecated parameter; kept for backward compatibility with extension.
- *                      The function resolves bundled assets via resolveBundledAssetPath().
+ * @param assetsRoot - Host-resolved root containing the `assets/` directory.
  */
-export async function loadFloorTiles(_assetsRoot: string): Promise<LoadedFloorTiles | null> {
+export async function loadFloorTiles(assetsRoot: string): Promise<LoadedFloorTiles | null> {
   try {
-    const floorsDir = path.dirname(resolveBundledAssetPath('floors/dummy.png'));
+    const floorsDir = path.join(assetsRoot, 'assets', 'floors');
     if (!fs.existsSync(floorsDir)) {
       console.log('[AssetLoader] No floors/ directory found at:', floorsDir);
       return null;
@@ -420,14 +413,13 @@ export function mergeCharacterSprites(
  * Load pre-colored character sprites from assets/characters/ (6 PNGs, each 112×96).
  * Each PNG has 3 direction rows (down, up, right) × 7 frames (16×32 each).
  *
- * @param _assetsRoot - Deprecated parameter; kept for backward compatibility with extension.
- *                      The function resolves bundled assets via resolveBundledAssetPath().
+ * @param assetsRoot - Host-resolved root containing the `assets/` directory.
  */
 export async function loadCharacterSprites(
-  _assetsRoot: string,
+  assetsRoot: string,
 ): Promise<LoadedCharacterSprites | null> {
   try {
-    const charDir = path.dirname(resolveBundledAssetPath('characters/dummy.png'));
+    const charDir = path.join(assetsRoot, 'assets', 'characters');
     const characters: CharacterDirectionSprites[] = [];
 
     for (let ci = 0; ci < CHAR_COUNT; ci++) {
