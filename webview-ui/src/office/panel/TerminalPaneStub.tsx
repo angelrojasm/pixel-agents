@@ -37,9 +37,8 @@ export function TerminalPaneStub({ agentId, agentName, fontSize }: TerminalPaneS
         [ terminal — agent #{agentId} ({agentName ?? 'unknown'}) ]
       </div>
       <div style={{ color: PANEL_MUTED, marginTop: 4 }}>
-        This agent is running in VS Code&apos;s native terminal strip. To render the terminal here
-        in the panel, enable &quot;Use in-panel terminal&quot; in Settings, then spawn a new agent
-        with + Agent. Existing agents stay on the native terminal.
+        This agent runs outside Pixel Agents &mdash; its session transcript is being watched, but
+        there is no terminal to attach here.
       </div>
     </div>
   );
