@@ -41,6 +41,9 @@ export interface AgentState {
    * everything importing it — stays loadable outside the extension host.
    */
   terminalRef?: HostTerminal;
+  /** Display name for pty-backed agents (no terminalRef to read it from);
+   *  e.g. "Claude Code #1". Used by snapshot replay and persistence. */
+  terminalName?: string;
   /** Whether this agent was detected from an external source (VS Code extension panel, etc.) */
   isExternal: boolean;
   projectDir: string;

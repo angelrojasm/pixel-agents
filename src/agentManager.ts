@@ -173,10 +173,11 @@ export async function launchNewTerminal(
     hueShift: 0,
   };
 
+  const terminalName = `${TERMINAL_NAME_PREFIX} #${idx}`;
+  agent.terminalName = terminalName;
   agents.set(id, agent);
   activeAgentIdRef.current = id;
   persistAgents();
-  const terminalName = `${TERMINAL_NAME_PREFIX} #${idx}`;
   console.log(`[Pixel Agents] Terminal: Agent ${id} - created for terminal ${terminalName}`);
   webview?.postMessage({
     type: 'agentCreated',
@@ -633,8 +634,9 @@ export function buildExistingAgentsPayload(agents: Map<number, AgentState>): {
 
   const terminalNames: Record<number, string> = {};
   for (const [id, agent] of agents) {
-    if (agent.terminalRef?.name) {
-      terminalNames[id] = agent.terminalRef.name;
+    const name = agent.terminalRef?.name ?? agent.terminalName;
+    if (name) {
+      terminalNames[id] = name;
     }
   }
 
@@ -825,7 +827,7 @@ export function getTerminalNamesSummary(
 ): Array<{ id: number; terminalName: string }> {
   const result: Array<{ id: number; terminalName: string }> = [];
   for (const [id, agent] of agents) {
-    const name = agent.terminalRef?.name;
+    const name = agent.terminalRef?.name ?? agent.terminalName;
     if (name) {
       result.push({ id, terminalName: name });
     }

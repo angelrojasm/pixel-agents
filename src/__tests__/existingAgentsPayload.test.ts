@@ -43,4 +43,12 @@ describe('buildExistingAgentsPayload', () => {
     expect(p.ptyBackedAgents).toEqual({ 1: true });
     expect(p.agents.every((id) => typeof id === 'number')).toBe(true);
   });
+
+  it('pty agents (no terminalRef) keep their stored terminalName', () => {
+    const agents = new Map<number, AgentState>([
+      [1, agent({ id: 1, ptyBacked: true, terminalName: 'Claude Code #1' })],
+    ]);
+    const p = buildExistingAgentsPayload(agents);
+    expect(p.terminalNames).toEqual({ 1: 'Claude Code #1' });
+  });
 });
