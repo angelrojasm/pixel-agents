@@ -1,3 +1,5 @@
+import * as os from 'os';
+
 import type { HookProvider } from '../../core/src/provider.js';
 import { resendAgentActivity } from './agentActivityResend.js';
 import { buildAgentDiagnostics } from './agentDiagnostics.js';
@@ -11,7 +13,13 @@ import {
   setHooksEnabled,
   writeConfig,
 } from './configPersistence.js';
-import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT } from './constants.js';
+import {
+  HUE_SHIFT_MAX_DEG,
+  PALETTE_COUNT,
+  PTY_SCROLLBACK_MAX_LINES,
+  RECENT_AGENT_FOLDERS_MAX,
+} from './constants.js';
+import { launchAgentStandalone, resolveDefaultCwd } from './launchAgentStandalone.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
@@ -60,6 +68,12 @@ export interface ClientMessageContext {
    * to false so a caller that forgets to pass it gets the safe answer.
    */
   privileged?: boolean;
+  /** Hook provider used for standalone pty spawns (launchAgent/restartAgent).
+   *  Threaded from cli.ts; absent under the VS Code adapter. */
+  provider?: HookProvider;
+  /** The CLI's scan root (process.cwd() at startup) — the default spawn cwd.
+   *  Threaded from cli.ts; absent under the VS Code adapter. */
+  launchCwd?: string;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -70,6 +84,7 @@ const KEY_GHOST_HEADLESS_AGENTS = 'pixel-agents.ghostHeadlessAgents';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
+const KEY_RECENT_AGENT_FOLDERS = 'pixel-agents.recentAgentFolders';
 
 /**
  * Handle incoming ClientMessage from a WebSocket client.
@@ -270,6 +285,83 @@ export function handleClientMessage(
       break;
     }
 
+    // ── Standalone pty terminals (privileged only; VS Code keeps its own
+    // native-terminal path in adapters/vscode) ──
+
+    case 'launchAgent': {
+      if (!ctx.privileged || !runtime?.ptyHost || !ctx.provider || !ctx.launchCwd) break;
+      const id = launchAgentStandalone(
+        {
+          folderPath: msg.folderPath as string | undefined,
+          bypassPermissions: msg.bypassPermissions as boolean | undefined,
+          name: msg.name as string | undefined,
+        },
+        { store, runtime, provider: ctx.provider, launchCwd: ctx.launchCwd },
+      );
+      if (id !== null) {
+        const agent = store.get(id);
+        if (agent?.customTitle) {
+          store.broadcast({ type: 'agentRenamed', id, customTitle: agent.customTitle });
+        }
+        if (typeof msg.folderPath === 'string' && msg.folderPath.trim()) {
+          const raw = msg.folderPath.trim();
+          // Only paths that actually resolved become quick-picks.
+          if (resolveDefaultCwd(raw)) {
+            const current = adapter?.getSetting<string[]>(KEY_RECENT_AGENT_FOLDERS, []) ?? [];
+            const next = [raw, ...current.filter((v) => v !== raw)].slice(
+              0,
+              RECENT_AGENT_FOLDERS_MAX,
+            );
+            adapter?.setSetting(KEY_RECENT_AGENT_FOLDERS, next);
+            sendSettingsLoaded(send, ctx);
+          }
+        }
+      }
+      break;
+    }
+
+    case 'ptyInput':
+      if (ctx.privileged) runtime?.ptyHost?.write(msg.id as number, msg.data as string);
+      break;
+
+    case 'ptyResize':
+      if (ctx.privileged)
+        runtime?.ptyHost?.resize(msg.id as number, msg.cols as number, msg.rows as number);
+      break;
+
+    case 'terminalPaneReady':
+      // Point-to-point scrollback replay for a freshly mounted terminal pane.
+      if (ctx.privileged && runtime?.ptyHost?.has(msg.id as number)) {
+        send({
+          type: 'ptyScrollback',
+          id: msg.id,
+          lines: runtime.ptyHost.scrollback(msg.id as number),
+        });
+      }
+      break;
+
+    case 'restartAgent': {
+      if (!ctx.privileged || !runtime?.ptyHost || !ctx.provider?.buildLaunchCommand) break;
+      const id = msg.id as number;
+      const agent = store.get(id);
+      if (!agent?.ptyBacked || !agent.sessionId) break;
+      const cwd = agent.spawnCwd ?? ctx.launchCwd ?? os.homedir();
+      // stop() marks the old worker intentionally stopped → no agentCrashed.
+      runtime.ptyHost.stop(id);
+      const launch = ctx.provider.buildLaunchCommand(agent.sessionId, cwd, {});
+      runtime.ptyHost.start(id, {
+        shell: process.env.SHELL ?? '/bin/zsh',
+        args: ['-l', '-c', [launch.command, ...launch.args].join(' ')],
+        cwd,
+        env: { ...process.env, ...launch.env },
+        cols: 80,
+        rows: 24,
+        scrollbackCapacity: PTY_SCROLLBACK_MAX_LINES,
+      });
+      store.broadcast({ type: 'agentRestarted', id });
+      break;
+    }
+
     default:
       // focusAgent, exportLayout, importLayout
       // require IDE-specific handling (not yet implemented for standalone)
@@ -355,6 +447,36 @@ function standaloneConsentEffects(
   };
 }
 
+/** Build + send the settingsLoaded frame. Returns the two values
+ *  handleWebviewReady also syncs into runtime refs. */
+function sendSettingsLoaded(
+  send: WsSend,
+  ctx: ClientMessageContext,
+): { watchAllSessions: boolean; hooksEnabled: boolean } {
+  const adapter = ctx.store.getAdapter();
+  const cfg = readConfig();
+  const watchAllSessions = adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false;
+  // settingsLoaded.hooksEnabled stays a single boolean carrying the CLAUDE
+  // provider's preference until the Settings UI grows a per-provider list —
+  // its sole webview reader is the hooks tooltip gate.
+  const hooksEnabled = getHooksEnabled(claudeProvider.id);
+  send({
+    type: 'settingsLoaded',
+    soundEnabled: adapter?.getSetting(KEY_SOUND_ENABLED, true) ?? true,
+    lastSeenVersion: adapter?.getSetting(KEY_LAST_SEEN_VERSION, '') ?? '',
+    extensionVersion: process.env.PIXEL_AGENTS_VERSION ?? '',
+    watchAllSessions,
+    alwaysShowLabels: adapter?.getSetting(KEY_ALWAYS_SHOW_LABELS, false) ?? false,
+    ghostHeadlessAgents: adapter?.getSetting(KEY_GHOST_HEADLESS_AGENTS, false) ?? false,
+    hooksEnabled,
+    hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
+    externalAssetDirectories: cfg.externalAssetDirectories,
+    showAreas: adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false,
+    recentAgentFolders: adapter?.getSetting<string[]>(KEY_RECENT_AGENT_FOLDERS, []) ?? [],
+  });
+  return { watchAllSessions, hooksEnabled };
+}
+
 function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const { store, runtime, cache } = ctx;
   const adapter = store.getAdapter();
@@ -403,26 +525,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // after agent creation with no characters.
 
   // 4. Settings (from adapter, with sensible defaults when adapter is absent)
-  const cfg = readConfig();
-  const watchAllSessions = adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false;
-  // settingsLoaded.hooksEnabled stays a single boolean carrying the CLAUDE
-  // provider's preference until the Settings UI grows a per-provider list —
-  // its sole webview reader is the hooks tooltip gate.
-  const hooksEnabled = getHooksEnabled(claudeProvider.id);
-  const showAreas = adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false;
-  send({
-    type: 'settingsLoaded',
-    soundEnabled: adapter?.getSetting(KEY_SOUND_ENABLED, true) ?? true,
-    lastSeenVersion: adapter?.getSetting(KEY_LAST_SEEN_VERSION, '') ?? '',
-    extensionVersion: process.env.PIXEL_AGENTS_VERSION ?? '',
-    watchAllSessions,
-    alwaysShowLabels: adapter?.getSetting(KEY_ALWAYS_SHOW_LABELS, false) ?? false,
-    ghostHeadlessAgents: adapter?.getSetting(KEY_GHOST_HEADLESS_AGENTS, false) ?? false,
-    hooksEnabled,
-    hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
-    externalAssetDirectories: cfg.externalAssetDirectories,
-    showAreas,
-  });
+  const { watchAllSessions, hooksEnabled } = sendSettingsLoaded(send, ctx);
 
   // 4a. Actual install state, distinct from the hooksEnabled preference —
   // hooksEnabled defaults true while first-run consent is still pending. The
@@ -464,7 +567,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // webview seat-preference logic has the dict when characters are created).
   send({
     type: 'areaMappingsLoaded',
-    mappings: cfg.standalone.areaMappings ?? {},
+    mappings: readConfig().standalone.areaMappings ?? {},
   });
 
   // Sync runtime refs with the persisted settings so scanners behave correctly
@@ -481,6 +584,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const agentIds: number[] = [];
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
+  const ptyBackedAgents: Record<number, boolean> = {};
+  const customTitles: Record<number, string> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const [id, agent] of store) {
@@ -490,6 +595,12 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
+    }
+    if (agent.ptyBacked) {
+      ptyBackedAgents[id] = true;
+    }
+    if (agent.customTitle) {
+      customTitles[id] = agent.customTitle;
     }
     const persisted = persistedSeats[String(id)];
     agentMeta[id] = {
@@ -504,6 +615,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     agentMeta,
     folderNames,
     externalAgents,
+    ptyBackedAgents,
+    customTitles,
   });
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents

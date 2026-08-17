@@ -1,0 +1,264 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { AgentRuntime } from '../src/agentRuntime.js';
+import { AgentStateStore } from '../src/agentStateStore.js';
+import { type ClientMessageContext, handleClientMessage } from '../src/clientMessageHandler.js';
+import { FileStateAdapter } from '../src/fileStateAdapter.js';
+import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import type { PtyManager, PtyStartOptions } from '../src/pty/ptyManager.js';
+import type { AgentState } from '../src/types.js';
+
+function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
+  return {
+    id: 1,
+    sessionId: 'sess-1',
+    terminalRef: undefined,
+    isExternal: false,
+    projectDir: '/test',
+    jsonlFile: '/test/session.jsonl',
+    fileOffset: 0,
+    lineBuffer: '',
+    activeToolIds: new Set(),
+    activeToolStatuses: new Map(),
+    activeToolNames: new Map(),
+    activeSubagentToolIds: new Map(),
+    activeSubagentToolNames: new Map(),
+    backgroundAgentToolIds: new Set(),
+    isWaiting: false,
+    permissionSent: false,
+    hadToolsInTurn: false,
+    lastDataAt: 0,
+    linesProcessed: 0,
+    seenUnknownRecordTypes: new Set(),
+    hookDelivered: false,
+    contextTokens: 0,
+    maxContextTokens: 200_000,
+    ...overrides,
+  } as AgentState;
+}
+
+function makeFakePtyHost() {
+  const running = new Set<number>();
+  const starts: Array<{ id: number; opts: PtyStartOptions }> = [];
+  const host = {
+    start: vi.fn((id: number, opts: PtyStartOptions) => {
+      running.add(id);
+      starts.push({ id, opts });
+    }),
+    stop: vi.fn((id: number) => void running.delete(id)),
+    write: vi.fn(),
+    resize: vi.fn(),
+    scrollback: vi.fn(() => ['line-1', 'line-2']),
+    has: vi.fn((id: number) => running.has(id)),
+    disposeAll: vi.fn(),
+  };
+  return { host: host as unknown as PtyManager, starts, running };
+}
+
+describe('clientMessageHandler: standalone pty dispatch', () => {
+  let tempHome: string;
+  let launchCwd: string;
+  let originalHome: string | undefined;
+  let store: AgentStateStore;
+  let runtime: AgentRuntime | undefined;
+  let sent: Array<Record<string, unknown>>;
+  let broadcasts: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-ptydispatch-'));
+    launchCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-ptydispatch-cwd-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+    store = new AgentStateStore();
+    store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
+    sent = [];
+    broadcasts = [];
+    store.on('broadcast', (m) => broadcasts.push(m));
+  });
+
+  afterEach(() => {
+    runtime?.dispose();
+    runtime = undefined;
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    store.dispose();
+    fs.rmSync(tempHome, { recursive: true, force: true });
+    fs.rmSync(launchCwd, { recursive: true, force: true });
+  });
+
+  function makeCtx(host: PtyManager | null, privileged = true): ClientMessageContext {
+    runtime = new AgentRuntime(store, claudeProvider);
+    if (host) runtime.setPtyHost(host);
+    return {
+      store,
+      runtime,
+      cache: null,
+      privileged,
+      provider: claudeProvider,
+      launchCwd,
+    };
+  }
+
+  const send = (m: Record<string, unknown>) => sent.push(m);
+
+  describe('launchAgent', () => {
+    it('privileged: spawns a pty agent and broadcasts agentRenamed for a named spawn', () => {
+      const { host, starts } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      handleClientMessage({ type: 'launchAgent', name: 'Zed' }, send, ctx);
+      expect(store.size).toBe(1);
+      expect(starts).toHaveLength(1);
+      const renamed = broadcasts.find((b) => b.type === 'agentRenamed');
+      expect(renamed).toBeDefined();
+      expect(renamed!.customTitle).toBe('Zed');
+    });
+
+    it('unprivileged: no-op', () => {
+      const { host, starts } = makeFakePtyHost();
+      const ctx = makeCtx(host, false);
+      handleClientMessage({ type: 'launchAgent' }, send, ctx);
+      expect(store.size).toBe(0);
+      expect(starts).toHaveLength(0);
+    });
+
+    it('records an existing folderPath in recents MRU and re-sends settingsLoaded', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      handleClientMessage({ type: 'launchAgent', folderPath: launchCwd }, send, ctx);
+      const adapter = store.getAdapter()!;
+      expect(adapter.getSetting<string[]>('pixel-agents.recentAgentFolders', [])).toEqual([
+        launchCwd,
+      ]);
+      const settings = sent.filter((m) => m.type === 'settingsLoaded');
+      expect(settings.length).toBeGreaterThan(0);
+      expect(settings[settings.length - 1].recentAgentFolders).toEqual([launchCwd]);
+    });
+
+    it('does not record a nonexistent folderPath in recents', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      handleClientMessage(
+        { type: 'launchAgent', folderPath: '/definitely/not/real-xyz' },
+        send,
+        ctx,
+      );
+      const adapter = store.getAdapter()!;
+      expect(adapter.getSetting<string[]>('pixel-agents.recentAgentFolders', [])).toEqual([]);
+    });
+
+    it('MRU: re-picking a folder moves it to the front', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      const other = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-ptydispatch-other-'));
+      try {
+        handleClientMessage({ type: 'launchAgent', folderPath: launchCwd }, send, ctx);
+        handleClientMessage({ type: 'launchAgent', folderPath: other }, send, ctx);
+        handleClientMessage({ type: 'launchAgent', folderPath: launchCwd }, send, ctx);
+        const adapter = store.getAdapter()!;
+        expect(adapter.getSetting<string[]>('pixel-agents.recentAgentFolders', [])).toEqual([
+          launchCwd,
+          other,
+        ]);
+      } finally {
+        fs.rmSync(other, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('ptyInput / ptyResize', () => {
+    it('privileged: routes write and resize to the pty host', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      handleClientMessage({ type: 'ptyInput', id: 3, data: 'ls\n' }, send, ctx);
+      handleClientMessage({ type: 'ptyResize', id: 3, cols: 120, rows: 40 }, send, ctx);
+      expect(host.write).toHaveBeenCalledWith(3, 'ls\n');
+      expect(host.resize).toHaveBeenCalledWith(3, 120, 40);
+    });
+
+    it('unprivileged: ptyInput is a no-op', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host, false);
+      handleClientMessage({ type: 'ptyInput', id: 3, data: 'rm -rf /\n' }, send, ctx);
+      expect(host.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('terminalPaneReady', () => {
+    it('replies with scrollback point-to-point, not broadcast', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      ctx.runtime!.ptyHost!.start(5, {} as PtyStartOptions); // mark id 5 as running
+      handleClientMessage({ type: 'terminalPaneReady', id: 5 }, send, ctx);
+      const reply = sent.find((m) => m.type === 'ptyScrollback');
+      expect(reply).toBeDefined();
+      expect(reply!.id).toBe(5);
+      expect(reply!.lines).toEqual(['line-1', 'line-2']);
+      expect(broadcasts.find((b) => b.type === 'ptyScrollback')).toBeUndefined();
+    });
+
+    it('no reply for an id with no live worker', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      handleClientMessage({ type: 'terminalPaneReady', id: 99 }, send, ctx);
+      expect(sent.find((m) => m.type === 'ptyScrollback')).toBeUndefined();
+    });
+  });
+
+  describe('restartAgent', () => {
+    it('stops then restarts with the same sessionId in spawnCwd; broadcasts agentRestarted', () => {
+      const { host, starts } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      store.set(
+        4,
+        createTestAgent({ id: 4, sessionId: 'sess-4', ptyBacked: true, spawnCwd: launchCwd }),
+      );
+      handleClientMessage({ type: 'restartAgent', id: 4 }, send, ctx);
+      expect(host.stop).toHaveBeenCalledWith(4);
+      expect(starts).toHaveLength(1);
+      expect(starts[0].id).toBe(4);
+      expect(starts[0].opts.cwd).toBe(launchCwd);
+      expect(starts[0].opts.args.join(' ')).toContain('sess-4');
+      expect(broadcasts.find((b) => b.type === 'agentRestarted')?.id).toBe(4);
+    });
+
+    it('ignores restart for a non-pty agent', () => {
+      const { host, starts } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      store.set(6, createTestAgent({ id: 6, sessionId: 'sess-6' }));
+      handleClientMessage({ type: 'restartAgent', id: 6 }, send, ctx);
+      expect(starts).toHaveLength(0);
+    });
+  });
+
+  describe('webviewReady reconnect payloads', () => {
+    it('existingAgents carries ptyBackedAgents and customTitles', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      store.set(
+        2,
+        createTestAgent({ id: 2, sessionId: 'sess-2', ptyBacked: true, customTitle: 'Ada' }),
+      );
+      store.set(3, createTestAgent({ id: 3, sessionId: 'sess-3' }));
+      handleClientMessage({ type: 'webviewReady' }, send, ctx);
+      const existing = sent.find((m) => m.type === 'existingAgents');
+      expect(existing).toBeDefined();
+      expect(existing!.ptyBackedAgents).toEqual({ 2: true });
+      expect(existing!.customTitles).toEqual({ 2: 'Ada' });
+    });
+
+    it('settingsLoaded includes recentAgentFolders', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      store.getAdapter()!.setSetting('pixel-agents.recentAgentFolders', ['/a']);
+      handleClientMessage({ type: 'webviewReady' }, send, ctx);
+      const settings = sent.find((m) => m.type === 'settingsLoaded');
+      expect(settings!.recentAgentFolders).toEqual(['/a']);
+    });
+  });
+});
