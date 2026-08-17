@@ -13,6 +13,8 @@ interface BottomToolbarProps {
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
   workspaceFolders: WorkspaceFolder[];
+  /** Browser runtime: + Agent opens the New-agent form instead of the hover menu. */
+  onOpenNewAgent?: () => void;
 }
 
 export function BottomToolbar({
@@ -22,6 +24,7 @@ export function BottomToolbar({
   isSettingsOpen,
   onToggleSettings,
   workspaceFolders,
+  onOpenNewAgent,
 }: BottomToolbarProps) {
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
   const [isBypassMenuOpen, setIsBypassMenuOpen] = useState(false);
@@ -83,7 +86,17 @@ export function BottomToolbar({
 
   return (
     <div className="absolute bottom-10 left-10 z-20 flex items-center gap-4 pixel-panel p-4">
-      {/* Hide + Agent in standalone browser mode (no terminal to interact with) */}
+      {/* Browser runtime: + Agent opens the New-agent form (name, folder,
+          bypass live inside it — no hover menu). VS Code keeps its flow. */}
+      {isBrowserRuntime && (
+        <Button
+          variant="accent"
+          onClick={onOpenNewAgent}
+          className="bg-accent hover:bg-accent-bright"
+        >
+          + Agent
+        </Button>
+      )}
       {!isBrowserRuntime && (
         <div
           ref={folderPickerRef}

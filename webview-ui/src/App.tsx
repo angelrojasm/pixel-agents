@@ -8,6 +8,7 @@ import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import { NewAgentModal } from './components/NewAgentModal.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalBand } from './components/terminal/TerminalBand.js';
 import { Tooltip } from './components/Tooltip.js';
@@ -97,6 +98,7 @@ function App() {
     setAreaMappings,
     showAreas,
     setShowAreas,
+    recentAgentFolders,
     ptyBackedByAgent,
     customTitles,
     ptyEventBus,
@@ -104,6 +106,7 @@ function App() {
 
   // ── Standalone terminal band (browser runtime only) ──
   const [focusedTerminalId, setFocusedTerminalId] = useState<number | null>(null);
+  const [isNewAgentOpen, setIsNewAgentOpen] = useState(false);
   const railAgents = useMemo(
     () =>
       agents
@@ -541,6 +544,17 @@ function App() {
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen((v) => !v)}
           workspaceFolders={workspaceFolders}
+          onOpenNewAgent={() => setIsNewAgentOpen(true)}
+        />
+
+        <NewAgentModal
+          isOpen={isNewAgentOpen}
+          recentFolders={recentAgentFolders}
+          onSpawn={(spawn) => {
+            transport.send({ type: 'launchAgent', ...spawn });
+            setIsNewAgentOpen(false);
+          }}
+          onClose={() => setIsNewAgentOpen(false)}
         />
 
         <VersionIndicator
