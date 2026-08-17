@@ -312,3 +312,17 @@ export const PET_THUMB_SCALE_MARGIN = 0.85;
 export const EMPTY_SPRITE_THUMBNAIL_BG = '#333';
 /** Maximum string length for a PlacedPet.id (defends against pathologically-long layout entries). */
 export const MAX_PET_ID_LENGTH = 128;
+
+// ── Terminal band (M1, browser runtime) ──
+/** Real monospace stack for xterm content — mirrors the CSS var --terminal-font. */
+export const TERMINAL_FONT_FAMILY = 'Menlo, Monaco, "Courier New", monospace';
+/** Default xterm font size (px). */
+export const TERMINAL_FONT_SIZE_PX = 13;
+/** xterm theme background — matches --color-bg-dark. */
+export const TERMINAL_THEME_BACKGROUND = '#181828';
+/** Terminal band default/min/max heights (px) for the drag-resize handle. */
+export const TERMINAL_BAND_DEFAULT_HEIGHT_PX = 260;
+export const TERMINAL_BAND_MIN_HEIGHT_PX = 120;
+export const TERMINAL_BAND_MAX_HEIGHT_PX = 600;
+/** Client-side scrollback (lines) — matches server PTY_SCROLLBACK_MAX_LINES. */
+export const TERMINAL_SCROLLBACK_LINES = 2000;
