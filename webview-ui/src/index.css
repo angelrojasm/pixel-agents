@@ -101,7 +101,11 @@
     @apply m-0 w-full h-full overflow-hidden font-pixel text-base text-text;
   }
 
-  * {
+  /* Pixel font everywhere EXCEPT inside xterm: the universal selector matches
+   * xterm's glyph spans directly, which beats the monospace font xterm sets on
+   * .xterm-rows — terminal text would render proportional-pixelated with
+   * compensating letter-spacing. */
+  *:not(.xterm, .xterm *) {
     @apply font-pixel;
   }
 }
