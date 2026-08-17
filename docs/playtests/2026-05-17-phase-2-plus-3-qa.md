@@ -1,8 +1,30 @@
 # Phase 2 + Phase 3 — Combined QA Checklist
 
-> **Status: Path B PASS — 2026-08-16** (QA Session 2, after the blocker fixes). Path A
-> regression + Path C remain to be re-run. Session 1 (2026-08-14) result was FAIL with
-> two release blockers; both fixed. See both session blocks below.
+> **Status: PASS — 2026-08-16.** Path B (Session 2), Path A automated (Session 3), and
+> Path C (Session 3) all pass. Session 1 (2026-08-14) was FAIL with two release
+> blockers; both fixed. See session blocks below.
+
+## QA Session 3 — 2026-08-16 (Paths A + C, real-VS-Code e2e)
+
+- **Path A (automated) PASS**: `npm run e2e` launches a real VS Code 1.133 with the
+  extension in dev mode, isolated HOME, mock `claude`. The agent-spawn spec passes
+  through the refactored path (webview → shared uiDispatch → openClaude → pty): mock
+  claude invoked with `--session-id`, JSONL created, rail cell rendered. The final
+  screenshot also confirms the extension office now renders floors/walls/characters
+  from the extension-loaded assets (the `resolveBundledAssetPath` fix — previously
+  masked by webview fallbacks). Two e2e-infra repairs landed: VS Code ≥1.13x renamed
+  the macOS binary `Electron` → `Code`, and the terminal assertion was stale
+  (pty-only agents render in the office panel, not the workbench terminal strip).
+  A full manual §1–4 Phase-2 checklist walk remains optional dogfooding, not a gate.
+- **Path C PASS** (new permanent spec `e2e/tests/path-c-browser-tab.spec.ts`): with the
+  extension owning the server, a real Chromium tab loads the SPA (title "Pixel
+  Agents"), receives the VS Code-created agent via snapshot replay (including its
+  terminal name — fixed: pty agents now store `terminalName` on AgentState since there
+  is no terminalRef to read), and **+ Agent clicked in the browser creates an agent
+  that appears in the VS Code webview** (inbound WS dispatch + bridged broadcast),
+  echoing back to the browser. Both directions verified in one run.
+- Still tracked for Path C hardening: `PixelAgentsServer.stop()` does not close live
+  upgraded sockets on extension deactivate (code-review finding; see Session 2 note).
 
 ## QA Session 2 — 2026-08-16 (Path B re-run, automated via Playwright)
 
