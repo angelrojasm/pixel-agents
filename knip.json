@@ -8,8 +8,7 @@
     "fastify",
     "@fastify/cors",
     "@fastify/static",
-    "@fastify/websocket",
-    "node-pty"
+    "@fastify/websocket"
   ],
   "ignoreExportsUsedInFile": true,
   "ignore": [

@@ -6,8 +6,6 @@ import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 import { Modal } from './ui/Modal.js';
 
-export type { NewAgentSpawn };
-
 interface NewAgentModalProps {
   isOpen: boolean;
   /** MRU list from settingsLoaded (config.json), newest first. */
