@@ -9,6 +9,7 @@ import { setGhostHeadlessAgents as setRendererGhostHeadlessAgents } from '../off
 import { setFloorSprites } from '../office/floorTiles.js';
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js';
+import { PtyEventBus } from '../office/panel/ptyEventBus.js';
 import { setCarpetSprites } from '../office/sprites/carpetTiles.js';
 import { setPetTemplates } from '../office/sprites/petSpriteData.js';
 import { setCharacterTemplates } from '../office/sprites/spriteData.js';
@@ -21,6 +22,7 @@ import type { OfficeLayout, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
 import { transport } from '../transport/index.js';
+import { toPtyEvent } from './ptyEvents.js';
 
 /**
  * A Headless agent is one the office adopted from outside (`claude -p`, a session
@@ -153,6 +155,15 @@ export function useExtensionMessages(
   const consentRequest = consentQueue[0] ?? null;
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
+  // ── Standalone pty terminals ──
+  const [recentAgentFolders, setRecentAgentFolders] = useState<string[]>([]);
+  const [ptyBackedByAgent, setPtyBackedByAgent] = useState<Record<number, boolean>>({});
+  const [customTitles, setCustomTitles] = useState<Record<number, string>>({});
+  // Per-agent pty event fan-out for xterm panes. A ref (not state): subscribers
+  // attach imperatively; per-keystroke data must never re-render React.
+  const ptyEventBusRef = useRef<PtyEventBus | null>(null);
+  if (!ptyEventBusRef.current) ptyEventBusRef.current = new PtyEventBus();
+  const ptyEventBus = ptyEventBusRef.current;
 
   // The renderer keeps its own module-level copy (read every rAF frame), so both
   // sources of truth move together — the persisted value on settingsLoaded and
@@ -215,6 +226,33 @@ export function useExtensionMessages(
         return;
       }
 
+      // Pty wire messages (privileged sockets only): route to the imperative
+      // bus so xterm panes update without a React render per keystroke.
+      const ptyEvent = toPtyEvent(msg as Record<string, unknown>);
+      if (ptyEvent) {
+        switch (ptyEvent.kind) {
+          case 'data':
+            ptyEventBus.emitData(ptyEvent.id, ptyEvent.data ?? '');
+            break;
+          case 'exit':
+            ptyEventBus.emitExit(ptyEvent.id, {
+              code: ptyEvent.code ?? 0,
+              signal: ptyEvent.signal,
+            });
+            break;
+          case 'scrollback':
+            ptyEventBus.emitScrollback(ptyEvent.id, ptyEvent.lines ?? []);
+            break;
+          case 'crashed':
+            ptyEventBus.emitCrashed(ptyEvent.id, { code: ptyEvent.code, signal: ptyEvent.signal });
+            break;
+          case 'restarted':
+            ptyEventBus.emitRestarted(ptyEvent.id);
+            break;
+        }
+        return;
+      }
+
       if (msg.type === 'layoutLoaded') {
         // Skip external layout updates while editor has unsaved changes
         if (layoutReadyRef.current && isEditDirty?.()) {
@@ -246,6 +284,13 @@ export function useExtensionMessages(
         }
       } else if (msg.type === 'agentCreated') {
         const id = msg.id as number;
+        if (msg.ptyBacked === true) {
+          setPtyBackedByAgent((prev) => ({ ...prev, [id]: true }));
+        }
+        if (typeof msg.customTitle === 'string' && msg.customTitle) {
+          const title = msg.customTitle as string;
+          setCustomTitles((prev) => ({ ...prev, [id]: title }));
+        }
         const folderName = msg.folderName as string | undefined;
         const isTeammate = msg.isTeammate as boolean | undefined;
         const teammateName = msg.teammateName as string | undefined;
@@ -294,6 +339,18 @@ export function useExtensionMessages(
         const id = msg.id as number;
         setAgents((prev) => prev.filter((a) => a !== id));
         setSelectedAgent((prev) => (prev === id ? null : prev));
+        setPtyBackedByAgent((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setCustomTitles((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
         setAgentTools((prev) => {
           if (!(id in prev)) return prev;
           const next = { ...prev };
@@ -322,6 +379,16 @@ export function useExtensionMessages(
         const meta = (msg.agentMeta || {}) as Record<number, ExistingAgentMeta>;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
         const externalAgents = (msg.externalAgents || {}) as Record<number, boolean>;
+        // Reconnect payloads: which agents are pty-backed, and their names.
+        // Plain React maps (not officeState), so no layout buffering needed.
+        const ptyBackedAgents = (msg.ptyBackedAgents || {}) as Record<number, boolean>;
+        const restoredTitles = (msg.customTitles || {}) as Record<number, string>;
+        if (Object.keys(ptyBackedAgents).length > 0) {
+          setPtyBackedByAgent((prev) => ({ ...prev, ...ptyBackedAgents }));
+        }
+        if (Object.keys(restoredTitles).length > 0) {
+          setCustomTitles((prev) => ({ ...prev, ...restoredTitles }));
+        }
         const headlessAgents: Record<number, boolean> = {};
         for (const id of incoming) {
           noteFolderName(folderNames[id]);
@@ -674,6 +741,17 @@ export function useExtensionMessages(
         if (typeof msg.extensionVersion === 'string') {
           setExtensionVersion(msg.extensionVersion as string);
         }
+        if (Array.isArray(msg.recentAgentFolders)) {
+          setRecentAgentFolders(
+            (msg.recentAgentFolders as unknown[]).filter((f): f is string => typeof f === 'string'),
+          );
+        }
+      } else if (msg.type === 'agentRenamed') {
+        const id = msg.id as number;
+        if (typeof id === 'number' && typeof msg.customTitle === 'string') {
+          const title = msg.customTitle as string;
+          setCustomTitles((prev) => ({ ...prev, [id]: title }));
+        }
       } else if (msg.type === 'hooksStatus') {
         if (typeof msg.installed === 'boolean' && typeof msg.providerId === 'string') {
           const providerId = msg.providerId as string;
@@ -799,5 +877,9 @@ export function useExtensionMessages(
     setAreaMappings,
     showAreas,
     setShowAreas,
+    recentAgentFolders,
+    ptyBackedByAgent,
+    customTitles,
+    ptyEventBus,
   };
 }
