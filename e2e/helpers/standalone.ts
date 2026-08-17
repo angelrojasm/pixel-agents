@@ -10,6 +10,11 @@ import { type HookServerConfig, waitForHookServer } from './hooks';
 
 const REPO_ROOT = path.join(__dirname, '../..');
 const STANDALONE_CLI = path.resolve(REPO_ROOT, 'dist', 'cli.js');
+const MOCK_CLAUDE_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude');
+const MOCK_CLAUDE_CMD_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude.cmd');
+const MOCK_CLAUDE_RUNNER_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude-runner.cjs');
+const TAIL_FOLLOW_PATH = path.join(REPO_ROOT, 'e2e/fixtures/tail-follow.cjs');
+const IS_WINDOWS = process.platform === 'win32';
 
 export interface RecordedServerMessage {
   type: string;
@@ -20,6 +25,10 @@ export interface StandaloneSession {
   tmpHome: string;
   workspaceDir: string;
   hostUrl: string;
+  /** mock-claude's invocation log under the isolated HOME. Non-empty proves
+   *  the pty spawn resolved the MOCK claude, not a real CLI (a login shell
+   *  can reorder PATH, so the log is the authoritative signal). */
+  mockLogFile: string;
   hookServerConfig: HookServerConfig;
   getHostLogs: () => string;
   cleanup: () => Promise<void>;
@@ -97,6 +106,25 @@ async function waitForHttpOk(url: string): Promise<void> {
  * single origin. Workspace dir is communicated via process.cwd() since our CLI
  * doesn't take a --workspace-dir flag.
  */
+/** Copy the mock `claude` wrapper + its sibling scripts into an isolated bin
+ *  dir under the test HOME. Mirrors launchVSCode's mockBinDir setup — the
+ *  wrapper resolves mock-claude-runner.cjs / tail-follow.cjs relative to its
+ *  own directory, so all three must live together. */
+function setupMockClaudeBin(homeDir: string): string {
+  const mockBinDir = path.join(homeDir, 'mock-bin');
+  fs.mkdirSync(mockBinDir, { recursive: true });
+  const target = path.join(mockBinDir, IS_WINDOWS ? 'claude.cmd' : 'claude');
+  if (IS_WINDOWS) {
+    fs.copyFileSync(MOCK_CLAUDE_CMD_PATH, target);
+  } else {
+    fs.copyFileSync(MOCK_CLAUDE_PATH, target);
+    fs.chmodSync(target, 0o755);
+  }
+  fs.copyFileSync(MOCK_CLAUDE_RUNNER_PATH, path.join(mockBinDir, 'mock-claude-runner.cjs'));
+  fs.copyFileSync(TAIL_FOLLOW_PATH, path.join(mockBinDir, 'tail-follow.cjs'));
+  return mockBinDir;
+}
+
 function spawnStandaloneHost(args: {
   homeDir: string;
   hostPort: number;
@@ -107,6 +135,11 @@ function spawnStandaloneHost(args: {
       `Standalone CLI not built at ${STANDALONE_CLI}. Run 'npm run compile' before standalone e2e tests.`,
     );
   }
+  // Mock `claude` at the front of PATH so pty spawns never reach a real CLI.
+  // The pty runs `$SHELL -l -c ...` and a login shell may REORDER PATH (macOS
+  // path_helper), so specs must assert mock-won via its invocations.log, not
+  // via the PATH value itself.
+  const mockBinDir = setupMockClaudeBin(args.homeDir);
   return spawn(
     process.execPath,
     [STANDALONE_CLI, '--port', args.hostPort.toString(), '--host', '127.0.0.1'],
@@ -116,6 +149,8 @@ function spawnStandaloneHost(args: {
         ...process.env,
         HOME: args.homeDir,
         USERPROFILE: args.homeDir,
+        PATH: `${mockBinDir}${path.delimiter}${process.env['PATH'] ?? ''}`,
+        PIXEL_AGENTS_NODE_BIN: process.execPath,
       },
       stdio: 'pipe',
     },
@@ -145,7 +180,7 @@ async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void>
  * so every incoming message frame is JSON-parsed and pushed to
  * window.__pixelAgentsMessages, which drainMessages() reads from.
  */
-async function installMessageRecorder(page: Page): Promise<void> {
+export async function installMessageRecorder(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const recordedMessages: unknown[] = [];
     const OriginalWebSocket = window.WebSocket;
@@ -171,7 +206,7 @@ async function installMessageRecorder(page: Page): Promise<void> {
   });
 }
 
-async function drainRecordedMessages(page: Page): Promise<RecordedServerMessage[]> {
+export async function drainRecordedMessages(page: Page): Promise<RecordedServerMessage[]> {
   return await page.evaluate(() => {
     const store = (window as Window & { __pixelAgentsMessages?: unknown[] }).__pixelAgentsMessages;
     if (!Array.isArray(store)) {
@@ -279,6 +314,7 @@ export async function launchStandalone(
       tmpHome,
       workspaceDir,
       hostUrl,
+      mockLogFile: path.join(tmpHome, '.claude-mock', 'invocations.log'),
       hookServerConfig,
       getHostLogs: () =>
         [hostStdout.trim(), hostStderr.trim()].filter((value) => value.length > 0).join('\n'),
