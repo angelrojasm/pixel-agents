@@ -112,7 +112,18 @@ Rationale: doing chrome before character-interaction prevents rework on bubbles/
 **Fallback / rollback**
 The `vscode.window.createTerminal` path remains the default and runs in parallel for every agent. If `node-pty` + xterm.js misbehaves on a given agent or platform, the user toggles `usePtyTerminal` off and new agents route through the native terminal path. Once Phase 2 is stable, the flag can be flipped to default-on or removed entirely in a subsequent release.
 
-## Phase 3 — Standalone daemon + browser SPA (in flight; both runtimes coexist)
+## Phase 3 — Standalone daemon + browser SPA (QA-passed; both runtimes coexist)
+
+**Status update (2026-08-16):** All three QA paths pass (see
+`docs/playtests/2026-05-17-phase-2-plus-3-qa.md`): Path B daemon/browser (live
+Playwright session), Path A extension regression (real-VS-Code e2e), Path C
+extension-owned server + browser tab (new permanent e2e spec). The two release
+blockers from the 2026-08-14 QA (daemon dropping all inbound WS messages;
+snapshot-replay shape drift) are fixed via a shared `daemon/uiDispatch.ts` +
+contract-tested replay, spec'd at
+`docs/superpowers/specs/2026-08-16-daemon-inbound-dispatch-design.md`. Browser
+layout export/import shipped (shared-org/fork interop). Branch is release-ready
+pending the merge decision.
 
 **What landed (2026-05-16, in the `2026-05-12-terminal-polish` branch)**
 
