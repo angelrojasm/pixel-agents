@@ -28,6 +28,7 @@ import {
 import { MAX_PORT, MIN_PORT } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import { PtyManager } from './pty/ptyManager.js';
 import { PixelAgentsServer } from './server.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -145,6 +146,12 @@ async function main(): Promise<void> {
     // Create runtime first (before server.start, so we can pass it in)
     const runtime = new AgentRuntime(store, claudeProvider);
 
+    // Pty host: standalone terminals are server-owned node-pty processes.
+    // Output funnels through store.broadcast; httpServer's delivery gate keeps
+    // pty frames privileged-only. dispose() (via runtime) kills every worker.
+    const ptyHost = new PtyManager({ broadcast: (m) => store.broadcast(m) });
+    runtime.setPtyHost(ptyHost);
+
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
       runtime.handleHookEvent(providerId, event);
@@ -237,6 +244,8 @@ async function main(): Promise<void> {
       assetCache,
       onSetHooksEnabled,
       onReloadAssets,
+      provider: claudeProvider,
+      launchCwd: process.cwd(),
     });
     currentConfig = { port: config.port, token: config.token };
 
