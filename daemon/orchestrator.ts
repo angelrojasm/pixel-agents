@@ -64,6 +64,7 @@ import {
   GLOBAL_KEY_HOOKS_ENABLED,
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
+  GLOBAL_KEY_RECENT_AGENT_FOLDERS,
   GLOBAL_KEY_SHOW_TERMINAL_NAMES,
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_TERMINAL_FONT_FAMILY,
@@ -667,6 +668,7 @@ export function createOrchestrator(hostDeps: OrchestratorHostDeps): Orchestrator
         hooksEnabled: hooks,
         hooksInfoShown,
         defaultCwd,
+        recentAgentFolders: config.get<string[]>(GLOBAL_KEY_RECENT_AGENT_FOLDERS) ?? [],
         externalAssetDirectories: officeConfig.externalAssetDirectories,
         terminalFontFamily:
           config.get<string>(GLOBAL_KEY_TERMINAL_FONT_FAMILY) ??

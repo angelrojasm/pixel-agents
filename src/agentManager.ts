@@ -81,6 +81,25 @@ export function resolveDefaultCwd(raw: string | undefined): string | undefined {
   return undefined;
 }
 
+/** Resolve the working directory for a new agent. Resolution order:
+ *   1. explicit folderPath (from the New-agent form or multi-root picker) —
+ *      `~` expanded, silently skipped when the path doesn't exist
+ *   2. first workspace folder (never in daemon mode — the list is empty)
+ *   3. user-configured defaultCwd (same expansion/validation)
+ *   4. home directory */
+export function resolveRequestedCwd(
+  folderPath: string | undefined,
+  workspaceFolders: readonly string[],
+  defaultCwd: string | undefined,
+): string {
+  return (
+    resolveDefaultCwd(folderPath) ??
+    workspaceFolders[0] ??
+    resolveDefaultCwd(defaultCwd) ??
+    os.homedir()
+  );
+}
+
 export async function launchNewTerminal(
   nextAgentIdRef: { current: number },
   nextTerminalIndexRef: { current: number },
@@ -101,12 +120,7 @@ export async function launchNewTerminal(
   ptyManager?: PtyManager | null,
 ): Promise<void> {
   const folders = host().workspaceFolders();
-  // Resolution order:
-  //   1. explicit folderPath argument (e.g. multi-root folder picker)
-  //   2. first workspace folder, if any (never in daemon mode — the list is empty)
-  //   3. user-configured defaultCwd (from the in-app Settings modal, supports `~`)
-  //   4. home directory
-  const cwd = folderPath || folders[0] || resolveDefaultCwd(defaultCwd) || os.homedir();
+  const cwd = resolveRequestedCwd(folderPath, folders, defaultCwd);
   const isMultiRoot = folders.length > 1;
   const idx = nextTerminalIndexRef.current++;
 

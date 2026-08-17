@@ -14,6 +14,9 @@ export const GLOBAL_KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 export const GLOBAL_KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 export const GLOBAL_KEY_SHOW_TERMINAL_NAMES = 'pixel-agents.showTerminalNames';
 export const GLOBAL_KEY_DEFAULT_CWD = 'pixel-agents.defaultCwd';
+export const GLOBAL_KEY_RECENT_AGENT_FOLDERS = 'pixel-agents.recentAgentFolders';
+/** MRU cap for the New-agent form's recent folders list. */
+export const RECENT_AGENT_FOLDERS_MAX = 8;
 export const GLOBAL_KEY_TERMINAL_FONT_FAMILY = 'pixel-agents.terminalFontFamily';
 export const GLOBAL_KEY_TERMINAL_LINE_HEIGHT = 'pixel-agents.terminalLineHeight';
 

@@ -87,6 +87,7 @@ function App() {
     hooksInfoShown,
     defaultCwd,
     setDefaultCwd,
+    recentAgentFolders,
     terminalFontFamily,
     setTerminalFontFamily,
     terminalLineHeight,
@@ -482,6 +483,8 @@ function App() {
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen((v) => !v)}
           workspaceFolders={workspaceFolders}
+          defaultCwd={defaultCwd}
+          recentAgentFolders={recentAgentFolders}
         />
 
         <VersionIndicator

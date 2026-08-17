@@ -10,7 +10,12 @@ import * as fs from 'fs';
 import { launchNewTerminal, restartPty } from '../src/agentManager.js';
 import { readConfig, writeConfig } from '../src/configPersistence.js';
 import type { SettingsCategory } from '../src/constants.js';
-import { DEFAULT_SETTINGS, GLOBAL_KEY_DEFAULT_CWD } from '../src/constants.js';
+import {
+  DEFAULT_SETTINGS,
+  GLOBAL_KEY_DEFAULT_CWD,
+  GLOBAL_KEY_RECENT_AGENT_FOLDERS,
+  RECENT_AGENT_FOLDERS_MAX,
+} from '../src/constants.js';
 import { writeLayoutToFile } from '../src/layoutPersistence.js';
 import type { AgentState, MessageSink } from '../src/types.js';
 import type { ConfigStore } from './configStore.js';
@@ -65,6 +70,14 @@ export interface UiDispatchDeps {
   hostActions: HostActions;
 }
 
+/** MRU update for the New-agent form's recent folders list. */
+export function updateRecentFolders(current: unknown, added: string, max: number): string[] {
+  const list = Array.isArray(current)
+    ? current.filter((v): v is string => typeof v === 'string')
+    : [];
+  return [added, ...list.filter((v) => v !== added)].slice(0, max);
+}
+
 export function createUiDispatch(deps: UiDispatchDeps): {
   handle(message: Record<string, unknown>, ctx: DispatchContext): Promise<void>;
 } {
@@ -100,6 +113,31 @@ export function createUiDispatch(deps: UiDispatchDeps): {
         }
       }
       hostActions.onAgentsLaunched(newAgents);
+
+      // Optional creation-time name → same slot /rename uses (customTitle):
+      // persisted, replayed on restore, rendered everywhere via characterLabel.
+      const name = typeof message.name === 'string' ? message.name.trim() : '';
+      if (name) {
+        for (const agent of newAgents) {
+          agent.customTitle = name;
+          broadcastSink.postMessage({ type: 'agentRenamed', id: agent.id, customTitle: name });
+        }
+        deps.persistAgents();
+      }
+
+      // Optional creation-time folder → remember it for the New-agent form's
+      // recents list (MRU, shared across clients via settingsLoaded).
+      if (typeof message.folderPath === 'string' && message.folderPath.trim()) {
+        config.update(
+          GLOBAL_KEY_RECENT_AGENT_FOLDERS,
+          updateRecentFolders(
+            config.get(GLOBAL_KEY_RECENT_AGENT_FOLDERS),
+            message.folderPath.trim(),
+            RECENT_AGENT_FOLDERS_MAX,
+          ),
+        );
+        o.broadcastSettingsLoaded();
+      }
     } else if (message.type === 'focusAgent') {
       const agent = agents.get(message.id as number);
       if (agent) {

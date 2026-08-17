@@ -109,6 +109,7 @@ describe('createUiDispatch routing', () => {
   let hostActions: HostActions;
   let dispatch: ReturnType<typeof createUiDispatch>;
   let ctx: DispatchContext;
+  let configValues: Record<string, unknown>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -116,6 +117,7 @@ describe('createUiDispatch routing', () => {
     agents = new Map();
     broadcast = [];
     reply = [];
+    configValues = {};
     hostActions = makeHostActions(rec);
     dispatch = createUiDispatch({
       orchestrator: makeOrchestratorStub(rec),
@@ -123,7 +125,14 @@ describe('createUiDispatch routing', () => {
       broadcastSink: {
         postMessage: async (m) => void broadcast.push(m as Record<string, unknown>),
       },
-      config: { get: () => undefined, update: () => {}, snapshot: () => ({}) } as never,
+      config: {
+        get: (key: string) => configValues[key],
+        update: (key: string, value: unknown) => {
+          configValues[key] = value;
+          rec.calls.push(`config.update:${key}`);
+        },
+        snapshot: () => ({ ...configValues }),
+      } as never,
       persistAgents: () => rec.calls.push('persistAgents'),
       hookScriptSourcePath: '/ext/path',
       hostActions,
@@ -141,6 +150,39 @@ describe('createUiDispatch routing', () => {
     await dispatch.handle({ type: 'openClaude' }, ctx);
     expect(rec.calls).toContain('registerAgentHook:7');
     expect(rec.calls).toContain('onAgentsLaunched:7');
+  });
+
+  it('openClaude with a name sets customTitle, persists, and broadcasts agentRenamed', async () => {
+    vi.mocked(launchNewTerminal).mockImplementationOnce(async (...args: unknown[]) => {
+      const map = args[2] as Map<number, AgentState>;
+      map.set(8, agent({ id: 8 }));
+    });
+    await dispatch.handle({ type: 'openClaude', name: '  Research Bot  ' }, ctx);
+    expect(agents.get(8)?.customTitle).toBe('Research Bot');
+    expect(rec.calls).toContain('persistAgents');
+    expect(broadcast).toContainEqual({ type: 'agentRenamed', id: 8, customTitle: 'Research Bot' });
+  });
+
+  it('openClaude without a name leaves customTitle unset and sends no agentRenamed', async () => {
+    vi.mocked(launchNewTerminal).mockImplementationOnce(async (...args: unknown[]) => {
+      const map = args[2] as Map<number, AgentState>;
+      map.set(9, agent({ id: 9 }));
+    });
+    await dispatch.handle({ type: 'openClaude' }, ctx);
+    expect(agents.get(9)?.customTitle).toBeUndefined();
+    expect(broadcast.some((m) => m.type === 'agentRenamed')).toBe(false);
+  });
+
+  it('openClaude with folderPath records an MRU entry in recent folders and rebroadcasts settings', async () => {
+    const { GLOBAL_KEY_RECENT_AGENT_FOLDERS } = await import('../../src/constants.js');
+    configValues[GLOBAL_KEY_RECENT_AGENT_FOLDERS] = ['/old/project'];
+    vi.mocked(launchNewTerminal).mockImplementationOnce(async (...args: unknown[]) => {
+      const map = args[2] as Map<number, AgentState>;
+      map.set(10, agent({ id: 10 }));
+    });
+    await dispatch.handle({ type: 'openClaude', folderPath: '/new/project' }, ctx);
+    expect(configValues[GLOBAL_KEY_RECENT_AGENT_FOLDERS]).toEqual(['/new/project', '/old/project']);
+    expect(rec.calls).toContain('broadcastSettingsLoaded');
   });
 
   it('focusAgent routes to hostActions.focusTerminal with lead fallback', async () => {

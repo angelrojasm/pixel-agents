@@ -73,6 +73,8 @@ interface ExtensionMessageState {
   hooksInfoShown: boolean;
   defaultCwd: string;
   setDefaultCwd: (v: string) => void;
+  /** MRU folders from the New-agent form (config.json, newest first). */
+  recentAgentFolders: string[];
   terminalFontFamily: string;
   terminalLineHeight: number;
   setTerminalFontFamily: (v: string) => void;
@@ -130,6 +132,7 @@ export function useExtensionMessages(
     'Menlo, Monaco, "Courier New", monospace',
   );
   const [terminalLineHeight, setTerminalLineHeightState] = useState(1.0);
+  const [recentAgentFolders, setRecentAgentFolders] = useState<string[]>([]);
   const [ptyBackedByAgent, setPtyBackedByAgent] = useState<Record<number, boolean>>({});
   const [agentRenameSeq, setAgentRenameSeq] = useState(0);
   const [crashState, setCrashState] = useState<CrashState>(crashInitialState);
@@ -577,6 +580,9 @@ export function useExtensionMessages(
         if (typeof msg.defaultCwd === 'string') {
           setDefaultCwdState(msg.defaultCwd as string);
         }
+        if (Array.isArray(msg.recentAgentFolders)) {
+          setRecentAgentFolders(msg.recentAgentFolders as string[]);
+        }
         if (typeof msg.terminalFontFamily === 'string') {
           setTerminalFontFamilyState(msg.terminalFontFamily as string);
         }
@@ -701,6 +707,7 @@ export function useExtensionMessages(
     hooksInfoShown,
     defaultCwd,
     setDefaultCwd,
+    recentAgentFolders,
     terminalFontFamily,
     terminalLineHeight,
     setTerminalFontFamily,

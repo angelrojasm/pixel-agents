@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { WorkspaceFolder } from '../hooks/useExtensionMessages.js';
 import { vscode } from '../vscodeApi.js';
+import type { NewAgentSpawn } from './NewAgentPopover.js';
+import { NewAgentPopover } from './NewAgentPopover.js';
 import { Button } from './ui/Button.js';
 import { Dropdown, DropdownItem } from './ui/Dropdown.js';
 
@@ -12,6 +14,8 @@ interface BottomToolbarProps {
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
   workspaceFolders: WorkspaceFolder[];
+  defaultCwd: string;
+  recentAgentFolders: string[];
 }
 
 export function BottomToolbar({
@@ -21,28 +25,33 @@ export function BottomToolbar({
   isSettingsOpen,
   onToggleSettings,
   workspaceFolders,
+  defaultCwd,
+  recentAgentFolders,
 }: BottomToolbarProps) {
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
   const [isBypassMenuOpen, setIsBypassMenuOpen] = useState(false);
+  const [isNewAgentFormOpen, setIsNewAgentFormOpen] = useState(false);
   const folderPickerRef = useRef<HTMLDivElement>(null);
   const pendingBypassRef = useRef(false);
-  // Close folder picker / bypass menu on outside click
+  // Close folder picker / bypass menu / new-agent form on outside click
   useEffect(() => {
-    if (!isFolderPickerOpen && !isBypassMenuOpen) return;
+    if (!isFolderPickerOpen && !isBypassMenuOpen && !isNewAgentFormOpen) return;
     const handleClick = (e: MouseEvent) => {
       if (folderPickerRef.current && !folderPickerRef.current.contains(e.target as Node)) {
         setIsFolderPickerOpen(false);
         setIsBypassMenuOpen(false);
+        setIsNewAgentFormOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [isFolderPickerOpen, isBypassMenuOpen]);
+  }, [isFolderPickerOpen, isBypassMenuOpen, isNewAgentFormOpen]);
 
   const hasMultipleFolders = workspaceFolders.length > 1;
 
   const handleAgentClick = () => {
     setIsBypassMenuOpen(false);
+    setIsNewAgentFormOpen(false);
     pendingBypassRef.current = false;
     if (hasMultipleFolders) {
       setIsFolderPickerOpen((v) => !v);
@@ -52,7 +61,7 @@ export function BottomToolbar({
   };
 
   const handleAgentHover = () => {
-    if (!isFolderPickerOpen) {
+    if (!isFolderPickerOpen && !isNewAgentFormOpen) {
       setIsBypassMenuOpen(true);
     }
   };
@@ -61,6 +70,11 @@ export function BottomToolbar({
     if (!isFolderPickerOpen) {
       setIsBypassMenuOpen(false);
     }
+  };
+
+  const handleNewAgentSpawn = (spawn: NewAgentSpawn) => {
+    setIsNewAgentFormOpen(false);
+    vscode.postMessage({ type: 'openClaude', ...spawn });
   };
 
   const handleFolderSelect = (folder: WorkspaceFolder) => {
@@ -100,10 +114,26 @@ export function BottomToolbar({
           + Agent
         </Button>
         <Dropdown isOpen={isBypassMenuOpen}>
+          <DropdownItem
+            onClick={() => {
+              setIsBypassMenuOpen(false);
+              setIsNewAgentFormOpen(true);
+            }}
+          >
+            New agent…
+          </DropdownItem>
           <DropdownItem onClick={() => handleBypassSelect(true)}>
             Skip permissions mode <span className="text-2xs text-warning">⚠</span>
           </DropdownItem>
         </Dropdown>
+        {isNewAgentFormOpen && (
+          <NewAgentPopover
+            defaultCwd={defaultCwd}
+            recentFolders={recentAgentFolders}
+            onSpawn={handleNewAgentSpawn}
+            onClose={() => setIsNewAgentFormOpen(false)}
+          />
+        )}
         <Dropdown isOpen={isFolderPickerOpen} className="min-w-128">
           {workspaceFolders.map((folder) => (
             <DropdownItem
