@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 
+import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type {
@@ -45,6 +46,10 @@ export interface HttpServerOptions {
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
   /** Invoked when an external asset directory is added/removed. Standalone reloads + re-broadcasts assets here. */
   onReloadAssets?: ReloadAssetsSideEffect;
+  /** Hook provider for standalone pty spawns (launchAgent/restartAgent). */
+  provider?: HookProvider;
+  /** The CLI's scan root (process.cwd() at startup) — default spawn cwd. */
+  launchCwd?: string;
 }
 
 /** Result of createHttpServer(). */
@@ -182,6 +187,8 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
         hooksOnly: agent.hooksOnly || undefined,
         palette: agent.palette,
         hueShift: agent.hueShift,
+        ptyBacked: agent.ptyBacked || undefined,
+        customTitle: agent.customTitle,
       });
     };
 
@@ -189,7 +196,13 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
       safeSend(socket, { type: 'agentClosed', id });
     };
 
+    // Pty frames carry raw terminal I/O (keystrokes echo, command output), so
+    // an untokened same-origin viewer never receives them — the delivery-side
+    // mirror of the ptyInput/launchAgent privilege gate in clientMessageHandler.
+    const PRIVILEGED_ONLY_TYPES = /^pty/;
     const onBroadcast = (message: Record<string, unknown>) => {
+      const t = String(message.type ?? '');
+      if (!privileged && (PRIVILEGED_ONLY_TYPES.test(t) || t === 'agentCrashed')) return;
       safeSend(socket, message);
     };
 
@@ -211,6 +224,8 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
           onSetHooksEnabled: options.onSetHooksEnabled,
           onReloadAssets: options.onReloadAssets,
           privileged,
+          provider: options.provider,
+          launchCwd: options.launchCwd,
         });
       } catch {
         // Malformed JSON, ignore

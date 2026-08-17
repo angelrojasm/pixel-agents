@@ -465,3 +465,104 @@ describe('/ws privileged-message gate', () => {
     expect(readHooksConsent()).toBe(true);
   });
 });
+
+/**
+ * Pty frames carry raw terminal I/O (keystrokes echo back, command output), so
+ * their DELIVERY is privileged-only, mirroring the input-side gate in
+ * clientMessageHandler: an untokened same-origin viewer can watch the office
+ * but must never see another session's terminal contents.
+ */
+describe('/ws pty delivery gate', () => {
+  let server: InstanceType<typeof PixelAgentsServer>;
+  let store: InstanceType<typeof AgentStateStore>;
+  const sockets: WebSocket[] = [];
+
+  beforeEach(() => {
+    tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-ws-pty-'));
+    fs.mkdirSync(path.join(tmpBase, '.pixel-agents'), { recursive: true });
+    server = new PixelAgentsServer();
+    store = new AgentStateStore();
+  });
+
+  afterEach(() => {
+    for (const socket of sockets) socket.terminate();
+    sockets.length = 0;
+    server?.stop();
+    store.dispose();
+    try {
+      fs.rmSync(tmpBase, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  async function startPair(): Promise<{ tokened: WebSocket; untokened: WebSocket }> {
+    const config = await server.start({ embedded: false, store });
+    const port = config.port.toString();
+    const origin = { Origin: `http://127.0.0.1:${port}` };
+    const tokened = await connectTo(`ws://127.0.0.1:${port}/ws?token=${config.token}`, origin);
+    const untokened = await connectTo(`ws://127.0.0.1:${port}/ws`, origin);
+    expect(tokened.accepted).toBe(true);
+    expect(untokened.accepted).toBe(true);
+    sockets.push(tokened.socket, untokened.socket);
+    return { tokened: tokened.socket, untokened: untokened.socket };
+  }
+
+  it('ptyData reaches only the privileged socket; agentStatus reaches both', async () => {
+    const { tokened, untokened } = await startPair();
+    const tokenedPty = waitForMessage(tokened, 'ptyData');
+    const untokenedPty = waitForMessage(untokened, 'ptyData', 1_000);
+    const tokenedStatus = waitForMessage(tokened, 'agentStatus');
+    const untokenedStatus = waitForMessage(untokened, 'agentStatus');
+
+    store.broadcast({ type: 'ptyData', id: 1, data: 'secret-output' });
+    store.broadcast({ type: 'agentStatus', id: 1, status: 'waiting' });
+
+    expect(await tokenedPty).toMatchObject({ id: 1, data: 'secret-output' });
+    expect(await untokenedPty).toBeNull();
+    expect(await tokenedStatus).toMatchObject({ id: 1 });
+    expect(await untokenedStatus).toMatchObject({ id: 1 });
+  });
+
+  it('agentCrashed is privileged-only too', async () => {
+    const { tokened, untokened } = await startPair();
+    const tokenedCrash = waitForMessage(tokened, 'agentCrashed');
+    const untokenedCrash = waitForMessage(untokened, 'agentCrashed', 1_000);
+    store.broadcast({ type: 'agentCrashed', id: 2, code: 1 });
+    expect(await tokenedCrash).toMatchObject({ id: 2 });
+    expect(await untokenedCrash).toBeNull();
+  });
+
+  it('agentCreated carries ptyBacked and customTitle', async () => {
+    const { tokened } = await startPair();
+    const created = waitForMessage(tokened, 'agentCreated');
+    store.set(5, {
+      id: 5,
+      sessionId: 'sess-5',
+      terminalRef: undefined,
+      isExternal: false,
+      projectDir: '/test',
+      jsonlFile: '/test/sess-5.jsonl',
+      fileOffset: 0,
+      lineBuffer: '',
+      activeToolIds: new Set(),
+      activeToolStatuses: new Map(),
+      activeToolNames: new Map(),
+      activeSubagentToolIds: new Map(),
+      activeSubagentToolNames: new Map(),
+      backgroundAgentToolIds: new Set(),
+      isWaiting: false,
+      permissionSent: false,
+      hadToolsInTurn: false,
+      lastDataAt: 0,
+      linesProcessed: 0,
+      seenUnknownRecordTypes: new Set(),
+      hookDelivered: false,
+      contextTokens: 0,
+      maxContextTokens: 200_000,
+      ptyBacked: true,
+      customTitle: 'Named One',
+    } as never);
+    expect(await created).toMatchObject({ id: 5, ptyBacked: true, customTitle: 'Named One' });
+  });
+});
