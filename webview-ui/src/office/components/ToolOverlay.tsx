@@ -40,6 +40,8 @@ interface ToolOverlayProps {
   panRef: React.RefObject<{ x: number; y: number }>;
   onCloseAgent: (id: number) => void;
   alwaysShowOverlay: boolean;
+  /** User-chosen agent names (New-agent form / rename). Shown above the team-role row. */
+  customTitles?: Record<number, string>;
 }
 
 /** Derive a short human-readable activity string from tools/status */
@@ -92,6 +94,7 @@ export function ToolOverlay({
   panRef,
   onCloseAgent,
   alwaysShowOverlay,
+  customTitles,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -201,9 +204,11 @@ export function ToolOverlay({
           dotColor = 'var(--color-status-active)';
         }
 
-        // Team info
+        // Team info + user-chosen name (New-agent form). The name row is kept
+        // separate from the team-role row — those concepts never share a slot.
+        const customTitle = (!isSub && customTitles?.[id]) || null;
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
-        const hasExtraLines = !!(ch.folderName || teamRoleLabel);
+        const hasExtraLines = !!(ch.folderName || teamRoleLabel || customTitle);
 
         // Context gauge. Every agent gets one — lead, teammate, adopted,
         // headless — as soon as it has taken a turn. Sub-agents never do: they
@@ -233,6 +238,14 @@ export function ToolOverlay({
                 />
               )}
               <div className="flex flex-col gap-0 overflow-hidden">
+                {customTitle && (
+                  <span
+                    className="overflow-hidden text-ellipsis block leading-none text-2xs"
+                    style={{ fontWeight: 'bold' }}
+                  >
+                    {customTitle}
+                  </span>
+                )}
                 {teamRoleLabel && (
                   <span
                     className="overflow-hidden text-ellipsis block leading-none"
