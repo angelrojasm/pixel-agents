@@ -112,6 +112,15 @@ interface ExtensionMessageState {
   setAreaMappings: (m: Record<string, string[]>) => void;
   showAreas: boolean;
   setShowAreas: (v: boolean) => void;
+  // Standalone pty terminals
+  /** MRU starting folders for the New-agent form (settingsLoaded). */
+  recentAgentFolders: string[];
+  /** Agents whose terminal is a server-owned pty (terminal band membership). */
+  ptyBackedByAgent: Record<number, boolean>;
+  /** User-chosen display names (New-agent form / agentRenamed). */
+  customTitles: Record<number, string>;
+  /** Imperative per-agent pty event fan-out for xterm panes. */
+  ptyEventBus: PtyEventBus;
 }
 
 function saveAgentSeats(os: OfficeState): void {
