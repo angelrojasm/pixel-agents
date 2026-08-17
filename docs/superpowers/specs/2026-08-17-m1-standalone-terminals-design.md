@@ -1,7 +1,7 @@
 # M1: Standalone Terminals + Agent Spawn + New-Agent Form — Design
 
-**Date:** 2026-08-17
-**Status:** Draft for spec review
+**Date:** 2026-08-17 (revised same day after spec review; 13 findings folded in)
+**Status:** Reviewed — ready for implementation planning
 **Base:** upstream pixel-agents v1.4.1 (`3537e14`), now `main` of this fork.
 **Reference implementation:** branch `v2-orchestrator` / tag `v2.0.0` — our previous
 architecture, containing battle-tested pty, terminal-pane, and New-agent-form code to
@@ -19,8 +19,10 @@ name-lookup used solely for VS Code terminal adoption.
 M1 makes the standalone app a full workstation: spawn Claude agents from the browser,
 each with a live in-office terminal, created through a New-agent form (name +
 starting folder + recents). **M1 does not change VS Code behavior** — the extension
-keeps `createTerminal` + `sendText`; the terminal band and browser spawn paths are
-gated to the browser runtime. M2 brings the VS Code surface via
+keeps `createTerminal` + `sendText`; the terminal band, the New-agent form, and the
+browser spawn path are all gated to the browser runtime (VS Code's + Agent click flow,
+including the multi-root dropdown, is untouched, so the existing VS Code e2e suite and
+its helpers stay valid). M2 brings the VS Code surface via
 `vscode.window.createTerminal({ pty })` (Pseudoterminal — no native module; the VSIX
 packaging contract bans `node_modules/`). M3 ports residual polish.
 
@@ -41,88 +43,128 @@ repo already reset to upstream with our work preserved on `v2-orchestrator`.
 
 ## Non-goals (M1)
 
-- VS Code terminal band / Pseudoterminal (M2). VS Code `launchAgent` behavior is
-  untouched.
+- VS Code terminal band / Pseudoterminal / New-agent form in VS Code (all M2). VS Code
+  `launchAgent` behavior and the `e2e/tests/claude` suite are untouched.
 - Porting our Settings-V2 modal, daemon CLI, or orchestrator (superseded by upstream).
 - LAN exposure; teams/pets/carpets/Areas changes (don't break them, don't extend them).
 
 ## Part 1 — Protocol (core/asyncapi.yaml → generated messages)
 
 New **ClientMessage** variants (camelCase discriminators, `additionalProperties: false`,
-following the `FocusAgent` schema pattern):
+following the `FocusAgent` schema pattern). Field-name note: v2's pty frames used
+`agentId`; the new schemas use `id` to match upstream's `FocusAgent`/`CloseAgent`
+convention — ported code and tests are renamed accordingly, not copied verbatim.
 
-| type                | payload                                  | notes                                                         |
-| ------------------- | ---------------------------------------- | ------------------------------------------------------------- |
-| `ptyInput`          | `id: number, data: string`               | privileged (arbitrary shell input)                            |
-| `ptyResize`         | `id: number, cols: number, rows: number` | privileged                                                    |
-| `terminalPaneReady` | `id: number`                             | requests scrollback; reply goes only to the requesting socket |
-| `restartAgent`      | `id: number`                             | privileged; respawns the pty for a dead agent                 |
+| type                | payload                                  | notes                                                                                |
+| ------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------ |
+| `ptyInput`          | `id: number, data: string`               | privileged (arbitrary shell input)                                                   |
+| `ptyResize`         | `id: number, cols: number, rows: number` | privileged                                                                           |
+| `terminalPaneReady` | `id: number`                             | privileged; requests scrollback; reply goes only to the requesting socket            |
+| `restartAgent`      | `id: number`                             | privileged; respawns the pty **with the same sessionId** (v2 `restartPty` semantics) |
 
 Extended ClientMessage: `launchAgent` gains optional `name?: string` (maps to the new
 `customTitle`). `folderPath`/`bypassPermissions` already exist.
 
 New **ServerMessage** variants:
 
-| type             | payload                                                                   |
-| ---------------- | ------------------------------------------------------------------------- |
-| `ptyData`        | `id: number, data: string` (UTF-8 text; JSON transport, no binary frames) |
-| `ptyExit`        | `id: number, code: number, signal?: string`                               |
-| `ptyScrollback`  | `id: number, lines: string[]`                                             |
-| `agentRenamed`   | `id: number, customTitle: string`                                         |
-| `agentRestarted` | `id: number`                                                              |
+| type             | payload                                                                                                                                                                                                                           |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ptyData`        | `id: number, data: string` (UTF-8 text; JSON transport, no binary frames)                                                                                                                                                         |
+| `ptyExit`        | `id: number, code: number, signal?: string` — fires on EVERY pty exit                                                                                                                                                             |
+| `ptyScrollback`  | `id: number, lines: string[]`                                                                                                                                                                                                     |
+| `agentCrashed`   | `id: number, code: number, signal?: string` — only on unintentional non-zero exit; the ported intentional-stop suppression gates exactly this message (v2 semantics); the webview crash indicator + Restart affordance key off it |
+| `agentRenamed`   | `id: number, customTitle: string`                                                                                                                                                                                                 |
+| `agentRestarted` | `id: number`                                                                                                                                                                                                                      |
 
 Extended ServerMessage: `SettingsLoaded` gains `recentAgentFolders?: string[]`;
 `AgentCreated` gains `ptyBacked?: boolean, customTitle?: string`;
-`ExistingAgents` gains `ptyBackedAgents?: object, customTitles?: object` (mirroring its
-existing per-agent record maps).
+`ExistingAgents` gains `ptyBackedAgents?: object, customTitles?: object` (same
+per-agent record-map shape as its existing `folderNames`).
+
+**Privileged-only delivery for pty output (security decision):** `ptyData`,
+`ptyExit`, `ptyScrollback`, and `agentCrashed` are delivered **only to privileged
+sockets**. Terminal output is shell content; upstream's origin gate deliberately
+admits unprivileged viewers (and `--host 0.0.0.0` widens that), so output gets the
+same protection as input. Mechanism: the per-socket `broadcast` subscription in
+`httpServer.ts` (~192–198) gains a filter — message types with the `pty` prefix plus
+`agentCrashed` are skipped when `!privileged`. Unprivileged viewers still see
+characters, statuses, and `agentRenamed` (a label, not content).
 
 Process: edit the YAML, run `npm run asyncapi:generate`, **commit the regenerated
-`core/src/messages.ts`** (CI drift gate). Version note: the YAML stays AsyncAPI 3.0.0
-(Modelina pin).
+`core/src/messages.ts`** (CI drift gate). The YAML stays AsyncAPI 3.0.0 (Modelina pin).
 
-## Part 2 — Server: pty host owned by AgentRuntime
+## Part 2 — Server: pty host injected into AgentRuntime
 
-**`server/src/ptyManager.ts` (new)** — port `src/pty/ptyManager.ts` + `ptyWorker.ts` +
-`ptyProtocol.ts` from `v2-orchestrator` (ring-buffer scrollback, chunk cap,
-intentional-stop crash suppression, per-request scrollback reply). Adapt outbound to
-`store.broadcast({type:'ptyData', ...})` and scrollback to the per-socket `send` that
-`handleClientMessage` already receives — upstream's architecture natively provides the
-per-client reply channel our v2 had to add.
+**`server/src/ptyManager.ts` (new)** — port from `v2-orchestrator`:
+`src/pty/ptyManager.ts`, `src/pty/ptyWorker.ts`, `src/pty/ptyProtocol.ts`, **and
+`src/pty/ringBuffer.ts`** (plus their tests). Keep v2's ring-buffer scrollback, chunk
+cap, intentional-stop crash suppression, and per-request scrollback reply. Outbound
+adapts to `store.broadcast(...)`; scrollback replies use the per-socket `send` that
+`handleClientMessage` receives. Keep v2's **deferred `require('node-pty')` inside the
+worker** (`import type` at module level) as a second line of defense.
 
-**Ownership**: `AgentRuntime` gains `readonly ptys` (the manager) beside its timer
-maps. `removeAgent(id)` (`agentRuntime.ts:308`) — the single teardown chokepoint —
-kills the agent's pty; `dispose()` disposes all. `restoreExternalAgents()` culls
-persisted pty agents (no live process to rebind; same skip treatment terminal agents
-get in `agentManager.restoreAgents`).
+**Ownership — inverted to keep the extension graph clean (build-safety decision):**
+`AgentRuntime` does NOT construct the pty manager (the VS Code adapter imports
+`AgentRuntime`; constructing node-pty there would drag the native module into the
+extension bundle and break `npm run compile`). Instead `AgentRuntime` gains an
+optional injected host: `setPtyHost(host: PtyManager)` + `readonly ptyHost` — only
+`server/src/cli.ts` constructs and injects it. `removeAgent(id)`
+(`agentRuntime.ts:308`, the single teardown chokepoint) kills that agent's pty when a
+host is present; `dispose()` disposes all. The extension never injects one, so "M1
+does not change VS Code" holds by construction and the extension build's `external`
+list is untouched. Add `node-pty` to `knip.json` `ignoreDependencies` (fastify
+precedent).
 
-**Spawn path** (`clientMessageHandler.ts`, new `case 'launchAgent'`): privileged-gated.
-Generate sessionId; resolve cwd via a ported `resolveRequestedCwd` (explicit folder
-`~`-expanded + validated → `process.cwd()` scan root → homedir); build the command via
-`claudeProvider.buildLaunchCommand(sessionId, cwd, {bypassPermissions})` (their
-existing provider hook); spawn through the pty manager with a login shell;
-**pre-register the expected `<projectDir>/<sessionId>.jsonl` in
-`runtime.knownJsonlFiles`** (prevents the double-adoption ghost the scanner would
-otherwise create); create the `AgentState` (a sixth, host-owned creation path) with new
-fields `ptyBacked: true`, `customTitle?`, `terminalName` (display); `store.set(...)`
-(emits `agentAdded` → `agentCreated` fan-out — extend the two hand-mapped
-`agentCreated` frame builders in `httpServer.ts:172` and `PixelAgentsViewProvider.ts:124`
-with `ptyBacked`/`customTitle`); `runtime.registerAgent(sessionId, id)`; if `name`,
-broadcast `agentRenamed` and persist; if explicit folder, update recents (below) and
-re-broadcast `settingsLoaded`.
+**Spawn path** (`clientMessageHandler.ts`, new `case 'launchAgent'`): privileged-gated;
+no-ops (with a debug log) when no pty host is injected (i.e., embedded/VS Code —
+that path keeps its own handler). Sequence:
 
-**Types**: `AgentState` gains `ptyBacked?: boolean`, `customTitle?: string` (in
-`server/src/types.ts`; do NOT touch the `vscode.Terminal`-typed `terminalRef`).
-`PersistedAgent` (`core/src/schemas.ts`) gains the same two optional fields.
+1. Generate `sessionId`; resolve cwd via a ported `resolveRequestedCwd` (explicit
+   folder `~`-expanded + existence-validated → server launch cwd → homedir).
+2. Build the command via `claudeProvider.buildLaunchCommand(sessionId, cwd,
+{bypassPermissions})`; spawn through the pty host with a login shell.
+3. **Pre-register the expected `<projectDir>/<sessionId>.jsonl` in
+   `runtime.knownJsonlFiles`** (prevents the scanner's double-adoption ghost).
+4. Create `AgentState` (a sixth, host-owned creation path): `ptyBacked: true`,
+   **`isExternal: false`** (lifecycle decision below), `customTitle?`,
+   `terminalName` (display), then `store.set(...)` → `agentAdded` → the `agentCreated`
+   fan-out (extend BOTH hand-mapped frame builders — `httpServer.ts:172` and
+   `PixelAgentsViewProvider.ts:124` — with `ptyBacked`/`customTitle`).
+5. `runtime.registerAgent(sessionId, id)`; **start transcript watching** — the JSONL
+   poll → `startFileWatching` + `readNewLines` (ported from the v2/upstream spawn
+   references) so tool statuses and the context gauge work; if the chosen folder's
+   `projectDir` is outside the CLI's scan root, also `runtime.startProjectScan` for it.
+6. If `name`: set + persist `customTitle`, broadcast `agentRenamed`.
+7. If explicit folder: update recents (below), re-send `settingsLoaded` (standalone
+   builder — see below).
+
+**Lifecycle decisions (from review):** pty agents are `isExternal: false` — this (a)
+prevents `agentRuntime.ts:275-279` from auto-removing them on the `SessionEnd` hook
+that fires when the pty's Claude exits, and (b) makes `restoreExternalAgents()`
+(`:469`, which skips non-externals) implement the "cull persisted pty agents on server
+restart" behavior for free. After `ptyExit`, the agent and character are **retained**
+— pane shows the exit marker, the Restart affordance appears (driven by
+`agentCrashed`/`ptyExit` exactly as in v2), and `restartAgent` respawns with the same
+`sessionId`. `closeAgent` removes it (existing standalone branch → `removeAgent` →
+pty kill).
+
+**Types**: `AgentState` gains `ptyBacked?: boolean`, `customTitle?: string`
+(`server/src/types.ts`; do NOT touch the `vscode.Terminal`-typed `terminalRef`).
+`PersistedAgent` is **duplicated** upstream — extend BOTH copies:
+`server/src/types.ts:90` (the one the persistence writer and VS Code adapter import)
+and `core/src/schemas.ts:15` (the `StateAdapter` copy).
 
 **Recents**: new `recentAgentFolders: string[]` in `AdapterSettings` +
-`ADAPTER_SETTING_KEYS` (`server/src/configPersistence.ts`), MRU cap 8, only paths that
-resolve. Surfaced through `settingsLoaded` (both hosts get it for free via the shared
-settings builder).
+`ADAPTER_SETTING_KEYS` (`server/src/configPersistence.ts`), MRU cap 8, only paths
+that resolve. Surfaced via `settingsLoaded` — which is hand-built in TWO places
+(`clientMessageHandler.ts:413-425` standalone; `PixelAgentsViewProvider.ts:~589-601`
+VS Code); **M1 edits only the standalone builder** (VS Code gets it in M2). Note:
+`AdapterSettings` is per-namespace (`standalone` vs `vscode`), so M2's VS Code form
+will need a read-through or migration to share the list — accepted, documented.
 
-**Privilege model**: `ptyInput`, `ptyResize`, `restartAgent`, `launchAgent` require
-`ctx.privileged` (embedded, or standalone `?token=` — the URL the CLI prints).
-`terminalPaneReady` is read-only-ish but reveals session content → also privileged.
-Unprivileged sockets remain viewers, consistent with upstream's model.
+**Privilege model**: `ptyInput`, `ptyResize`, `terminalPaneReady`, `restartAgent`,
+`launchAgent` require `ctx.privileged`; pty output messages are privileged-delivery
+(Part 1). Unprivileged sockets remain pure viewers.
 
 **Multi-server note**: hook events fan out to every live server; a session spawned by
 this server will be adopted by a concurrently-running VS Code embedded server as an
@@ -135,19 +177,25 @@ behavior for M1; documented, not fought.
 `flex flex-col`; the office (canvas + all its absolute overlays + BottomToolbar etc.)
 moves into a `flex-1 relative min-h-0 overflow-hidden` wrapper **with its own ref**,
 which is what `ToolOverlay` and `IntroBubble` now receive (fixes the
-overlay-projection divergence the exploration flagged — labels/context gauges would
-otherwise drift by the band height). The terminal band is a sibling below: ported
-`TerminalPane` (xterm.js + FitAddon + SearchAddon + WebLinksAddon), agent-rail strip,
-drag-handle resize (throttled; canvas `ResizeObserver` already handles reflow).
-Rendered only when `isBrowserRuntime` (and an agent exists) in M1.
+overlay-projection divergence — labels/context gauges would otherwise drift by the
+band height). The terminal band is a sibling below: ported `TerminalPane` (xterm.js +
+FitAddon + SearchAddon + WebLinksAddon), agent-rail strip, drag-handle resize
+(throttled; canvas `ResizeObserver` already handles reflow). Rendered only when
+`isBrowserRuntime` (and at least one pty-backed agent exists) in M1.
 
 **Transport**: all sends via their `transport` singleton; receive branches added to
-`useExtensionMessages.ts` (`ptyData`/`ptyExit`/`ptyScrollback`/`agentRenamed`/
-`agentRestarted`, plus `recentAgentFolders` in `settingsLoaded` and
-`ptyBacked`/`customTitle` in the agent messages). `characterLabel` precedence: port
-`customTitle ?? agentName ?? folderName ?? 'Agent #id'` into their `ToolOverlay`
-label logic (their `agentName` is the team role; customTitle outranks it, matching v2
-semantics).
+`useExtensionMessages.ts` (`ptyData`/`ptyExit`/`ptyScrollback`/`agentCrashed`/
+`agentRenamed`/`agentRestarted`, plus `recentAgentFolders` in `settingsLoaded` and
+`ptyBacked`/`customTitle` in `agentCreated`/`existingAgents`). **Reconnect path:** the
+standalone handshake sends `existingAgents` before `layoutLoaded`, so agents
+materialize through the `pendingAgents` buffer (`useExtensionMessages.ts:233-238`) —
+that buffer's entries gain `ptyBacked` + `customTitle` so reloading clients keep the
+band and labels.
+
+**Labels**: `customTitle` renders as (a) the rail-cell label, and (b) a new name row
+in `ToolOverlay` above the team-role row when present (upstream's overlay has no name
+line today). Precedence: `customTitle` > team `agentName` > `folderName`; no generic
+"Agent #id" row is added to the overlay (rail cells fall back to `terminalName`).
 
 **Selection semantics**: clicking a character (or rail cell) in the browser selects
 the agent's terminal tab **client-side**; `focusAgent` is still sent (harmless no-op
@@ -155,52 +203,57 @@ server-side) so VS Code semantics are untouched. Sub-agent → parent and teamma
 lead redirections reuse the existing `meta.parentAgentId` / `leadAgentId` logic so
 canvas clicks and rail clicks agree.
 
-**Styling constraints (from their lint/CSS regime)**: xterm font + theme colors live
-in `webview-ui/src/constants.ts` (the exempt path for their `pixel-font` and
+**Styling constraints (their lint/CSS regime)**: xterm font + theme colors live in
+`webview-ui/src/constants.ts` (the exempt path for their `pixel-font` and
 `no-inline-colors` ESLint errors); `index.css` gains an explicit
 `.xterm, .xterm * { font-family: var(--terminal-font); }` override (their universal
 `* { font-pixel }` rule would otherwise re-break the terminal exactly as it did in
-v2 — same bug, same fix, different mechanics); all sizes are literal pixels
-(`--spacing: 1px`); band chrome uses `.pixel-panel` + `.pixel-scrollbar`;
-`boxShadow` values use the `2px 2px 0px` idiom (their `pixel-shadow` rule).
+v2); all sizes are literal pixels (`--spacing: 1px`); band chrome uses `.pixel-panel`
 
-**+ Agent / New-agent form**: remove the `!isBrowserRuntime` gate on the + Agent
-block (**keep the exact "+ Agent" label — their e2e locates the webview frame by
-it**). Port the form (name, folder with `~` placeholder-default, recents quick-picks,
-skip-permissions checkbox, Enter-only-from-text-fields, dialog role) onto their
-`Modal`; add the missing `Input` primitive to `components/ui/`. VS Code multi-root
-dropdown flow stays as-is for M1.
+- `.pixel-scrollbar`; `boxShadow` uses the `2px 2px 0px` idiom (`pixel-shadow` rule).
+
+**+ Agent / New-agent form (browser only)**: the + Agent block's
+`!isBrowserRuntime` gate flips to _show_ it in the browser (**keep the exact
+"+ Agent" label — their e2e locates the webview frame by it**), where clicking opens
+the ported New-agent form (name, folder with the default as placeholder, recents
+quick-picks, skip-permissions checkbox, Enter-only-from-text-fields, dialog role) on
+their `Modal`, plus a new `Input` primitive in `components/ui/`. **In VS Code the
+component renders exactly as today** — same hover menu, same multi-root dropdown, no
+form — so `clickAddAgent`/`addAgentForFolder` and the whole `e2e/tests/claude` suite
+are untouched.
 
 ## Part 4 — Tests and CI gates
 
-- **Vitest (server)**: port `ptyManager` tests from v2 (fake worker/source patterns);
-  new `clientMessageHandler` cases per routing row (launchAgent spawn + preregistration
-  - name/recents; pty routing; privilege denials for unprivileged sockets) using their
-    `createTestAgent()` + temp-HOME patterns.
+- **Vitest (server)**: port pty tests from v2 (`ptyManager`/`ringBuffer`, fake
+  worker/source patterns, renamed `agentId`→`id` frames); new `clientMessageHandler`
+  cases per routing row (launchAgent spawn + pre-registration + name/recents; pty
+  routing; privilege denials; no-pty-host no-op) using their `createTestAgent()` +
+  temp-HOME patterns; a privileged-delivery test for the broadcast filter.
 - **Webview node tests**: port `newAgentSpawn` payload tests; label-precedence test.
 - **e2e**: new `e2e/tests/standalone/terminal.spec.ts` (spawn from browser via mock
-  claude → pane appears → keystroke echo → close) and a New-agent-form spec.
-  **Update `clickAddAgent`/`addAgentForFolder` helpers in lockstep** (the form changes
-  the click flow they encode) and regenerate `e2e/README.md` (blocking inventory drift
-  gate).
-- **Packaging**: `node-pty` added to root `dependencies` + `buildCli` externals in
-  `esbuild.js` (the documented fastify precedent) + `dist/node_modules/node-pty`-style
-  copy is NOT their pattern — npm installs it at the user's machine for `npx`;
-  `npm-package-contract.mjs` untouched unless the artifact list changes. The VSIX
-  contract's `node_modules` ban is **not relaxed** (M2 uses Pseudoterminal).
+  claude → pane appears → keystroke echo → exit marker → restart) and a
+  New-agent-form spec. `spawnStandaloneHost` (`e2e/helpers/standalone.ts:110-122`)
+  gains mock-claude `PATH` wiring (the VS Code launcher's pattern at
+  `helpers/launch.ts:61`); tests assert the mock won via its invocation log because
+  the login-shell (`-l`) re-sources profiles and can reorder `PATH` (macOS
+  `path_helper`). **Existing VS Code helpers are NOT touched.** Regenerate
+  `e2e/README.md` (blocking inventory drift gate) for the new specs.
+- **Packaging**: `node-pty` in root `dependencies` + `buildCli` externals in
+  `esbuild.js`; extension build untouched; `knip.json` `ignoreDependencies` entry;
+  `npm-package-contract.mjs` untouched; the VSIX `node_modules` ban is not relaxed.
 
 ## Risks
 
-- **Their spawn-detection pipeline assumptions**: JSONL pre-registration and the
-  10s `/resume` fallback in `agentManager` are VS Code-path code; the standalone spawn
-  path re-implements only the pre-registration + poll pieces it needs from the
-  v2-orchestrator reference, not the terminal-name matching.
-- **Webview destroyed on VS Code panel hide** (no `retainContextWhenHidden`): a
-  browser-only band avoids this in M1, but scrollback-replay-on-ready is built now
-  (server-side ring buffer) so M2 inherits it.
-- **Throughput**: pty output rides JSON WS frames with no cap; the ported chunking
-  (`PTY_MAX_CHUNK_BYTES`) plus the ring buffer bound memory; backpressure beyond that
-  is out of scope for a localhost-only transport.
-- **Runtime/schema conformance is conventional** (their `AgentCreated` already sends
-  undeclared fields): we declare our extensions in the YAML anyway so the drift gate
-  keeps meaning something.
+- **Their spawn-detection pipeline assumptions**: the standalone spawn path
+  re-implements pre-registration + JSONL poll + file watching from the v2/upstream
+  references; the VS Code-specific terminal-name matching and `/resume`-newest-file
+  fallback are not ported in M1 (plain `--session-id` spawn makes the expected file
+  deterministic).
+- **Webview destroyed on VS Code panel hide** (no `retainContextWhenHidden`): browser
+  band avoids this in M1; the server-side ring buffer + scrollback replay built now is
+  what M2 inherits.
+- **Throughput**: pty output rides JSON WS frames; ported chunking
+  (`PTY_MAX_CHUNK_BYTES`) + the ring buffer bound memory; deeper backpressure is out
+  of scope for a localhost transport.
+- **Runtime/schema conformance is conventional** upstream (their `AgentCreated`
+  already sends undeclared fields); we declare our extensions in the YAML anyway.
