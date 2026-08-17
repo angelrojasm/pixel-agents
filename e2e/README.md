@@ -268,7 +268,7 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 ### `@area:agent-form` (2 tests)
 
 - `e2e/standalone/new-agent-form.spec.ts:16` — named spawn in an explicit folder: rail label, recents on disk and in the form (Standalone / New-agent form)
-- `e2e/standalone/new-agent-form.spec.ts:63` — an unprivileged page sees the character but never receives ptyData (Standalone / New-agent form)
+- `e2e/standalone/new-agent-form.spec.ts:66` — an unprivileged page sees the character but never receives ptyData (Standalone / New-agent form)
 
 ### `@area:areas` (8 tests)
 
