@@ -107,3 +107,11 @@ export const PALETTE_COUNT = 6;
  *  clientMessageHandler to guard saveAgentSeats payloads from a remote or
  *  hand-edited source corrupting the stored values with out-of-range values. */
 export const HUE_SHIFT_MAX_DEG = 360;
+
+// ── In-office pty terminals (M1) ─────────────────────────────
+/** Cap on a single ptyData frame; larger worker writes are split. */
+export const PTY_MAX_CHUNK_BYTES = 1_048_576;
+/** Scrollback chunks retained per agent for terminal-pane replay. */
+export const PTY_SCROLLBACK_MAX_LINES = 2000;
+/** MRU cap for the New-agent form's recent folders list. */
+export const RECENT_AGENT_FOLDERS_MAX = 8;
