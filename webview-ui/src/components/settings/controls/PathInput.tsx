@@ -1,3 +1,5 @@
+import { SETTINGS_FONT_BODY_PX } from '../../../constants.js';
+
 interface PathInputProps {
   value: string;
   placeholder?: string;
@@ -21,7 +23,7 @@ export function PathInput({ value, placeholder, ariaLabel, onCommit }: PathInput
         color: 'inherit',
         border: '2px solid var(--pixel-border)',
         padding: '4px 8px',
-        fontSize: 12,
+        fontSize: SETTINGS_FONT_BODY_PX,
         minWidth: 240,
       }}
     />

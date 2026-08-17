@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { SettingsCategory } from '../../../../src/constants.js';
-import { SETTINGS_MODAL_HEIGHT_PX, SETTINGS_MODAL_WIDTH_PX } from '../../constants.js';
+import {
+  SETTINGS_FONT_LABEL_PX,
+  SETTINGS_MODAL_HEIGHT_PX,
+  SETTINGS_MODAL_WIDTH_PX,
+} from '../../constants.js';
 import { vscode } from '../../vscodeApi.js';
 import { AboutPanel } from './panels/AboutPanel.js';
 import { AgentsPanel } from './panels/AgentsPanel.js';
@@ -227,7 +231,7 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
               background: 'transparent',
               border: 'none',
               cursor: 'pointer',
-              fontSize: '14px',
+              fontSize: SETTINGS_FONT_LABEL_PX,
             }}
           >
             ×

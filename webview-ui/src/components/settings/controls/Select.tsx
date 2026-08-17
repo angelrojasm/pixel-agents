@@ -1,3 +1,5 @@
+import { SETTINGS_FONT_BODY_PX } from '../../../constants.js';
+
 interface SelectOption<T extends string> {
   value: T;
   label: string;
@@ -21,7 +23,7 @@ export function Select<T extends string>({ value, options, ariaLabel, onChange }
         color: 'inherit',
         border: '2px solid var(--pixel-border)',
         padding: '4px 8px',
-        fontSize: 12,
+        fontSize: SETTINGS_FONT_BODY_PX,
         cursor: 'pointer',
       }}
     >

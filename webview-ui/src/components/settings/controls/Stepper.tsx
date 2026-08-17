@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 
+import { SETTINGS_FONT_BODY_PX } from '../../../constants.js';
 import { stepperNext, stepperPrev } from './stepperUtils.js';
 
 interface StepperProps {
@@ -32,7 +33,7 @@ export function Stepper({ value, min, max, step, precision, ariaLabel, onChange 
         style={{
           background: 'var(--pixel-bg)',
           border: '2px solid var(--pixel-border)',
-          fontSize: 12,
+          fontSize: SETTINGS_FONT_BODY_PX,
           padding: '0 8px',
           cursor: value <= min ? 'not-allowed' : 'pointer',
           opacity: value <= min ? 0.5 : 1,
@@ -50,7 +51,7 @@ export function Stepper({ value, min, max, step, precision, ariaLabel, onChange 
         style={{
           background: 'var(--pixel-bg)',
           border: '2px solid var(--pixel-border)',
-          fontSize: 12,
+          fontSize: SETTINGS_FONT_BODY_PX,
           padding: '0 8px',
           cursor: value >= max ? 'not-allowed' : 'pointer',
           opacity: value >= max ? 0.5 : 1,

@@ -1,6 +1,10 @@
 import { useEffect } from 'react';
 
-import { SETTINGS_UNDO_TOAST_MS } from '../../constants.js';
+import {
+  SETTINGS_FONT_BODY_PX,
+  SETTINGS_FONT_META_PX,
+  SETTINGS_UNDO_TOAST_MS,
+} from '../../constants.js';
 
 interface UndoToastProps {
   message: string;
@@ -36,7 +40,7 @@ export function UndoToast({
         display: 'flex',
         alignItems: 'center',
         gap: 12,
-        fontSize: 12,
+        fontSize: SETTINGS_FONT_BODY_PX,
       }}
     >
       <span>{message}</span>
@@ -47,7 +51,7 @@ export function UndoToast({
           background: 'var(--pixel-accent)',
           border: '2px solid var(--pixel-border)',
           padding: '2px 8px',
-          fontSize: 11,
+          fontSize: SETTINGS_FONT_META_PX,
           cursor: 'pointer',
           color: 'inherit',
         }}

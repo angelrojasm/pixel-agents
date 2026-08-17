@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+import { SETTINGS_FONT_BODY_PX } from '../../../constants.js';
+
 interface ListEditorProps {
   values: string[];
   placeholder?: string;
@@ -33,7 +35,7 @@ export function ListEditor({ values, placeholder, ariaLabel, onAdd, onRemove }: 
                 background: 'var(--pixel-bg)',
                 border: '2px solid var(--pixel-border)',
                 padding: '0 8px',
-                fontSize: 12,
+                fontSize: SETTINGS_FONT_BODY_PX,
                 cursor: 'pointer',
               }}
             >
@@ -53,7 +55,7 @@ export function ListEditor({ values, placeholder, ariaLabel, onAdd, onRemove }: 
             color: 'inherit',
             border: '2px solid var(--pixel-border)',
             padding: '4px 8px',
-            fontSize: 12,
+            fontSize: SETTINGS_FONT_BODY_PX,
             flex: 1,
           }}
         />
@@ -69,7 +71,7 @@ export function ListEditor({ values, placeholder, ariaLabel, onAdd, onRemove }: 
             background: 'var(--pixel-bg)',
             border: '2px solid var(--pixel-border)',
             padding: '4px 12px',
-            fontSize: 12,
+            fontSize: SETTINGS_FONT_BODY_PX,
             cursor: 'pointer',
           }}
         >

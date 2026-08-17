@@ -150,7 +150,7 @@ export const TOKEN_DANGER_THRESHOLD = 0.8;
 
 // Settings modal layout constants
 export const SETTINGS_MODAL_WIDTH_PX = 720;
-export const SETTINGS_MODAL_HEIGHT_PX = 520;
+export const SETTINGS_MODAL_HEIGHT_PX = 560;
 export const SETTINGS_SIDEBAR_WIDTH_PX = 160;
 export const SETTINGS_TITLE_STRIP_HEIGHT_PX = 32;
 // Settings undo toast duration
@@ -248,3 +248,10 @@ export const LAYOUT_EXPORT_FILENAME = 'pixel-agents-layout.json';
 /** Meta tag injected by the daemon's static server; presence means a real WS
  *  transport serves this page (used by both the token reader and mock gate). */
 export const PX_TOKEN_META_SELECTOR = 'meta[name="px-token"]';
+
+// Settings modal typography — FS Pixel Sans is a pixel-grid font and degrades
+// below ~14px; keep settings text at these sizes (see quick-spec
+// settings-font-legibility-2026-08-16).
+export const SETTINGS_FONT_LABEL_PX = 16;
+export const SETTINGS_FONT_BODY_PX = 14;
+export const SETTINGS_FONT_META_PX = 12;

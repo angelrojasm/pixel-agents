@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react';
 
+import {
+  SETTINGS_FONT_BODY_PX,
+  SETTINGS_FONT_LABEL_PX,
+  SETTINGS_FONT_META_PX,
+} from '../../constants.js';
+
 interface SettingsRowProps {
   label: string;
   helper?: string;
@@ -19,10 +25,21 @@ export function SettingsRow({ label, helper, control, hint }: SettingsRowProps) 
       }}
     >
       <div>
-        <div style={{ fontSize: 12 }}>{label}</div>
-        {helper && <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{helper}</div>}
+        <div style={{ fontSize: SETTINGS_FONT_LABEL_PX }}>{label}</div>
+        {helper && (
+          <div style={{ fontSize: SETTINGS_FONT_BODY_PX, opacity: 0.8, marginTop: 2 }}>
+            {helper}
+          </div>
+        )}
         {hint && (
-          <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2, fontStyle: 'italic' }}>
+          <div
+            style={{
+              fontSize: SETTINGS_FONT_META_PX,
+              opacity: 0.6,
+              marginTop: 2,
+              fontStyle: 'italic',
+            }}
+          >
             {hint}
           </div>
         )}

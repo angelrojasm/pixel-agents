@@ -1,4 +1,8 @@
-import { SETTINGS_TITLE_STRIP_HEIGHT_PX } from '../../constants.js';
+import {
+  SETTINGS_FONT_LABEL_PX,
+  SETTINGS_FONT_META_PX,
+  SETTINGS_TITLE_STRIP_HEIGHT_PX,
+} from '../../constants.js';
 
 interface SettingsTitleStripProps {
   title: string;
@@ -18,7 +22,7 @@ export function SettingsTitleStrip({ title, onRestoreDefaults }: SettingsTitleSt
         borderBottom: '2px solid var(--pixel-border)',
       }}
     >
-      <span style={{ fontWeight: 'bold', fontSize: 13 }}>{title}</span>
+      <span style={{ fontWeight: 'bold', fontSize: SETTINGS_FONT_LABEL_PX }}>{title}</span>
       <button
         type="button"
         onClick={onRestoreDefaults}
@@ -26,7 +30,7 @@ export function SettingsTitleStrip({ title, onRestoreDefaults }: SettingsTitleSt
         style={{
           background: 'var(--pixel-bg)',
           border: '2px solid var(--pixel-border)',
-          fontSize: 11,
+          fontSize: SETTINGS_FONT_META_PX,
           padding: '2px 8px',
           cursor: 'pointer',
           color: 'inherit',
