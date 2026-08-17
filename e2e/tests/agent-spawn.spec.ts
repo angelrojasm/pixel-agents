@@ -101,10 +101,11 @@ test('clicking + Agent spawns mock claude and creates a JSONL session file', asy
       contentType: 'text/plain',
     });
 
-    // 6. Assert: terminal "Claude Code #1" is visible in VS Code UI
-    //    VS Code renders the terminal name as visible text in the tab bar.
-    const terminalTab = window.getByText(/Claude Code #\d+/);
-    await expect(terminalTab.first()).toBeVisible({ timeout: 15_000 });
+    // 6. Assert: the agent's rail cell "Claude Code #1" is visible INSIDE the
+    //    webview. Since the pty-only migration (T17), agents never create native
+    //    VS Code terminals — the terminal renders in the office panel instead.
+    const railCell = frame.getByText(/Claude Code #\d+/);
+    await expect(railCell.first()).toBeVisible({ timeout: 15_000 });
   } finally {
     // Save a screenshot of the final state regardless of outcome
     const screenshotPath = path.join(

@@ -62,12 +62,26 @@ function patchProductJsonForWindows(vscodePath: string): void {
   }
 }
 
+/**
+ * @vscode/test-electron's returned path can lag VS Code's binary naming: on
+ * macOS, VS Code ≥1.13x ships `Contents/MacOS/Code` while older builds (and
+ * the resolver) used `Contents/MacOS/Electron`. Resolve whichever exists.
+ */
+function resolveActualExecutable(vscodePath: string): string {
+  if (fs.existsSync(vscodePath)) return vscodePath;
+  const sibling = path.join(path.dirname(vscodePath), 'Code');
+  if (fs.existsSync(sibling)) return sibling;
+  return vscodePath;
+}
+
 export default async function globalSetup(): Promise<void> {
   console.log('[e2e] Ensuring VS Code is downloaded...');
-  const vscodePath = await downloadAndUnzipVSCode({
-    version: 'stable',
-    cachePath: VSCODE_CACHE_DIR,
-  });
+  const vscodePath = resolveActualExecutable(
+    await downloadAndUnzipVSCode({
+      version: 'stable',
+      cachePath: VSCODE_CACHE_DIR,
+    }),
+  );
   console.log(`[e2e] VS Code executable: ${vscodePath}`);
 
   patchProductJsonForWindows(vscodePath);
