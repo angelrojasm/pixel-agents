@@ -41,3 +41,4 @@ playwright-report/
 
 # Superpowers brainstorm/session scratch state (per-session, not source)
 /.superpowers/
+.playwright-mcp/

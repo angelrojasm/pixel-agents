@@ -668,7 +668,9 @@ export function createOrchestrator(hostDeps: OrchestratorHostDeps): Orchestrator
         hooksEnabled: hooks,
         hooksInfoShown,
         defaultCwd,
-        recentAgentFolders: config.get<string[]>(GLOBAL_KEY_RECENT_AGENT_FOLDERS) ?? [],
+        recentAgentFolders: (config.get<unknown[]>(GLOBAL_KEY_RECENT_AGENT_FOLDERS) ?? []).filter(
+          (v): v is string => typeof v === 'string',
+        ),
         externalAssetDirectories: officeConfig.externalAssetDirectories,
         terminalFontFamily:
           config.get<string>(GLOBAL_KEY_TERMINAL_FONT_FAMILY) ??

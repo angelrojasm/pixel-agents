@@ -173,16 +173,29 @@ describe('createUiDispatch routing', () => {
     expect(broadcast.some((m) => m.type === 'agentRenamed')).toBe(false);
   });
 
-  it('openClaude with folderPath records an MRU entry in recent folders and rebroadcasts settings', async () => {
+  it('openClaude with an existing folderPath records an MRU entry and rebroadcasts settings', async () => {
+    const os = await import('node:os');
     const { GLOBAL_KEY_RECENT_AGENT_FOLDERS } = await import('../../src/constants.js');
+    const realDir = os.tmpdir();
     configValues[GLOBAL_KEY_RECENT_AGENT_FOLDERS] = ['/old/project'];
     vi.mocked(launchNewTerminal).mockImplementationOnce(async (...args: unknown[]) => {
       const map = args[2] as Map<number, AgentState>;
       map.set(10, agent({ id: 10 }));
     });
-    await dispatch.handle({ type: 'openClaude', folderPath: '/new/project' }, ctx);
-    expect(configValues[GLOBAL_KEY_RECENT_AGENT_FOLDERS]).toEqual(['/new/project', '/old/project']);
+    await dispatch.handle({ type: 'openClaude', folderPath: realDir }, ctx);
+    expect(configValues[GLOBAL_KEY_RECENT_AGENT_FOLDERS]).toEqual([realDir, '/old/project']);
     expect(rec.calls).toContain('broadcastSettingsLoaded');
+  });
+
+  it('openClaude with a nonexistent folderPath records nothing (typos never become quick-picks)', async () => {
+    const { GLOBAL_KEY_RECENT_AGENT_FOLDERS } = await import('../../src/constants.js');
+    vi.mocked(launchNewTerminal).mockImplementationOnce(async (...args: unknown[]) => {
+      const map = args[2] as Map<number, AgentState>;
+      map.set(11, agent({ id: 11 }));
+    });
+    await dispatch.handle({ type: 'openClaude', folderPath: '/no/such/dir' }, ctx);
+    expect(configValues[GLOBAL_KEY_RECENT_AGENT_FOLDERS]).toBeUndefined();
+    expect(rec.calls).not.toContain('broadcastSettingsLoaded');
   });
 
   it('focusAgent routes to hostActions.focusTerminal with lead fallback', async () => {

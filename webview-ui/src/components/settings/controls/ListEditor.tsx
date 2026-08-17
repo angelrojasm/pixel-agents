@@ -25,7 +25,15 @@ export function ListEditor({ values, placeholder, ariaLabel, onAdd, onRemove }: 
         }}
       >
         {values.map((v) => (
-          <li key={v} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+          <li
+            key={v}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: SETTINGS_FONT_BODY_PX,
+            }}
+          >
             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{v}</span>
             <button
               type="button"

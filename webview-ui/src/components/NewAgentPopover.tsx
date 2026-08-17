@@ -28,8 +28,11 @@ export function NewAgentPopover({
   onSpawn,
   onClose,
 }: NewAgentPopoverProps) {
+  // Folder starts EMPTY — the effective default is placeholder text only, so
+  // the form never displays a path it would not honor (with a workspace open,
+  // workspace folders outrank defaultCwd in the cwd chain).
   const [name, setName] = useState('');
-  const [folder, setFolder] = useState(defaultCwd);
+  const [folder, setFolder] = useState('');
   const [bypass, setBypass] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -38,7 +41,7 @@ export function NewAgentPopover({
   }, []);
 
   const spawn = () => {
-    onSpawn(buildSpawnRequest(name, folder, defaultCwd, bypass));
+    onSpawn(buildSpawnRequest(name, folder, bypass));
   };
 
   const inputStyle: React.CSSProperties = {
@@ -56,6 +59,8 @@ export function NewAgentPopover({
   return (
     <div
       className="pixel-panel"
+      role="dialog"
+      aria-label="New agent"
       style={{
         position: 'absolute',
         bottom: '100%',
@@ -66,8 +71,17 @@ export function NewAgentPopover({
         zIndex: 30,
       }}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-        if (e.key === 'Enter') spawn();
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          onClose();
+          return;
+        }
+        // Enter submits only from the text fields — never from Cancel or the
+        // recents quick-picks (those handle their own activation).
+        if (e.key === 'Enter' && e.target instanceof HTMLInputElement && e.target.type === 'text') {
+          e.preventDefault();
+          spawn();
+        }
       }}
     >
       <div style={{ fontSize: SETTINGS_FONT_LABEL_PX, marginBottom: 10 }}>New agent</div>
@@ -94,7 +108,7 @@ export function NewAgentPopover({
       <input
         value={folder}
         onChange={(e) => setFolder(e.target.value)}
-        placeholder="default folder"
+        placeholder={defaultCwd.trim() || 'default folder'}
         aria-label="Starting folder"
         style={{ ...inputStyle, marginBottom: recentFolders.length ? 6 : 10 }}
       />

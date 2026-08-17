@@ -77,7 +77,7 @@ export function resolveDefaultCwd(raw: string | undefined): string | undefined {
   } catch {
     /* resolved path doesn't exist — ignore */
   }
-  console.warn(`[Pixel Agents] Terminal: ignored defaultCwd "${raw}" — path not found`);
+  console.warn(`[Pixel Agents] Terminal: ignored folder "${raw}" — path not found`);
   return undefined;
 }
 

@@ -7,7 +7,7 @@
 // daemon bundle includes this file.
 import * as fs from 'fs';
 
-import { launchNewTerminal, restartPty } from '../src/agentManager.js';
+import { launchNewTerminal, resolveDefaultCwd, restartPty } from '../src/agentManager.js';
 import { readConfig, writeConfig } from '../src/configPersistence.js';
 import type { SettingsCategory } from '../src/constants.js';
 import {
@@ -115,7 +115,10 @@ export function createUiDispatch(deps: UiDispatchDeps): {
       hostActions.onAgentsLaunched(newAgents);
 
       // Optional creation-time name → same slot /rename uses (customTitle):
-      // persisted, replayed on restore, rendered everywhere via characterLabel.
+      // rendered everywhere via characterLabel and replayed to late-joining
+      // clients via snapshot replay. NOTE: pty-backed agents are not persisted
+      // across host restarts (persistAgents skips them; the pty dies with the
+      // process), so — exactly like /rename — the name lives for the session.
       const name = typeof message.name === 'string' ? message.name.trim() : '';
       if (name) {
         for (const agent of newAgents) {
@@ -126,17 +129,22 @@ export function createUiDispatch(deps: UiDispatchDeps): {
       }
 
       // Optional creation-time folder → remember it for the New-agent form's
-      // recents list (MRU, shared across clients via settingsLoaded).
+      // recents list (MRU, shared across clients via settingsLoaded). Stored
+      // raw (keeps `~` for display); only paths that actually resolve are
+      // recorded so a typo never becomes a quick-pick.
       if (typeof message.folderPath === 'string' && message.folderPath.trim()) {
-        config.update(
-          GLOBAL_KEY_RECENT_AGENT_FOLDERS,
-          updateRecentFolders(
-            config.get(GLOBAL_KEY_RECENT_AGENT_FOLDERS),
-            message.folderPath.trim(),
-            RECENT_AGENT_FOLDERS_MAX,
-          ),
-        );
-        o.broadcastSettingsLoaded();
+        const raw = message.folderPath.trim();
+        if (resolveDefaultCwd(raw)) {
+          config.update(
+            GLOBAL_KEY_RECENT_AGENT_FOLDERS,
+            updateRecentFolders(
+              config.get(GLOBAL_KEY_RECENT_AGENT_FOLDERS),
+              raw,
+              RECENT_AGENT_FOLDERS_MAX,
+            ),
+          );
+          o.broadcastSettingsLoaded();
+        }
       }
     } else if (message.type === 'focusAgent') {
       const agent = agents.get(message.id as number);

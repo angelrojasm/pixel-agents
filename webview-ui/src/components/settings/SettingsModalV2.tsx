@@ -203,6 +203,10 @@ export function SettingsModalV2(props: SettingsModalV2Props) {
         style={{
           width: SETTINGS_MODAL_WIDTH_PX,
           height: SETTINGS_MODAL_HEIGHT_PX,
+          // Short webviews (narrow side panel): clamp instead of clipping the
+          // header/footer out of reach.
+          maxWidth: '100%',
+          maxHeight: '100%',
           background: 'var(--pixel-bg)',
           border: '2px solid var(--pixel-border)',
           boxShadow: '2px 2px 0px var(--pixel-border)',

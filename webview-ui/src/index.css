@@ -104,7 +104,11 @@
   /* Pixel font everywhere EXCEPT inside xterm: the universal selector matches
    * xterm's glyph spans directly, which beats the monospace font xterm sets on
    * .xterm-rows — terminal text would render proportional-pixelated with
-   * compensating letter-spacing. */
+   * compensating letter-spacing.
+   * NOTE: :not() raises this rule's specificity from (0,0,0) to (0,1,0), so it
+   * now also beats element-selector base rules (e.g. preflight's monospace for
+   * code/pre/kbd). If such elements are ever added, give them an explicit
+   * font-family. */
   *:not(.xterm, .xterm *) {
     @apply font-pixel;
   }
