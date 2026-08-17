@@ -275,3 +275,47 @@ describe('configPersistence: areas', () => {
     });
   });
 });
+
+describe('configPersistence: recentAgentFolders', () => {
+  let tempHome: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-recents-test-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it('round-trips through the file adapter after a reload (parseAdapterSettings keeps it)', async () => {
+    const { FileStateAdapter } = await import('../src/fileStateAdapter.js');
+    const adapter = new FileStateAdapter({ namespace: 'standalone' });
+    adapter.setSetting('pixel-agents.recentAgentFolders', ['/a', '/b']);
+
+    // Fresh adapter = fresh readConfig -> exercises parseAdapterSettings,
+    // which silently drops any field it does not explicitly rebuild.
+    const reloaded = new FileStateAdapter({ namespace: 'standalone' });
+    expect(reloaded.getSetting('pixel-agents.recentAgentFolders', [])).toEqual(['/a', '/b']);
+  });
+
+  it('drops non-string entries and defaults to [] when absent', () => {
+    const config = readConfig();
+    expect(config.standalone.recentAgentFolders).toEqual([]);
+    writeConfig({
+      ...config,
+      standalone: {
+        ...config.standalone,
+        recentAgentFolders: ['/ok', 42, null] as unknown as string[],
+      },
+    });
+    expect(readConfig().standalone.recentAgentFolders).toEqual(['/ok']);
+  });
+});

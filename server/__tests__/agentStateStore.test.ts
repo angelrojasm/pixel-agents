@@ -170,6 +170,22 @@ describe('AgentStateStore', () => {
       expect(saved[0].isTeamLead).toBe(true);
     });
 
+    it('persist projects ptyBacked and customTitle when set', () => {
+      const adapter = createMockAdapter();
+      store.setAdapter(adapter);
+      store.set(
+        1,
+        createTestAgent({ id: 1, sessionId: 'sess-1', ptyBacked: true, customTitle: 'X' }),
+      );
+
+      store.persist();
+
+      const saved = (adapter.saveAgents as ReturnType<typeof vi.fn>).mock
+        .calls[0][0] as PersistedAgent[];
+      expect(saved[0].ptyBacked).toBe(true);
+      expect(saved[0].customTitle).toBe('X');
+    });
+
     it('persist without adapter is a no-op', () => {
       store.set(1, createTestAgent({ id: 1 }));
       // Should not throw

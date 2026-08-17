@@ -85,6 +85,15 @@ export interface AgentState {
   palette?: number;
   /** Hue shift in degrees (0-360). Rotates the base palette colors. */
   hueShift?: number;
+
+  // -- Standalone pty terminals --
+  /** True when this agent's terminal is a server-owned node-pty process
+   *  (standalone mode) rather than a native VS Code terminal. */
+  ptyBacked?: boolean;
+  /** User-chosen display name from the New-agent form (or Claude's /rename). */
+  customTitle?: string;
+  /** Resolved cwd the pty was spawned in. Restart reuses it. Runtime-only. */
+  spawnCwd?: string;
 }
 
 export interface PersistedAgent {
@@ -114,4 +123,8 @@ export interface PersistedAgent {
   palette?: number;
   /** Hue shift in degrees (0-360). Persisted alongside palette. */
   hueShift?: number;
+  /** True for server-owned node-pty terminals (standalone mode). */
+  ptyBacked?: boolean;
+  /** User-chosen display name (New-agent form or /rename). */
+  customTitle?: string;
 }

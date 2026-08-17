@@ -13,6 +13,9 @@ export interface AdapterSettings {
   hooksInfoShown: boolean;
   showAreas: boolean;
   areaMappings: Record<string, string[]>;
+  /** MRU list of starting folders picked in the New-agent form (newest first,
+   *  capped at RECENT_AGENT_FOLDERS_MAX). */
+  recentAgentFolders: string[];
 }
 
 /** All keys in AdapterSettings. Used by adapters to map `pixel-agents.foo` → `foo`.
@@ -28,6 +31,7 @@ export const ADAPTER_SETTING_KEYS = [
   'hooksInfoShown',
   'showAreas',
   'areaMappings',
+  'recentAgentFolders',
 ] as const;
 
 export type AdapterSettingKey = (typeof ADAPTER_SETTING_KEYS)[number];
@@ -64,6 +68,7 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   hooksInfoShown: false,
   showAreas: false,
   areaMappings: {},
+  recentAgentFolders: [],
 };
 
 function getConfigFilePath(): string {
@@ -145,6 +150,9 @@ function parseAdapterSettings(raw: unknown): AdapterSettings {
     showAreas:
       typeof obj.showAreas === 'boolean' ? obj.showAreas : DEFAULT_ADAPTER_SETTINGS.showAreas,
     areaMappings: parseAreaMappings(obj.areaMappings),
+    recentAgentFolders: Array.isArray(obj.recentAgentFolders)
+      ? obj.recentAgentFolders.filter((f): f is string => typeof f === 'string')
+      : [...DEFAULT_ADAPTER_SETTINGS.recentAgentFolders],
   };
 }
 

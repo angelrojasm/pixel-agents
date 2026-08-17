@@ -34,6 +34,10 @@ export interface PersistedAgent {
   palette?: number;
   /** Hue shift in degrees (0-360). Persisted alongside palette. */
   hueShift?: number;
+  /** True for server-owned node-pty terminals (standalone mode). */
+  ptyBacked?: boolean;
+  /** User-chosen display name (New-agent form or /rename). */
+  customTitle?: string;
 }
 
 /** Agent seat assignment with visual identity
