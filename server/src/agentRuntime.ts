@@ -38,6 +38,7 @@ import type { HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { PathSet, pathsMatch } from './pathKey.js';
+import type { PtyManager } from './pty/ptyManager.js';
 import { SessionRouter } from './sessionRouter.js';
 import { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -84,6 +85,9 @@ export class AgentRuntime {
   readonly subagentWatch: SubagentWatch;
   private hookEventHandler: HookEventHandler;
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
+  /** Standalone-only pty host (node-pty). Injected by the CLI adapter via
+   *  setPtyHost; stays null under VS Code, where terminals are native. */
+  private _ptyHost: PtyManager | null = null;
 
   constructor(
     private readonly store: AgentStateStore,
@@ -304,10 +308,22 @@ export class AgentRuntime {
 
   // ── Agent removal (shared cleanup) ──
 
+  /** Inject the standalone pty host. Call before any pty-backed spawn. */
+  setPtyHost(host: PtyManager): void {
+    this._ptyHost = host;
+  }
+
+  get ptyHost(): PtyManager | null {
+    return this._ptyHost;
+  }
+
   /** Remove an agent: stop watchers, cancel timers, delete from store. */
   removeAgent(id: number): void {
     const agent = this.store.get(id);
     if (!agent) return;
+
+    // Kill the pty first so no output lands after teardown begins
+    this._ptyHost?.stop(id);
 
     // Stop JSONL poll timer
     const jpTimer = this.jsonlPollTimers.get(id);
@@ -558,6 +574,7 @@ export class AgentRuntime {
 
   /** Clean up all scanners, timers, and agents. Called on shutdown. */
   dispose(): void {
+    this._ptyHost?.disposeAll();
     this.hookEventHandler.dispose();
     this.subagentWatch.dispose();
 
