@@ -25,6 +25,7 @@ interface FakeWorker {
   writes: string[];
   resizes: Array<[number, number]>;
   killed: boolean;
+  exited: boolean;
   fireData: (chunk: string) => void;
   fireExit: (info: { code: number; signal?: string }) => void;
 }
@@ -36,9 +37,13 @@ function makeFakeWorker(scrollbackLines: string[] = []): FakeWorker {
     writes: [],
     resizes: [],
     killed: false,
+    exited: false,
     worker: undefined as unknown as PtyWorker,
     fireData: (chunk) => dataHandlers.forEach((h) => h(chunk)),
-    fireExit: (info) => exitHandlers.forEach((h) => h(info)),
+    fireExit: (info) => {
+      state.exited = true;
+      exitHandlers.forEach((h) => h(info));
+    },
   };
   state.worker = {
     onData: (h: (c: string) => void) => void dataHandlers.push(h),
@@ -49,7 +54,7 @@ function makeFakeWorker(scrollbackLines: string[] = []): FakeWorker {
       state.killed = true;
     },
     scrollback: () => scrollbackLines,
-    isAlive: () => !state.killed,
+    isAlive: () => !state.killed && !state.exited,
   } as unknown as PtyWorker;
   return state;
 }
@@ -74,15 +79,19 @@ describe('PtyManager', () => {
     expect(frames).toContainEqual({ type: 'ptyData', id: 7, data: 'hello' });
   });
 
-  it('splits oversized chunks at the cap boundary', () => {
+  it('splits oversized chunks: every frame fits the cap, order and content preserved', () => {
     const { frames, broadcast } = makeBroadcast();
     const fake = makeFakeWorker();
     const mgr = new PtyManager({ broadcast, workerFactory: () => fake.worker });
     mgr.start(1, START);
-    fake.fireData('x'.repeat(PTY_MAX_CHUNK_BYTES + 5));
+    const big = 'x'.repeat(PTY_MAX_CHUNK_BYTES * 3 + 5);
+    fake.fireData(big);
     const data = frames.filter((f) => f.type === 'ptyData');
-    expect(data).toHaveLength(2);
-    expect(data[1].data).toBe('xxxxx');
+    expect(data.length).toBeGreaterThan(1);
+    for (const frame of data) {
+      expect(Buffer.byteLength(frame.data ?? '', 'utf8')).toBeLessThanOrEqual(PTY_MAX_CHUNK_BYTES);
+    }
+    expect(data.map((f) => f.data).join('')).toBe(big);
   });
 
   it('routes write/resize to the worker and scrollback back to the caller', () => {
@@ -134,19 +143,33 @@ describe('PtyManager', () => {
     expect(frames.some((f) => f.type === 'agentCrashed')).toBe(false);
   });
 
-  it('intentional stop suppresses agentCrashed even on signalled exit', () => {
+  it('a dead worker is RETAINED: scrollback + exitInfo survive for late panes', () => {
+    const { broadcast } = makeBroadcast();
+    const fake = makeFakeWorker(['old-line-1', 'old-line-2']);
+    const mgr = new PtyManager({ broadcast, workerFactory: () => fake.worker });
+    mgr.start(4, START);
+    fake.fireExit({ code: 137, signal: 'SIGKILL' });
+    expect(mgr.has(4)).toBe(true);
+    expect(mgr.scrollback(4)).toEqual(['old-line-1', 'old-line-2']);
+    expect(mgr.exitInfo(4)).toEqual({ code: 137, signal: 'SIGKILL' });
+  });
+
+  it('stop() reaps synchronously and suppresses all frames from the old worker', () => {
     const { frames, broadcast } = makeBroadcast();
     const fake = makeFakeWorker();
     const mgr = new PtyManager({ broadcast, workerFactory: () => fake.worker });
     mgr.start(6, START);
     mgr.stop(6);
     expect(fake.killed).toBe(true);
+    expect(mgr.has(6)).toBe(false);
+    // Exit lands after the reap: neither ptyExit nor agentCrashed — the pane
+    // was already told about the removal/restart through other channels.
     fake.fireExit({ code: 0, signal: 'SIGTERM' });
-    expect(frames.some((f) => f.type === 'ptyExit')).toBe(true);
+    expect(frames.some((f) => f.type === 'ptyExit')).toBe(false);
     expect(frames.some((f) => f.type === 'agentCrashed')).toBe(false);
   });
 
-  it('a restart after stop is NOT crash-suppressed', () => {
+  it('restart (stop then start) never mis-broadcasts the OLD worker exit, even late', () => {
     const { frames, broadcast } = makeBroadcast();
     const first = makeFakeWorker();
     const second = makeFakeWorker();
@@ -154,10 +177,51 @@ describe('PtyManager', () => {
     const mgr = new PtyManager({ broadcast, workerFactory: () => workers.shift()!.worker });
     mgr.start(8, START);
     mgr.stop(8);
-    first.fireExit({ code: 0, signal: 'SIGTERM' }); // worker removed from map
-    mgr.start(8, START); // restart clears the intentional marker
+    mgr.start(8, START); // new worker installed BEFORE the old exit lands
+    first.fireExit({ code: 0, signal: 'SIGTERM' }); // stale — must be silent
+    expect(frames.some((f) => f.type === 'ptyExit')).toBe(false);
+    expect(frames.some((f) => f.type === 'agentCrashed')).toBe(false);
+    // The new worker's crash still reports normally.
     second.fireExit({ code: 137, signal: 'SIGKILL' });
     expect(frames.filter((f) => f.type === 'agentCrashed')).toHaveLength(1);
+  });
+
+  it('start replaces a dead retained worker and clears its exitInfo', () => {
+    const { broadcast } = makeBroadcast();
+    const first = makeFakeWorker();
+    const second = makeFakeWorker();
+    const workers = [first, second];
+    let constructed = 0;
+    const mgr = new PtyManager({
+      broadcast,
+      workerFactory: () => {
+        constructed += 1;
+        return workers.shift()!.worker;
+      },
+    });
+    mgr.start(9, START);
+    first.fireExit({ code: 1 });
+    expect(mgr.exitInfo(9)).toBeDefined();
+    mgr.start(9, START); // dead entry -> replaced, not idempotent-skipped
+    expect(constructed).toBe(2);
+    expect(mgr.exitInfo(9)).toBeUndefined();
+  });
+
+  it('splits oversized multibyte chunks by BYTE length', () => {
+    const { frames, broadcast } = makeBroadcast();
+    const fake = makeFakeWorker();
+    const mgr = new PtyManager({ broadcast, workerFactory: () => fake.worker });
+    mgr.start(12, START);
+    // 3-byte chars: byte length is 3x the code-unit length, so a code-unit
+    // split would emit frames ~3x over the cap.
+    const bigMultibyte = '€'.repeat(Math.floor(PTY_MAX_CHUNK_BYTES / 3) + 10);
+    fake.fireData(bigMultibyte);
+    const data = frames.filter((f) => f.type === 'ptyData');
+    expect(data.length).toBeGreaterThan(1);
+    for (const frame of data) {
+      expect(Buffer.byteLength(frame.data ?? '', 'utf8')).toBeLessThanOrEqual(PTY_MAX_CHUNK_BYTES);
+    }
+    expect(data.map((f) => f.data).join('')).toBe(bigMultibyte);
   });
 
   it('disposeAll kills every worker without crashes', () => {

@@ -118,4 +118,27 @@ test.describe('Standalone / Terminal band', () => {
       )
       .toBeGreaterThan(firstInvocations);
   });
+
+  test('a pane mounted AFTER the pty exited still shows the Restart control @area:terminal', async ({
+    page,
+    standalone,
+  }) => {
+    // The dead worker is RETAINED server-side: terminalPaneReady replays its
+    // scrollback and a synthetic ptyExit, so a page reload (= every pane
+    // mounts late) reconstructs the exit marker. This is the retention model
+    // M2's always-late-mounting webview panes depend on.
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('exit-early-remount').exitAt(3_000, 0),
+    );
+    await spawnFromForm(page);
+    const restart = page.getByRole('button', { name: 'Restart agent' });
+    await expect(restart).toBeVisible({ timeout: SPAWN_TIMEOUT_MS });
+
+    await page.reload();
+    await expect(page.getByTestId('terminal-band')).toBeVisible({ timeout: SPAWN_TIMEOUT_MS });
+    await expect(page.getByRole('button', { name: 'Restart agent' })).toBeVisible({
+      timeout: SPAWN_TIMEOUT_MS,
+    });
+  });
 });

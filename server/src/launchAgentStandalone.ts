@@ -147,6 +147,7 @@ export function launchAgentStandalone(
     ptyBacked: true,
     customTitle: opts.name?.trim() || undefined,
     spawnCwd: cwd,
+    bypassPermissions: opts.bypassPermissions || undefined,
   };
 
   assignPaletteIfNeeded(agent, store);

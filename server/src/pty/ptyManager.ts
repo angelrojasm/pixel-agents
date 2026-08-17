@@ -27,29 +27,37 @@ export interface PtyManagerOptions {
  * imperative methods directly (write/resize/scrollback) instead of the manager
  * subscribing to a message source. Frames use `id` (upstream convention).
  *
+ * Reaping model (matches the v2 reference): a worker entry is RETAINED after
+ * its process exits, so a late-mounting pane can still replay scrollback via
+ * terminalPaneReady and learn the exit through exitInfo(). Workers are reaped
+ * explicitly — stop()/disposeAll() delete synchronously — and start() replaces
+ * a dead retained entry. Exit frames are broadcast only for the CURRENT
+ * worker of an id: a worker reaped by stop() or already replaced by a restart
+ * is stale, and its late exit must not paint an exit marker over a live pane
+ * or trigger crash handling.
+ *
  * Wire protocol produced (all privileged-delivery, see httpServer):
  *   ptyData { id, data }        — live output chunks
- *   ptyExit { id, code, signal? } — EVERY exit
- *   agentCrashed { id, code, signal? } — unintentional non-zero exits only
+ *   ptyExit { id, code, signal? } — the current worker's exit
+ *   agentCrashed { id, code, signal? } — non-zero/signalled current-worker exits
  */
 export class PtyManager {
   private readonly workers = new Map<number, PtyWorker>();
-  /** Agents whose worker was killed via stop()/disposeAll(). When onExit fires
-   *  for one of these, agentCrashed is suppressed (ptyExit still broadcasts). */
-  private readonly intentionallyStopped = new Set<number>();
+  /** Last exit of the RETAINED (dead) worker per id. Cleared when a new
+   *  worker starts or the entry is reaped. Lets terminalPaneReady tell a
+   *  late-mounting pane that this terminal already ended. */
+  private readonly lastExit = new Map<number, { code: number; signal?: string }>();
   private readonly factory: (opts: PtyWorkerOptions) => PtyWorker;
 
   constructor(private readonly opts: PtyManagerOptions) {
     this.factory = opts.workerFactory ?? ((o) => new PtyWorker(o));
   }
 
-  /** Idempotent: an already-running agent keeps its existing worker. */
+  /** Idempotent while the agent's worker is ALIVE; a dead retained entry is
+   *  replaced by a fresh worker (the restart path). */
   start(id: number, startOpts: PtyStartOptions): void {
-    if (this.workers.has(id)) return;
-
-    // A restart may follow an intentional stop; clear the marker so a future
-    // crash from the new worker is not suppressed.
-    this.intentionallyStopped.delete(id);
+    if (this.workers.get(id)?.isAlive()) return;
+    this.lastExit.delete(id);
 
     const worker = this.factory({
       shell: startOpts.shell,
@@ -61,13 +69,16 @@ export class PtyManager {
       scrollbackCapacity: startOpts.scrollbackCapacity,
     });
 
-    worker.onData((chunk) => this.emitData(id, chunk));
+    worker.onData((chunk) => {
+      if (this.workers.get(id) === worker) this.emitData(id, chunk);
+    });
     worker.onExit(({ code, signal }) => {
-      this.workers.delete(id);
+      // Stale worker (reaped by stop(), or replaced by a restart): silent.
+      if (this.workers.get(id) !== worker) return;
+      // Retain the entry so a late-mounting pane can still replay scrollback.
+      this.lastExit.set(id, { code, signal });
       this.opts.broadcast({ type: 'ptyExit', id, code, signal });
-      const intentional = this.intentionallyStopped.has(id);
-      this.intentionallyStopped.delete(id);
-      if (!intentional && (code !== 0 || signal !== undefined)) {
+      if (code !== 0 || signal !== undefined) {
         this.opts.broadcast({ type: 'agentCrashed', id, code, signal });
       }
     });
@@ -91,20 +102,31 @@ export class PtyManager {
     return this.workers.has(id);
   }
 
-  /** Intentional stop (close/restart): kills the worker without an agentCrashed. */
+  /** The retained worker's exit, if it has ended. Undefined while alive. */
+  exitInfo(id: number): { code: number; signal?: string } | undefined {
+    return this.lastExit.get(id);
+  }
+
+  /** Explicit reap (close/restart): kill and delete synchronously, so the
+   *  old worker's late exit is recognizably stale and stays silent. */
   stop(id: number): void {
     const worker = this.workers.get(id);
     if (!worker) return;
-    this.intentionallyStopped.add(id);
     worker.kill();
+    this.workers.delete(id);
+    this.lastExit.delete(id);
   }
 
   disposeAll(): void {
-    for (const [id, worker] of this.workers) {
-      this.intentionallyStopped.add(id);
-      worker.kill();
+    for (const worker of this.workers.values()) {
+      try {
+        worker.kill();
+      } catch {
+        // best effort
+      }
     }
     this.workers.clear();
+    this.lastExit.clear();
   }
 
   private emitData(id: number, chunk: string): void {
@@ -112,12 +134,20 @@ export class PtyManager {
       this.opts.broadcast({ type: 'ptyData', id, data: chunk });
       return;
     }
-    // Pathological single write — split at the cap boundary.
-    let remaining = chunk;
-    while (remaining.length > 0) {
-      const piece = remaining.slice(0, PTY_MAX_CHUNK_BYTES);
-      remaining = remaining.slice(PTY_MAX_CHUNK_BYTES);
-      this.opts.broadcast({ type: 'ptyData', id, data: piece });
+    // Pathological single write — halve (in order) until every piece fits the
+    // BYTE cap. The split point steps over a surrogate pair so an astral char
+    // on the boundary is never torn into two replacement characters.
+    const pieces: string[] = [chunk];
+    while (pieces.length > 0) {
+      const piece = pieces.shift()!;
+      if (Buffer.byteLength(piece, 'utf8') <= PTY_MAX_CHUNK_BYTES) {
+        this.opts.broadcast({ type: 'ptyData', id, data: piece });
+        continue;
+      }
+      let half = Math.ceil(piece.length / 2);
+      const boundary = piece.charCodeAt(half - 1);
+      if (boundary >= 0xd800 && boundary <= 0xdbff) half += 1; // high surrogate
+      pieces.unshift(piece.slice(0, half), piece.slice(half));
     }
   }
 }

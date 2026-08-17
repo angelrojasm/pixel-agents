@@ -326,3 +326,10 @@ export const TERMINAL_BAND_MIN_HEIGHT_PX = 120;
 export const TERMINAL_BAND_MAX_HEIGHT_PX = 600;
 /** Client-side scrollback (lines) — matches server PTY_SCROLLBACK_MAX_LINES. */
 export const TERMINAL_SCROLLBACK_LINES = 2000;
+/** Agent rail width (px) on the left edge of the terminal band. */
+export const TERMINAL_RAIL_WIDTH_PX = 168;
+/** Drag-resize handle height (px) at the top of the terminal band. */
+export const TERMINAL_BAND_HANDLE_HEIGHT_PX = 6;
+/** Terminal search bar dimensions (px). */
+export const TERMINAL_SEARCH_BAR_WIDTH_PX = 240;
+export const TERMINAL_SEARCH_BAR_HEIGHT_PX = 26;

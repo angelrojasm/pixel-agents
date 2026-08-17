@@ -29,7 +29,7 @@ import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool, type OfficeLayout } from './office/types.js';
-import { isBrowserRuntime, isE2E } from './runtime.js';
+import { hasPrivilegedToken, isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 
@@ -638,7 +638,7 @@ function App() {
           />
         )}
       </div>
-      {isBrowserRuntime && railAgents.length > 0 && (
+      {isBrowserRuntime && hasPrivilegedToken && railAgents.length > 0 && (
         <TerminalBand
           agents={railAgents}
           focusedId={focusedTerminalId}

@@ -94,6 +94,9 @@ export interface AgentState {
   customTitle?: string;
   /** Resolved cwd the pty was spawned in. Restart reuses it. Runtime-only. */
   spawnCwd?: string;
+  /** Whether the pty was launched with --dangerously-skip-permissions.
+   *  Restart re-applies it (v2 restartPty semantics). Runtime-only. */
+  bypassPermissions?: boolean;
 }
 
 export interface PersistedAgent {

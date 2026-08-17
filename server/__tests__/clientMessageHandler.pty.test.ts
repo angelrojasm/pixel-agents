@@ -43,19 +43,25 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
 function makeFakePtyHost() {
   const running = new Set<number>();
   const starts: Array<{ id: number; opts: PtyStartOptions }> = [];
+  const exits = new Map<number, { code: number; signal?: string }>();
   const host = {
     start: vi.fn((id: number, opts: PtyStartOptions) => {
       running.add(id);
+      exits.delete(id);
       starts.push({ id, opts });
     }),
-    stop: vi.fn((id: number) => void running.delete(id)),
+    stop: vi.fn((id: number) => {
+      running.delete(id);
+      exits.delete(id);
+    }),
     write: vi.fn(),
     resize: vi.fn(),
     scrollback: vi.fn(() => ['line-1', 'line-2']),
-    has: vi.fn((id: number) => running.has(id)),
+    has: vi.fn((id: number) => running.has(id) || exits.has(id)),
+    exitInfo: vi.fn((id: number) => exits.get(id)),
     disposeAll: vi.fn(),
   };
-  return { host: host as unknown as PtyManager, starts, running };
+  return { host: host as unknown as PtyManager, starts, running, exits };
 }
 
 describe('clientMessageHandler: standalone pty dispatch', () => {
@@ -202,11 +208,24 @@ describe('clientMessageHandler: standalone pty dispatch', () => {
       expect(broadcasts.find((b) => b.type === 'ptyScrollback')).toBeUndefined();
     });
 
-    it('no reply for an id with no live worker', () => {
+    it('no reply for an unknown id', () => {
       const { host } = makeFakePtyHost();
       const ctx = makeCtx(host);
       handleClientMessage({ type: 'terminalPaneReady', id: 99 }, send, ctx);
       expect(sent.find((m) => m.type === 'ptyScrollback')).toBeUndefined();
+    });
+
+    it('a DEAD retained agent replies with scrollback plus a synthetic ptyExit', () => {
+      const { host, exits } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      exits.set(7, { code: 137, signal: 'SIGKILL' }); // retained after crash
+      handleClientMessage({ type: 'terminalPaneReady', id: 7 }, send, ctx);
+      const scrollbackIdx = sent.findIndex((m) => m.type === 'ptyScrollback');
+      const exitIdx = sent.findIndex((m) => m.type === 'ptyExit');
+      expect(scrollbackIdx).toBeGreaterThanOrEqual(0);
+      expect(exitIdx).toBeGreaterThan(scrollbackIdx); // marker lands after replay
+      expect(sent[exitIdx]).toMatchObject({ id: 7, code: 137, signal: 'SIGKILL' });
+      expect(broadcasts.find((b) => b.type === 'ptyExit')).toBeUndefined(); // point-to-point
     });
   });
 
@@ -225,6 +244,22 @@ describe('clientMessageHandler: standalone pty dispatch', () => {
       expect(starts[0].opts.cwd).toBe(launchCwd);
       expect(starts[0].opts.args.join(' ')).toContain('sess-4');
       expect(broadcasts.find((b) => b.type === 'agentRestarted')?.id).toBe(4);
+    });
+
+    it('restart re-applies the recorded bypassPermissions flag', () => {
+      const { host, starts } = makeFakePtyHost();
+      const ctx = makeCtx(host);
+      handleClientMessage(
+        { type: 'launchAgent', bypassPermissions: true, name: 'Bypasser' },
+        send,
+        ctx,
+      );
+      expect(starts).toHaveLength(1);
+      expect(starts[0].opts.args.join(' ')).toContain('--dangerously-skip-permissions');
+      const id = starts[0].id;
+      handleClientMessage({ type: 'restartAgent', id }, send, ctx);
+      expect(starts).toHaveLength(2);
+      expect(starts[1].opts.args.join(' ')).toContain('--dangerously-skip-permissions');
     });
 
     it('ignores restart for a non-pty agent', () => {

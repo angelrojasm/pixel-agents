@@ -1,16 +1,16 @@
 import { isBrowserRuntime as defaultIsBrowserRuntime } from '../../runtime.js';
-import { transport as defaultTransport } from '../../transport/index.js';
 
 interface HandleWebLinkClickDeps {
-  send?: (msg: Record<string, unknown>) => void;
   isBrowserRuntime?: boolean;
   windowOpen?: typeof window.open;
 }
 
 /**
- * Click handler for xterm.js WebLinksAddon. In the browser runtime the SPA
- * opens the URL directly; in a VS Code webview it asks the extension host to
- * open it externally. Dependencies are injectable for testing.
+ * Click handler for xterm.js WebLinksAddon. The browser runtime opens the URL
+ * directly. The terminal band is browser-gated in M1, so no VS Code branch
+ * exists yet — M2 must declare an `openExternal` ClientMessage in
+ * core/asyncapi.yaml before mounting the pane in a webview (links there
+ * cannot window.open). Dependencies are injectable for testing.
  */
 export function handleWebLinkClick(
   _event: MouseEvent,
@@ -18,11 +18,7 @@ export function handleWebLinkClick(
   deps: HandleWebLinkClickDeps = {},
 ): void {
   const browser = deps.isBrowserRuntime ?? defaultIsBrowserRuntime;
-  if (browser) {
-    const opener = deps.windowOpen ?? window.open.bind(window);
-    opener(uri, '_blank');
-    return;
-  }
-  const send = deps.send ?? ((m: Record<string, unknown>) => defaultTransport.send(m as never));
-  send({ type: 'openExternal', uri });
+  if (!browser) return;
+  const opener = deps.windowOpen ?? window.open.bind(window);
+  opener(uri, '_blank');
 }

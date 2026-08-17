@@ -360,6 +360,7 @@ export function useExtensionMessages(
           delete next[id];
           return next;
         });
+        ptyEventBus.remove(id);
         setAgentTools((prev) => {
           if (!(id in prev)) return prev;
           const next = { ...prev };

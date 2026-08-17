@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { WorkspaceFolder } from '../hooks/useExtensionMessages.js';
-import { isBrowserRuntime } from '../runtime.js';
+import { hasPrivilegedToken, isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { Button } from './ui/Button.js';
 import { Dropdown, DropdownItem } from './ui/Dropdown.js';
@@ -87,8 +87,10 @@ export function BottomToolbar({
   return (
     <div className="absolute bottom-10 left-10 z-20 flex items-center gap-4 pixel-panel p-4">
       {/* Browser runtime: + Agent opens the New-agent form (name, folder,
-          bypass live inside it — no hover menu). VS Code keeps its flow. */}
-      {isBrowserRuntime && (
+          bypass live inside it — no hover menu). VS Code keeps its flow.
+          Untokened viewers get no button: the server would silently refuse
+          their unprivileged launchAgent anyway. */}
+      {isBrowserRuntime && hasPrivilegedToken && (
         <Button
           variant="accent"
           onClick={onOpenNewAgent}

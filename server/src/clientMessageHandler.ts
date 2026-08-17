@@ -329,16 +329,20 @@ export function handleClientMessage(
         runtime?.ptyHost?.resize(msg.id as number, msg.cols as number, msg.rows as number);
       break;
 
-    case 'terminalPaneReady':
+    case 'terminalPaneReady': {
       // Point-to-point scrollback replay for a freshly mounted terminal pane.
-      if (ctx.privileged && runtime?.ptyHost?.has(msg.id as number)) {
-        send({
-          type: 'ptyScrollback',
-          id: msg.id,
-          lines: runtime.ptyHost.scrollback(msg.id as number),
-        });
+      if (!ctx.privileged || !runtime?.ptyHost?.has(msg.id as number)) break;
+      const paneId = msg.id as number;
+      send({ type: 'ptyScrollback', id: paneId, lines: runtime.ptyHost.scrollback(paneId) });
+      // Dead-but-retained worker: replay the exit AFTER the scrollback so a
+      // pane mounted post-exit (rail tab switch, page reload) still shows the
+      // exit marker and the Restart affordance.
+      const exit = runtime.ptyHost.exitInfo(paneId);
+      if (exit) {
+        send({ type: 'ptyExit', id: paneId, code: exit.code, signal: exit.signal });
       }
       break;
+    }
 
     case 'restartAgent': {
       if (!ctx.privileged || !runtime?.ptyHost || !ctx.provider?.buildLaunchCommand) break;
@@ -346,9 +350,12 @@ export function handleClientMessage(
       const agent = store.get(id);
       if (!agent?.ptyBacked || !agent.sessionId) break;
       const cwd = agent.spawnCwd ?? ctx.launchCwd ?? os.homedir();
-      // stop() marks the old worker intentionally stopped → no agentCrashed.
+      // stop() reaps the old worker synchronously, so its late exit is stale
+      // (silent) and start() below installs a fresh worker for the same id.
       runtime.ptyHost.stop(id);
-      const launch = ctx.provider.buildLaunchCommand(agent.sessionId, cwd, {});
+      const launch = ctx.provider.buildLaunchCommand(agent.sessionId, cwd, {
+        bypassPermissions: agent.bypassPermissions,
+      });
       runtime.ptyHost.start(id, {
         shell: process.env.SHELL ?? '/bin/zsh',
         args: ['-l', '-c', [launch.command, ...launch.args].join(' ')],

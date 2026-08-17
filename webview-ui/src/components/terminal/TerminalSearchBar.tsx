@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 
+import { TERMINAL_SEARCH_BAR_HEIGHT_PX, TERMINAL_SEARCH_BAR_WIDTH_PX } from '../../constants.js';
+
 interface TerminalSearchBarProps {
   query: string;
   currentMatch: number;
@@ -34,7 +36,7 @@ export function TerminalSearchBar({
   return (
     <div
       className="absolute top-4 right-4 flex items-center gap-4 border-2 border-border bg-bg z-10 px-6"
-      style={{ width: 240, height: 26 }}
+      style={{ width: TERMINAL_SEARCH_BAR_WIDTH_PX, height: TERMINAL_SEARCH_BAR_HEIGHT_PX }}
       role="search"
       aria-label="Search terminal"
     >

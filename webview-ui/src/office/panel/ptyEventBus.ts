@@ -105,4 +105,9 @@ export class PtyEventBus {
     if (!s) return;
     for (const h of s.agentRestarted) h();
   }
+
+  /** Drop an agent's subscriber slot (agentClosed) so slots don't accumulate. */
+  remove(agentId: number): void {
+    this.agents.delete(agentId);
+  }
 }

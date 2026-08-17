@@ -1,3 +1,5 @@
+import { TERMINAL_RAIL_WIDTH_PX } from '../../constants.js';
+
 export interface RailAgent {
   id: number;
   label: string;
@@ -16,7 +18,7 @@ export function AgentRail({ agents, focusedId, onFocus, onClose }: AgentRailProp
   return (
     <div
       className="flex flex-col overflow-y-auto border-r-2 border-border"
-      style={{ width: 168, background: 'var(--color-bg)' }}
+      style={{ width: TERMINAL_RAIL_WIDTH_PX, background: 'var(--color-bg)' }}
       role="tablist"
       aria-label="Agent terminals"
     >

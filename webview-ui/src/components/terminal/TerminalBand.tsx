@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   TERMINAL_BAND_DEFAULT_HEIGHT_PX,
+  TERMINAL_BAND_HANDLE_HEIGHT_PX,
   TERMINAL_BAND_MAX_HEIGHT_PX,
   TERMINAL_BAND_MIN_HEIGHT_PX,
 } from '../../constants.js';
@@ -84,7 +85,11 @@ export function TerminalBand({
         onPointerMove={onHandlePointerMove}
         onPointerUp={onHandlePointerUp}
         className="w-full cursor-row-resize"
-        style={{ height: 6, background: 'var(--color-bg-thumb)', touchAction: 'none' }}
+        style={{
+          height: TERMINAL_BAND_HANDLE_HEIGHT_PX,
+          background: 'var(--color-bg-thumb)',
+          touchAction: 'none',
+        }}
         role="separator"
         aria-orientation="horizontal"
         aria-label="Resize terminal band"
