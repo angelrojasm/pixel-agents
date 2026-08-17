@@ -100,6 +100,13 @@ components:
         - $ref: '#/components/schemas/AgentTeamInfo'
         # Context window
         - $ref: '#/components/schemas/AgentContextUsage'
+        # In-office pty terminals (privileged-delivery)
+        - $ref: '#/components/schemas/PtyData'
+        - $ref: '#/components/schemas/PtyExit'
+        - $ref: '#/components/schemas/PtyScrollback'
+        - $ref: '#/components/schemas/AgentCrashed'
+        - $ref: '#/components/schemas/AgentRenamed'
+        - $ref: '#/components/schemas/AgentRestarted'
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
         # Assets
@@ -144,6 +151,11 @@ components:
         - $ref: '#/components/schemas/SaveAreaMappings'
         - $ref: '#/components/schemas/SetShowAreas'
         - $ref: '#/components/schemas/RequestDiagnostics'
+        # In-office pty terminals (privileged)
+        - $ref: '#/components/schemas/PtyInput'
+        - $ref: '#/components/schemas/PtyResize'
+        - $ref: '#/components/schemas/TerminalPaneReady'
+        - $ref: '#/components/schemas/RestartAgent'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -190,6 +202,12 @@ components:
         hueShift:
           type: integer
           description: Server-assigned hue shift in degrees (0-360).
+        ptyBacked:
+          type: boolean
+          description: True when the agent runs in a server-owned pty (in-office terminal).
+        customTitle:
+          type: string
+          description: User-chosen display name set at creation time.
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -242,6 +260,16 @@ components:
           description: Map of agent ID (string) to external flag.
           additionalProperties:
             type: boolean
+        ptyBackedAgents:
+          type: object
+          description: Map of agent ID (string) to pty-backed flag (in-office terminal).
+          additionalProperties:
+            type: boolean
+        customTitles:
+          type: object
+          description: Map of agent ID (string) to user-chosen display name.
+          additionalProperties:
+            type: string
 
     AgentStatus:
       description: Active vs waiting state for an agent (drives character animation).
@@ -440,6 +468,88 @@ components:
         contextTokens:
           type: integer
         maxContextTokens:
+          type: integer
+
+    PtyData:
+      description: Live pty output chunk for an agent's terminal (privileged-delivery).
+      type: object
+      additionalProperties: false
+      required: [type, id, data]
+      properties:
+        type:
+          const: ptyData
+        id:
+          type: integer
+        data:
+          type: string
+
+    PtyExit:
+      description: The agent's pty exited (fires on every exit, intentional or not).
+      type: object
+      additionalProperties: false
+      required: [type, id, code]
+      properties:
+        type:
+          const: ptyExit
+        id:
+          type: integer
+        code:
+          type: integer
+        signal:
+          type: string
+
+    PtyScrollback:
+      description: Scrollback replay for a newly mounted terminal pane (point-to-point).
+      type: object
+      additionalProperties: false
+      required: [type, id, lines]
+      properties:
+        type:
+          const: ptyScrollback
+        id:
+          type: integer
+        lines:
+          type: array
+          items:
+            type: string
+
+    AgentCrashed:
+      description: Unintentional non-zero pty exit (suppressed for intentional stops).
+      type: object
+      additionalProperties: false
+      required: [type, id, code]
+      properties:
+        type:
+          const: agentCrashed
+        id:
+          type: integer
+        code:
+          type: integer
+        signal:
+          type: string
+
+    AgentRenamed:
+      description: An agent's display name (customTitle) was set or changed.
+      type: object
+      additionalProperties: false
+      required: [type, id, customTitle]
+      properties:
+        type:
+          const: agentRenamed
+        id:
+          type: integer
+        customTitle:
+          type: string
+
+    AgentRestarted:
+      description: An agent's pty was respawned after exit.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentRestarted
+        id:
           type: integer
 
     LayoutLoaded:
@@ -669,6 +779,11 @@ components:
             type: string
         showAreas:
           type: boolean
+        recentAgentFolders:
+          type: array
+          description: MRU starting folders from the New-agent form (newest first).
+          items:
+            type: string
 
     HooksStatus:
       description: |
@@ -810,6 +925,59 @@ components:
           description: Workspace folder path (for multi-root workspaces).
         bypassPermissions:
           type: boolean
+        name:
+          type: string
+          description: Optional display name for the new agent (customTitle).
+
+    PtyInput:
+      description: Keystrokes for an agent's pty (privileged).
+      type: object
+      additionalProperties: false
+      required: [type, id, data]
+      properties:
+        type:
+          const: ptyInput
+        id:
+          type: integer
+        data:
+          type: string
+
+    PtyResize:
+      description: Resize an agent's pty (privileged).
+      type: object
+      additionalProperties: false
+      required: [type, id, cols, rows]
+      properties:
+        type:
+          const: ptyResize
+        id:
+          type: integer
+        cols:
+          type: integer
+        rows:
+          type: integer
+
+    TerminalPaneReady:
+      description: Terminal pane mounted; requests scrollback replay (privileged, point-to-point reply).
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: terminalPaneReady
+        id:
+          type: integer
+
+    RestartAgent:
+      description: Respawn a dead agent's pty with the same sessionId (privileged).
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: restartAgent
+        id:
+          type: integer
 
     FocusAgent:
       description: Focus an agent's terminal.

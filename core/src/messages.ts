@@ -25,6 +25,12 @@ export type ServerMessage =
   | SubagentToolPermission
   | AgentTeamInfo
   | AgentContextUsage
+  | PtyData
+  | PtyExit
+  | PtyScrollback
+  | AgentCrashed
+  | AgentRenamed
+  | AgentRestarted
   | LayoutLoaded
   | FurnitureAssetsLoaded
   | CharacterSpritesLoaded
@@ -62,7 +68,11 @@ export type ClientMessage =
   | RemoveExternalAssetDirectory
   | SaveAreaMappings
   | SetShowAreas
-  | RequestDiagnostics;
+  | RequestDiagnostics
+  | PtyInput
+  | PtyResize
+  | TerminalPaneReady
+  | RestartAgent;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -77,6 +87,8 @@ export interface AgentCreated {
   isExternal?: boolean;
   palette?: number;
   hueShift?: number;
+  ptyBacked?: boolean;
+  customTitle?: string;
 }
 
 export interface AgentClosed {
@@ -95,6 +107,8 @@ export interface ExistingAgents {
   agentMeta: Record<string, AgentSeatMeta>;
   folderNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
+  ptyBackedAgents?: Record<string, boolean>;
+  customTitles?: Record<string, string>;
 }
 
 export interface AgentSeatMeta {
@@ -188,6 +202,43 @@ export interface AgentContextUsage {
   maxContextTokens: number;
 }
 
+export interface PtyData {
+  type: 'ptyData';
+  id: number;
+  data: string;
+}
+
+export interface PtyExit {
+  type: 'ptyExit';
+  id: number;
+  code: number;
+  signal?: string;
+}
+
+export interface PtyScrollback {
+  type: 'ptyScrollback';
+  id: number;
+  lines: string[];
+}
+
+export interface AgentCrashed {
+  type: 'agentCrashed';
+  id: number;
+  code: number;
+  signal?: string;
+}
+
+export interface AgentRenamed {
+  type: 'agentRenamed';
+  id: number;
+  customTitle: string;
+}
+
+export interface AgentRestarted {
+  type: 'agentRestarted';
+  id: number;
+}
+
 export interface LayoutLoaded {
   type: 'layoutLoaded';
   layout: Record<string, any> | null;
@@ -275,6 +326,7 @@ export interface SettingsLoaded {
   hooksInfoShown: boolean;
   externalAssetDirectories: string[];
   showAreas: boolean;
+  recentAgentFolders?: string[];
 }
 
 export interface HooksStatus {
@@ -323,6 +375,7 @@ export interface LaunchAgent {
   type: 'launchAgent';
   folderPath?: string;
   bypassPermissions?: boolean;
+  name?: string;
 }
 
 export interface FocusAgent {
@@ -428,4 +481,27 @@ export interface SetShowAreas {
 
 export interface RequestDiagnostics {
   type: 'requestDiagnostics';
+}
+
+export interface PtyInput {
+  type: 'ptyInput';
+  id: number;
+  data: string;
+}
+
+export interface PtyResize {
+  type: 'ptyResize';
+  id: number;
+  cols: number;
+  rows: number;
+}
+
+export interface TerminalPaneReady {
+  type: 'terminalPaneReady';
+  id: number;
+}
+
+export interface RestartAgent {
+  type: 'restartAgent';
+  id: number;
 }
