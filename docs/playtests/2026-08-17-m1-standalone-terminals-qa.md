@@ -43,13 +43,30 @@ Branch: `m1-standalone-terminals` (upstream v1.4.1 base). Spec:
   `npm run asyncapi:validate`, messages.ts + e2e/README.md drift checks — all
   clean.
 
+## Post-review fixes (same day)
+
+The requesting-code-review pass over the branch delta found one Critical and
+three Important issues, all fixed and re-verified:
+
+- **Worker reaping model restored to the v2 reference**: dead workers are
+  RETAINED (scrollback + exit info survive), reaped only by stop()/disposeAll;
+  start() replaces dead entries. `terminalPaneReady` replays a retained
+  worker's exit as a synthetic point-to-point `ptyExit` after the scrollback,
+  so a pane mounted after the exit (rail tab switch, page reload) rebuilds
+  the exit marker + Restart — pinned by a new remount-after-exit e2e (now 6
+  standalone terminal/form specs; server suite 601).
+- Stale-worker exits (stopped/replaced) are silent — no spurious exit marker
+  or `agentCrashed` over a live pane.
+- `restartAgent` re-applies the recorded `bypassPermissions` flag.
+- Byte-safe pty chunk splitting; terminal band + browser "+ Agent" gated on
+  the privileged token so untokened viewers don't see a dead terminal.
+
 ## Known M1 limits (deliberate, per spec)
 
 - Terminal band is bottom-position only; no per-pane font-size stepper yet.
-- Exit marker / Restart button state comes from live events; a pane mounted
-  AFTER its pty exited shows the replayed `[pty exited…]` scrollback text but
-  not the button (restart is still reachable by respawning).
 - Unnamed agents show `Agent #<id>` in the rail — terminalName is not carried
   to the webview in M1.
 - `/rename` → `agentRenamed` is wired end-to-end on the protocol but no
   provider emits it yet.
+- Mount-time race can render a chunk twice (live `ptyData` arriving before the
+  scrollback reply that also contains it) — cosmetic, present in v2 too.
