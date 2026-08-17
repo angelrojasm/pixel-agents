@@ -21,9 +21,47 @@ export function toMajorMinor(version: string): string {
   return parts.length >= 2 ? `${parts[0]}.${parts[1]}` : version;
 }
 
-export const CHANGELOG_REPO_URL = 'https://github.com/pablodelucca/pixel-agents';
+export const CHANGELOG_REPO_URL = 'https://github.com/angelrojasm/pixel-agents';
 
 export const changelogEntries: ChangelogEntry[] = [
+  {
+    version: '2.0',
+    sections: [
+      {
+        title: 'Two first-class runtimes',
+        items: [
+          'Standalone daemon: run the office as a browser tab (node dist/bin/serve.js) — no VS Code needed',
+          'Both runtimes share one office: layout, agents, and settings live in ~/.pixel-agents/ and sync live across tabs and windows',
+          'Full-screen office panel in VS Code alongside the classic side panel',
+        ],
+      },
+      {
+        title: 'Terminals inside the office',
+        items: [
+          'Agent terminals render in the office panel (xterm.js + node-pty) — click a character to focus its terminal',
+          'Terminal search (Alt+F), clickable links, per-agent restart, crash indicator, and keystroke-driven character animations',
+          'New agent form: hover + Agent → "New agent…" to set a name and starting folder, with a remembered recents list',
+          'Resizable, repositionable panel band with pixel-art chrome and custom terminal fonts',
+        ],
+      },
+      {
+        title: 'Polish & fixes',
+        items: [
+          'Redesigned sectioned Settings modal (General / Agents / Terminal / Office / About) with readable pixel-font sizes',
+          'Terminal renders in a true monospace font (pixel-font bleed fixed)',
+          'Layout export/import works in the browser (download / file picker) — compatible with upstream Pixel Agents layouts',
+          'Snapshot replay contract fixed and contract-tested; assets load correctly in both runtimes',
+        ],
+      },
+    ],
+    contributors: [
+      {
+        name: 'Angel',
+        url: 'https://github.com/angelrojasm',
+        description: 'daemon + browser runtime, in-office terminals, release',
+      },
+    ],
+  },
   {
     version: '1.3',
     sections: [

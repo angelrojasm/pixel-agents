@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.0.0
+
+Internal fork release — not published to any marketplace. First release with two first-class runtimes.
+
+### Features
+
+- **Standalone daemon + browser runtime** — `node dist/bin/serve.js` serves the full office as a browser tab over HTTP + WebSocket with snapshot replay on connect, multi-tab live sync, and CLI subcommands (`status`, `stop`, `install-hooks`). The VS Code extension remains first-class; both share `~/.pixel-agents/` state and can run simultaneously.
+- **Terminals inside the office** — agents spawn in embedded xterm.js terminals backed by node-pty (the native VS Code terminal path is retired). Includes terminal search (Alt+F), web links, per-client scrollback, crash indicator + restart, focus halo, and pty-activity-driven character animations.
+- **New agent form** — optional name (persists like `/rename`) and starting folder (`~` supported, validated) at creation time, with an MRU recent-folders list; the one-click **+ Agent** fast path is unchanged.
+- **Full-screen office** — the office can open as an editor-area tab in VS Code, in sync with the side panel.
+- **Browser layout export/import** — download / file-picker flavors of the existing layout sharing; compatible with layouts exported from upstream Pixel Agents.
+- **Settings modal V2** — sectioned (General / Agents / Terminal / Office / About) with steppers, per-category restore-defaults + undo, and legible pixel-font sizing.
+
+### Fixes
+
+- Shared UI message dispatch across both hosts (the daemon previously ignored all inbound messages) with a contract-tested snapshot replay.
+- Bundled asset loaders honor the host asset root — characters/floors/walls now load in both runtimes.
+- Terminal glyphs render in the configured monospace font (global pixel-font rule no longer bleeds into xterm).
+- Per-client pty scrollback (no more duplicated history across webviews/tabs), WebSocket close-time cleanup, and workspace-aware Watch-All pruning unified across hosts.
+
+### Maintenance
+
+- Repo identity updated for the internal fork: marketplace publish/badge workflows removed, links repointed. Playwright e2e suite extended (real-VS-Code agent spawn, browser-tab-on-extension-server sync, New-agent form) and repaired for current VS Code builds.
+
 ## v1.3.0
 
 ### Features
