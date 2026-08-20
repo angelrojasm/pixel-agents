@@ -42,6 +42,8 @@ interface ToolOverlayProps {
   alwaysShowOverlay: boolean;
   /** User-chosen agent names (New-agent form / rename). Shown above the team-role row. */
   customTitles?: Record<number, string>;
+  /** Standalone terminal names (Task 8), shown when no customTitle is set. */
+  terminalNames?: Record<number, string>;
 }
 
 /** Derive a short human-readable activity string from tools/status */
@@ -95,6 +97,7 @@ export function ToolOverlay({
   onCloseAgent,
   alwaysShowOverlay,
   customTitles,
+  terminalNames,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -204,11 +207,13 @@ export function ToolOverlay({
           dotColor = 'var(--color-status-active)';
         }
 
-        // Team info + user-chosen name (New-agent form). The name row is kept
-        // separate from the team-role row — those concepts never share a slot.
-        const customTitle = (!isSub && customTitles?.[id]) || null;
+        // Name row: customTitle (New-agent form / rename) falls back to the
+        // standalone terminal name; kept separate from the team-role row below
+        // — agentName never appears here (spec Deviations #7). `??` so an
+        // empty-string customTitle still wins over a terminal name.
+        const nameRowValue = isSub ? null : (customTitles?.[id] ?? terminalNames?.[id] ?? null);
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
-        const hasExtraLines = !!(ch.folderName || teamRoleLabel || customTitle);
+        const hasExtraLines = !!(ch.folderName || teamRoleLabel || nameRowValue);
 
         // Context gauge. Every agent gets one — lead, teammate, adopted,
         // headless — as soon as it has taken a turn. Sub-agents never do: they
@@ -238,12 +243,12 @@ export function ToolOverlay({
                 />
               )}
               <div className="flex flex-col gap-0 overflow-hidden">
-                {customTitle && (
+                {nameRowValue && (
                   <span
                     className="overflow-hidden text-ellipsis block leading-none text-2xs"
                     style={{ fontWeight: 'bold' }}
                   >
-                    {customTitle}
+                    {nameRowValue}
                   </span>
                 )}
                 {teamRoleLabel && (

@@ -23,6 +23,7 @@ import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
+import { characterLabel } from './office/engine/characters.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { exportLayoutToFile } from './office/layout/exportLayout.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
@@ -102,6 +103,7 @@ function App() {
     recentAgentFolders,
     ptyBackedByAgent,
     customTitles,
+    terminalNames,
     ptyEventBus,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
@@ -112,8 +114,16 @@ function App() {
     () =>
       agents
         .filter((id) => ptyBackedByAgent[id])
-        .map((id) => ({ id, label: customTitles[id] ?? `Agent #${id}` })),
-    [agents, ptyBackedByAgent, customTitles],
+        .map((id) => ({
+          id,
+          label: characterLabel({
+            customTitle: customTitles[id],
+            agentName: getOfficeState().characters.get(id)?.agentName,
+            terminalName: terminalNames[id],
+            id,
+          }),
+        })),
+    [agents, ptyBackedByAgent, customTitles, terminalNames],
   );
 
   // Show migration notice once layout reset is detected
@@ -476,6 +486,7 @@ function App() {
               onCloseAgent={handleCloseAgent}
               alwaysShowOverlay={alwaysShowOverlay}
               customTitles={customTitles}
+              terminalNames={terminalNames}
             />
           </>
         ) : (

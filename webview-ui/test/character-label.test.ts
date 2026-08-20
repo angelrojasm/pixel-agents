@@ -1,0 +1,31 @@
+/**
+ * Unit tests for `characterLabel` (Task 9 of the m1.5 character-behaviors
+ * slice): the single display-label priority rule shared by the standalone
+ * terminal rail and (indirectly) the ToolOverlay name row.
+ *
+ * Priority: customTitle -> agentName -> terminalName -> "Agent #id", resolved
+ * with `??` (not `||`) so an empty-string customTitle still wins — v2
+ * contract, pinned by the second test below.
+ *
+ * Run with: npm run test:webview -- test/character-label.test.ts
+ */
+import { describe, expect, it } from 'vitest';
+
+import { characterLabel } from '../src/office/engine/characters.js';
+
+describe('characterLabel', () => {
+  it('resolves customTitle → agentName → terminalName → Agent #id', () => {
+    expect(characterLabel({ id: 3 })).toBe('Agent #3');
+    expect(characterLabel({ id: 3, terminalName: 'Claude Code #1' })).toBe('Claude Code #1');
+    expect(characterLabel({ id: 3, agentName: 'researcher', terminalName: 'Claude Code #1' })).toBe(
+      'researcher',
+    );
+    expect(characterLabel({ id: 3, customTitle: 'Billing bot', agentName: 'researcher' })).toBe(
+      'Billing bot',
+    );
+  });
+
+  it('uses ?? not || — empty string wins over later fields (v2 contract)', () => {
+    expect(characterLabel({ id: 3, customTitle: '', terminalName: 'Claude Code #1' })).toBe('');
+  });
+});
