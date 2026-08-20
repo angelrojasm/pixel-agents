@@ -9,6 +9,7 @@ export interface SeatLike {
   seatCol: number;
   seatRow: number;
   assigned: boolean;
+  role: 'work' | 'rest';
 }
 
 export interface AnchorLike {
@@ -36,16 +37,18 @@ export function anchorTile(
     : { col: anchor.tileCol, row: anchor.tileRow };
 }
 
-/** Free seat closest (Manhattan) to a tile — seats teammates beside their lead. */
-export function closestFreeSeat(
+/** Manhattan-nearest free seat to a tile, optionally restricted to work seats. */
+function nearestFree(
   seats: ReadonlyMap<string, SeatLike>,
   col: number,
   row: number,
+  workOnly: boolean,
 ): string | null {
   let best: string | null = null;
   let bestDist = Infinity;
   for (const [uid, seat] of seats) {
     if (seat.assigned) continue;
+    if (workOnly && seat.role !== 'work') continue;
     const d = Math.abs(seat.seatCol - col) + Math.abs(seat.seatRow - row);
     if (d < bestDist) {
       best = uid;
@@ -53,4 +56,18 @@ export function closestFreeSeat(
     }
   }
   return best;
+}
+
+/**
+ * Free seat closest (Manhattan) to a tile — seats teammates beside their
+ * lead. Prefers work seats; only considers rest seats when no work seat is
+ * free, so a teammate is never clustered onto a couch just because it's
+ * nearer than the closest free desk.
+ */
+export function closestFreeSeat(
+  seats: ReadonlyMap<string, SeatLike>,
+  col: number,
+  row: number,
+): string | null {
+  return nearestFree(seats, col, row, true) ?? nearestFree(seats, col, row, false);
 }

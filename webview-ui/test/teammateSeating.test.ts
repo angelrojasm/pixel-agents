@@ -24,8 +24,13 @@ import { test } from 'vitest';
 import type { AnchorLike, SeatLike } from '../src/office/engine/seatPlacement.js';
 import { anchorTile, closestFreeSeat } from '../src/office/engine/seatPlacement.js';
 
-function seat(seatCol: number, seatRow: number, assigned = false): SeatLike {
-  return { seatCol, seatRow, assigned };
+function seat(
+  seatCol: number,
+  seatRow: number,
+  assigned = false,
+  role: 'work' | 'rest' = 'work',
+): SeatLike {
+  return { seatCol, seatRow, assigned, role };
 }
 
 // Lead seat at (10,5); a near free seat one tile away (the correct choice); a far
@@ -79,4 +84,25 @@ test('falls back to the live tile when the lead has no seat yet', () => {
 
 test('no anchor yields undefined (non-teammate agents keep default seating)', () => {
   assert.equal(anchorTile(undefined, scenarioSeats()), undefined);
+});
+
+// ── Role preference (Task 2: work-seat selection) ──────────────────────────
+// closestFreeSeat clusters teammates around their lead, but a rest seat
+// (couch, etc.) is never a valid work placement. It must prefer the nearest
+// free WORK seat and only fall back to a rest seat when no work seat is free.
+
+test('closestFreeSeat picks a farther work seat over a nearer rest seat', () => {
+  const seats = new Map<string, SeatLike>([
+    ['rest-near', seat(1, 0, false, 'rest')], // dist 1 from (0,0)
+    ['work-far', seat(5, 0, false, 'work')], // dist 5 from (0,0)
+  ]);
+  assert.equal(closestFreeSeat(seats, 0, 0), 'work-far');
+});
+
+test('closestFreeSeat falls back to the rest seat when no work seat is free', () => {
+  const seats = new Map<string, SeatLike>([
+    ['work-taken', seat(1, 0, true, 'work')], // occupied — not a candidate
+    ['rest-free', seat(3, 0, false, 'rest')],
+  ]);
+  assert.equal(closestFreeSeat(seats, 0, 0), 'rest-free');
 });

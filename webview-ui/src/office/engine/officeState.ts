@@ -43,14 +43,6 @@ import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
 import { anchorTile, closestFreeSeat } from './seatPlacement.js';
 
-/** Internal helper: facing-tile coords for a seat. Returns null for invalid direction. */
-function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } {
-  if (direction === Direction.RIGHT) return { dCol: 1, dRow: 0 };
-  if (direction === Direction.LEFT) return { dCol: -1, dRow: 0 };
-  if (direction === Direction.DOWN) return { dCol: 0, dRow: 1 };
-  return { dCol: 0, dRow: -1 };
-}
-
 export class OfficeState {
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
@@ -267,21 +259,6 @@ export class OfficeState {
     return result;
   }
 
-  /** Collect every tile occupied by electronics furniture (PCs, monitors, etc.). */
-  private buildElectronicsTileSet(): Set<string> {
-    const out = new Set<string>();
-    for (const item of this.layout.furniture) {
-      const entry = getCatalogEntry(item.type);
-      if (!entry || entry.category !== 'electronics') continue;
-      for (let dr = 0; dr < entry.footprintH; dr++) {
-        for (let dc = 0; dc < entry.footprintW; dc++) {
-          out.add(`${item.col + dc},${item.row + dr}`);
-        }
-      }
-    }
-    return out;
-  }
-
   /** Find the area label assigned to a seat's tile, or null. Public for e2e
    *  observability (getAgentSeats hook reads a seated agent's area). */
   seatZone(uid: string): string | null {
@@ -295,96 +272,68 @@ export class OfficeState {
   }
 
   /**
-   * Does this seat face an electronics tile (PC, monitor)? Mirrors the
-   * forward-and-flanking scan used by furniture auto-state.
+   * Uniform-random pick from a candidate list of seat uids. Returns null when
+   * the candidate list is empty. The electronics/work bias that used to live
+   * here is now a role FILTER applied by callers before this runs (see
+   * `findFreeSeat`), so this is just the tie-breaker among equally-eligible
+   * seats.
    */
-  private isSeatFacingElectronics(seat: Seat, electronicsTiles: Set<string>): boolean {
-    const { dCol, dRow } = seatFacingOffset(seat.facingDir);
-    for (let d = 1; d <= AUTO_ON_FACING_DEPTH; d++) {
-      const tileCol = seat.seatCol + dCol * d;
-      const tileRow = seat.seatRow + dRow * d;
-      if (electronicsTiles.has(`${tileCol},${tileRow}`)) return true;
-      if (dCol !== 0) {
-        if (
-          electronicsTiles.has(`${tileCol},${tileRow - 1}`) ||
-          electronicsTiles.has(`${tileCol},${tileRow + 1}`)
-        ) {
-          return true;
-        }
-      } else if (
-        electronicsTiles.has(`${tileCol - 1},${tileRow}`) ||
-        electronicsTiles.has(`${tileCol + 1},${tileRow}`)
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Random-pick a seat from a candidate list, biased toward seats that face an
-   * electronics tile. Returns null when the candidate list is empty.
-   */
-  private pickFromSeats(seatUids: string[], electronicsTiles: Set<string>): string | null {
+  private pickFromSeats(seatUids: string[]): string | null {
     if (seatUids.length === 0) return null;
-    const pcSeats: string[] = [];
-    const otherSeats: string[] = [];
-    for (const uid of seatUids) {
-      const seat = this.seats.get(uid);
-      if (!seat) continue;
-      if (this.isSeatFacingElectronics(seat, electronicsTiles)) {
-        pcSeats.push(uid);
-      } else {
-        otherSeats.push(uid);
-      }
-    }
-    if (pcSeats.length > 0) return pcSeats[Math.floor(Math.random() * pcSeats.length)];
-    if (otherSeats.length > 0) return otherSeats[Math.floor(Math.random() * otherSeats.length)];
-    return null;
+    return seatUids[Math.floor(Math.random() * seatUids.length)];
   }
 
   /**
-   * 3-stage seat picker for top-level agents.
+   * Seat picker for top-level agents: prefers free WORK seats (chairs facing
+   * a computer), falling back to any free seat — including rest seats — only
+   * when no work seat is free. This keeps computer-less layouts (every seat
+   * classifies rest) from stranding every agent seatless.
+   *
+   * Within the work-seat pool, 3 stages narrow the pick:
    *
    *   Stage 1: If `folderName` is given and `areaMappings[folderName]` lists
-   *            Area labels, prefer free seats whose tile is labeled with one
-   *            of those areas.
-   *   Stage 2: Prefer free seats whose tile has NO area label (unzoned).
-   *   Stage 3: Any free seat.
+   *            Area labels, prefer free work seats whose tile is labeled with
+   *            one of those areas.
+   *   Stage 2: Prefer free work seats whose tile has NO area label (unzoned).
+   *   Stage 3: Any free work seat.
    *
-   * Each stage routes through `pickFromSeats` for the PC-bias rule. Returns
-   * null only when every seat is already occupied. Passing `undefined`
-   * preserves pre-Areas single-stage behavior (skips Stage 1; Stage 2 picks
-   * unzoned seats from a layout without `areaTiles`, which is every seat).
+   * Each stage routes through `pickFromSeats` for the random tie-break.
+   * Returns null only when every seat is already occupied. Passing
+   * `undefined` preserves pre-Areas single-stage behavior (skips Stage 1;
+   * Stage 2 picks unzoned seats from a layout without `areaTiles`, which is
+   * every seat).
    */
   private findFreeSeat(folderName?: string): string | null {
-    const electronicsTiles = this.buildElectronicsTileSet();
-    const freeSeats: string[] = [];
+    const freeWork: string[] = [];
+    const freeAny: string[] = [];
     for (const [uid, seat] of this.seats) {
-      if (!seat.assigned) freeSeats.push(uid);
+      if (seat.assigned) continue;
+      freeAny.push(uid);
+      if (seat.role === 'work') freeWork.push(uid);
     }
-    if (freeSeats.length === 0) return null;
+    if (freeAny.length === 0) return null;
 
     const areaLabels = folderName ? this.areaMappings[folderName] : undefined;
 
-    // Stage 1 — in-area seats for the folder's mapped Area labels.
+    // Stages 1-3 over WORK seats only (in-area → unzoned → any work seat).
     if (areaLabels && areaLabels.length > 0) {
       const wanted = new Set(areaLabels);
-      const inArea = freeSeats.filter((uid) => {
+      const inArea = freeWork.filter((uid) => {
         const label = this.seatZone(uid);
         return label !== null && wanted.has(label);
       });
-      const pick = this.pickFromSeats(inArea, electronicsTiles);
+      const pick = this.pickFromSeats(inArea);
       if (pick) return pick;
     }
-
-    // Stage 2 — unzoned seats (no area label, or layout has no areas at all).
-    const unzoned = freeSeats.filter((uid) => this.seatZone(uid) === null);
-    const pick2 = this.pickFromSeats(unzoned, electronicsTiles);
+    const unzoned = freeWork.filter((uid) => this.seatZone(uid) === null);
+    const pick2 = this.pickFromSeats(unzoned);
     if (pick2) return pick2;
+    const pick3 = this.pickFromSeats(freeWork);
+    if (pick3) return pick3;
 
-    // Stage 3 — any free seat.
-    return this.pickFromSeats(freeSeats, electronicsTiles);
+    // Fallback — any free seat. Keeps computer-less layouts (all seats
+    // classify rest) from stranding every agent seatless.
+    return this.pickFromSeats(freeAny);
   }
 
   /** Closest walkable tile to (col,row) not occupied by another character, or null. */
@@ -453,7 +402,7 @@ export class OfficeState {
     let seatId: string | null = null;
     if (preferredSeatId && this.seats.has(preferredSeatId)) {
       const seat = this.seats.get(preferredSeatId)!;
-      if (!seat.assigned) {
+      if (!seat.assigned && seat.role === 'work') {
         seatId = preferredSeatId;
       }
     }
@@ -578,14 +527,18 @@ export class OfficeState {
   reassignSeat(agentId: number, seatId: string): void {
     const ch = this.characters.get(agentId);
     if (!ch) return;
+    // Validate the target BEFORE touching the old seat, so a rejected
+    // reassignment (missing, already assigned, or a rest seat) is a true
+    // no-op — the agent's current seat must not be freed on a bail.
+    const seat = this.seats.get(seatId);
+    if (!seat || seat.assigned) return;
+    if (seat.role !== 'work') return; // rest seats are not user-assignable
     // Unassign old seat
     if (ch.seatId) {
       const old = this.seats.get(ch.seatId);
       if (old) old.assigned = false;
     }
     // Assign new seat
-    const seat = this.seats.get(seatId);
-    if (!seat || seat.assigned) return;
     seat.assigned = true;
     ch.seatId = seatId;
     // Pathfind to new seat (unblock own seat tile for this query)

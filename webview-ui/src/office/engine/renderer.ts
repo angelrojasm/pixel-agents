@@ -518,11 +518,12 @@ function renderSeatIndicators(
     if (selectedChar.seatId === uid) {
       // Selected agent's own seat — blue
       ctx.fillStyle = SEAT_OWN_COLOR;
-    } else if (!seat.assigned) {
-      // Available seat — green
+    } else if (!seat.assigned && seat.role === 'work') {
+      // Available WORK seat — green. Rest seats (couches, etc.) are never a
+      // valid reassignment target, so they always read as busy.
       ctx.fillStyle = SEAT_AVAILABLE_COLOR;
     } else {
-      // Busy (assigned to another agent) — red
+      // Busy (assigned to another agent) or a rest seat — red
       ctx.fillStyle = SEAT_BUSY_COLOR;
     }
     ctx.fillRect(x, y, s, s);
