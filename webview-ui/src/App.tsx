@@ -27,6 +27,7 @@ import { OfficeState } from './office/engine/officeState.js';
 import { exportLayoutToFile } from './office/layout/exportLayout.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
+import { useCharacterPtyActivity } from './office/panel/useCharacterPtyActivity.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool, type OfficeLayout } from './office/types.js';
 import { hasPrivilegedToken, isBrowserRuntime, isE2E } from './runtime.js';
@@ -265,6 +266,11 @@ function App() {
   );
 
   const officeState = getOfficeState();
+
+  // Bump the focused agent's character on real pty bytes so it animates as
+  // typing in real time (browser runtime only — focusedTerminalId stays null
+  // otherwise, which the hook no-ops on).
+  useCharacterPtyActivity(focusedTerminalId, ptyEventBus, officeState);
 
   // Merged set of folders the Areas dropdown can map: real workspace folders plus
   // every distinct folder an agent has run in this session (deduped by name; name

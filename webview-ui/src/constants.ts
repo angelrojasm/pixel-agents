@@ -328,6 +328,11 @@ export const TERMINAL_BAND_MIN_HEIGHT_PX = 120;
 export const TERMINAL_BAND_MAX_HEIGHT_PX = 600;
 /** Client-side scrollback (lines) — matches server PTY_SCROLLBACK_MAX_LINES. */
 export const TERMINAL_SCROLLBACK_LINES = 2000;
+/** How long a pty-activity bump holds the typing animation window open (ms). */
+export const PTY_ACTIVITY_HOLD_MS = 200;
+/** Minimum spacing between pty-activity bumps — collapses per-byte bursts into
+ *  one deadline extension instead of re-computing on every keystroke. */
+export const PTY_ACTIVITY_THROTTLE_MS = 50;
 /** Agent rail width (px) on the left edge of the terminal band. */
 export const TERMINAL_RAIL_WIDTH_PX = 168;
 /** Drag-resize handle height (px) at the top of the terminal band. */

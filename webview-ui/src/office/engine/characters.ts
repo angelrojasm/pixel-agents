@@ -91,6 +91,7 @@ export function createCharacter(
     matrixEffectSeeds: [],
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
+    ptyActivityUntil: 0,
   };
 }
 
@@ -374,10 +375,21 @@ export function updateCharacter(
 export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
   switch (ch.state) {
     case CharacterState.TYPE:
-      if (isReadingTool(ch.currentTool)) {
-        return sprites.reading[ch.dir][ch.frame % 2];
+      // Seated but not active: static pose (couch rest, or between turns).
+      if (!ch.isActive) {
+        return sprites.walk[ch.dir][1];
       }
-      return sprites.typing[ch.dir][ch.frame % 2];
+      if (ch.currentTool) {
+        if (isReadingTool(ch.currentTool)) {
+          return sprites.reading[ch.dir][ch.frame % 2];
+        }
+        return sprites.typing[ch.dir][ch.frame % 2];
+      }
+      // No tool: pty bytes flowing → typing; silence between bursts → reading.
+      if (Date.now() < ch.ptyActivityUntil) {
+        return sprites.typing[ch.dir][ch.frame % 2];
+      }
+      return sprites.reading[ch.dir][ch.frame % 2];
     case CharacterState.WALK:
       return sprites.walk[ch.dir][ch.frame % 4];
     case CharacterState.IDLE:

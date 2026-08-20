@@ -262,6 +262,11 @@ export interface Character {
   contextTokens: number;
   /** Window `contextTokens` is measured against. */
   maxContextTokens: number;
+
+  /** Timestamp (ms since epoch) until which real pty output should read as
+   *  "typing" for the focused agent's character, absent an active tool. Bumped
+   *  by useCharacterPtyActivity on PtyEventBus activity; 0 until first bumped. */
+  ptyActivityUntil: number;
 }
 
 export const PetState = { IDLE: 'idle', WALK: 'walk', FOLLOW: 'follow' } as const;
