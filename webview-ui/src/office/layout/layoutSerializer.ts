@@ -1,5 +1,6 @@
 import type { ColorValue } from '../../components/ui/types.js';
 import { getColorizedSprite } from '../colorize.js';
+import { collectElectronicsTiles, facesComputer } from '../engine/seatAdjacency.js';
 import type {
   FurnitureInstance,
   OfficeLayout,
@@ -176,6 +177,7 @@ export function layoutToSeats(furniture: PlacedFurniture[]): Map<string, Seat> {
       }
     }
   }
+  const electronicsTiles = collectElectronicsTiles(furniture);
 
   const dirs: Array<{ dc: number; dr: number; facing: Direction }> = [
     { dc: 0, dr: -1, facing: Direction.UP }, // desk is above chair → face UP
@@ -221,6 +223,7 @@ export function layoutToSeats(furniture: PlacedFurniture[]): Map<string, Seat> {
           seatRow: tileRow,
           facingDir,
           assigned: false,
+          role: facesComputer(tileCol, tileRow, facingDir, electronicsTiles) ? 'work' : 'rest',
         });
         seatCount++;
       }

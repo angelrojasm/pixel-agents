@@ -54,6 +54,8 @@ export interface Seat {
   /** Direction character faces when sitting (toward adjacent desk) */
   facingDir: Direction;
   assigned: boolean;
+  /** work = faces a computer; rest = couch/idle seat — set by layoutToSeats */
+  role: 'work' | 'rest';
 }
 
 export interface FurnitureInstance {
