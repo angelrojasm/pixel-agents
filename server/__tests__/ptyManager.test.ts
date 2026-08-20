@@ -224,6 +224,28 @@ describe('PtyManager', () => {
     expect(data.map((f) => f.data).join('')).toBe(bigMultibyte);
   });
 
+  it('crashedAgentIds() reports ids with abnormal retained exits, excluding clean ones', () => {
+    const { broadcast } = makeBroadcast();
+    const crashed = makeFakeWorker();
+    const clean = makeFakeWorker();
+    const workers = [crashed, clean];
+    const mgr = new PtyManager({ broadcast, workerFactory: () => workers.shift()!.worker });
+    mgr.start(20, START);
+    mgr.start(21, START);
+    crashed.fireExit({ code: 1 });
+    clean.fireExit({ code: 0 });
+    expect(mgr.crashedAgentIds()).toEqual([20]);
+  });
+
+  it('crashedAgentIds excludes intentional stops', () => {
+    const { broadcast } = makeBroadcast();
+    const fake = makeFakeWorker();
+    const mgr = new PtyManager({ broadcast, workerFactory: () => fake.worker });
+    mgr.start(22, START);
+    mgr.stop(22);
+    expect(mgr.crashedAgentIds()).toEqual([]);
+  });
+
   it('disposeAll kills every worker without crashes', () => {
     const { frames, broadcast } = makeBroadcast();
     const a = makeFakeWorker();

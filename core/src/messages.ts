@@ -29,6 +29,7 @@ export type ServerMessage =
   | PtyExit
   | PtyScrollback
   | AgentCrashed
+  | CrashAcknowledged
   | AgentRenamed
   | AgentRestarted
   | LayoutLoaded
@@ -72,7 +73,8 @@ export type ClientMessage =
   | PtyInput
   | PtyResize
   | TerminalPaneReady
-  | RestartAgent;
+  | RestartAgent
+  | AcknowledgeCrash;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -89,6 +91,7 @@ export interface AgentCreated {
   hueShift?: number;
   ptyBacked?: boolean;
   customTitle?: string;
+  terminalName?: string;
 }
 
 export interface AgentClosed {
@@ -109,6 +112,8 @@ export interface ExistingAgents {
   externalAgents: Record<string, boolean>;
   ptyBackedAgents?: Record<string, boolean>;
   customTitles?: Record<string, string>;
+  terminalNames?: Record<string, string>;
+  crashedAgentIds?: number[];
 }
 
 export interface AgentSeatMeta {
@@ -226,6 +231,11 @@ export interface AgentCrashed {
   id: number;
   code: number;
   signal?: string;
+}
+
+export interface CrashAcknowledged {
+  type: 'crashAcknowledged';
+  id: number;
 }
 
 export interface AgentRenamed {
@@ -503,5 +513,10 @@ export interface TerminalPaneReady {
 
 export interface RestartAgent {
   type: 'restartAgent';
+  id: number;
+}
+
+export interface AcknowledgeCrash {
+  type: 'acknowledgeCrash';
   id: number;
 }

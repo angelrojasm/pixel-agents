@@ -369,6 +369,12 @@ export function handleClientMessage(
       break;
     }
 
+    case 'acknowledgeCrash': {
+      if (!ctx.privileged) break;
+      store.broadcast({ type: 'crashAcknowledged', id: msg.id as number });
+      break;
+    }
+
     default:
       // focusAgent, exportLayout, importLayout
       // require IDE-specific handling (not yet implemented for standalone)
@@ -593,6 +599,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const externalAgents: Record<number, boolean> = {};
   const ptyBackedAgents: Record<number, boolean> = {};
   const customTitles: Record<number, string> = {};
+  const terminalNames: Record<number, string> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const [id, agent] of store) {
@@ -609,6 +616,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     if (agent.customTitle) {
       customTitles[id] = agent.customTitle;
     }
+    if (agent.terminalRef?.name) {
+      terminalNames[id] = agent.terminalRef.name;
+    }
     const persisted = persistedSeats[String(id)];
     agentMeta[id] = {
       palette: agent.palette,
@@ -616,7 +626,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
       seatId: persisted?.seatId,
     };
   }
-  send({
+  const existingAgentsMsg: Record<string, unknown> = {
     type: 'existingAgents',
     agents: agentIds,
     agentMeta,
@@ -624,7 +634,16 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     externalAgents,
     ptyBackedAgents,
     customTitles,
-  });
+    terminalNames,
+  };
+  // Crash-glyph reload state reaches outside what an unprivileged spectator
+  // was ever told (agentCrashed itself is privileged-delivery, see
+  // httpServer's PRIVILEGED_ONLY_TYPES gate) — omitted entirely, not sent
+  // empty, for unprivileged connections.
+  if (ctx.privileged) {
+    existingAgentsMsg.crashedAgentIds = runtime?.ptyHost?.crashedAgentIds() ?? [];
+  }
+  send(existingAgentsMsg);
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
   // into characters once seats are rebuilt.

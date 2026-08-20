@@ -533,6 +533,15 @@ describe('/ws pty delivery gate', () => {
     expect(await untokenedCrash).toBeNull();
   });
 
+  it('crashAcknowledged is withheld from unprivileged sockets', async () => {
+    const { tokened, untokened } = await startPair();
+    const tokenedAck = waitForMessage(tokened, 'crashAcknowledged');
+    const untokenedAck = waitForMessage(untokened, 'crashAcknowledged', 1_000);
+    store.broadcast({ type: 'crashAcknowledged', id: 3 });
+    expect(await tokenedAck).toMatchObject({ id: 3 });
+    expect(await untokenedAck).toBeNull();
+  });
+
   it('agentCreated carries ptyBacked and customTitle', async () => {
     const { tokened } = await startPair();
     const created = waitForMessage(tokened, 'agentCreated');
@@ -564,5 +573,37 @@ describe('/ws pty delivery gate', () => {
       customTitle: 'Named One',
     } as never);
     expect(await created).toMatchObject({ id: 5, ptyBacked: true, customTitle: 'Named One' });
+  });
+
+  it('agentCreated carries terminalName (standalone emit only)', async () => {
+    const { tokened } = await startPair();
+    const created = waitForMessage(tokened, 'agentCreated');
+    store.set(6, {
+      id: 6,
+      sessionId: 'sess-6',
+      terminalRef: { name: 'Claude Code #1' },
+      isExternal: false,
+      projectDir: '/test',
+      jsonlFile: '/test/sess-6.jsonl',
+      fileOffset: 0,
+      lineBuffer: '',
+      activeToolIds: new Set(),
+      activeToolStatuses: new Map(),
+      activeToolNames: new Map(),
+      activeSubagentToolIds: new Map(),
+      activeSubagentToolNames: new Map(),
+      backgroundAgentToolIds: new Set(),
+      isWaiting: false,
+      permissionSent: false,
+      hadToolsInTurn: false,
+      lastDataAt: 0,
+      linesProcessed: 0,
+      seenUnknownRecordTypes: new Set(),
+      hookDelivered: false,
+      contextTokens: 0,
+      maxContextTokens: 200_000,
+      ptyBacked: true,
+    } as never);
+    expect(await created).toMatchObject({ id: 6, terminalName: 'Claude Code #1' });
   });
 });
