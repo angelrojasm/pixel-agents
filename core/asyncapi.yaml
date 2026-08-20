@@ -285,9 +285,10 @@ components:
         crashedAgentIds:
           type: array
           description: >-
-            Ids whose pty last exited abnormally (still showing a crash glyph
-            pending acknowledgement). Privileged replies only — an
-            unprivileged client never learns about it.
+            Ids whose pty exited abnormally. Crash glyph rendering is
+            client-side only; a reconnecting client re-displays it without
+            server-side acknowledgement tracking. Privileged replies only —
+            unprivileged clients never learn about it.
           items:
             type: integer
 

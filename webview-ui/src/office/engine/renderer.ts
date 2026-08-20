@@ -23,6 +23,8 @@ import {
   CHARACTER_Z_SORT_OFFSET,
   CRASHED_GLYPH_BG,
   CRASHED_GLYPH_BORDER,
+  CRASHED_GLYPH_LINE_WIDTH_MIN,
+  CRASHED_GLYPH_LINE_WIDTH_ZOOM_FACTOR,
   CRASHED_GLYPH_OFFSET_X_PX,
   CRASHED_GLYPH_OFFSET_Y_PX,
   CRASHED_GLYPH_SIZE_PX,
@@ -415,7 +417,7 @@ export function renderScene(
           c.save();
           c.strokeStyle = SUBAGENT_LINK_COLOR;
           c.lineWidth = SUBAGENT_LINK_WIDTH_PX;
-          c.setLineDash(SUBAGENT_LINK_DASH as number[]);
+          c.setLineDash(SUBAGENT_LINK_DASH);
           c.beginPath();
           c.moveTo(sx, sy);
           c.lineTo(ex, ey);
@@ -508,7 +510,7 @@ export function renderScene(
             c.save();
             c.strokeStyle = haloStyle.color;
             c.lineWidth = haloStyle.width;
-            c.setLineDash(haloStyle.dash as number[]);
+            c.setLineDash([...haloStyle.dash]);
             c.strokeRect(hx, hy, hw, hw);
             c.restore();
           },
@@ -528,7 +530,10 @@ export function renderScene(
           c.fillStyle = CRASHED_GLYPH_BG;
           c.fillRect(gx, gy, gs, gs);
           c.strokeStyle = CRASHED_GLYPH_BORDER;
-          c.lineWidth = Math.max(1, Math.floor(zoom * 0.3));
+          c.lineWidth = Math.max(
+            CRASHED_GLYPH_LINE_WIDTH_MIN,
+            Math.floor(zoom * CRASHED_GLYPH_LINE_WIDTH_ZOOM_FACTOR),
+          );
           c.strokeRect(gx + 0.5, gy + 0.5, gs - 1, gs - 1);
         },
       });

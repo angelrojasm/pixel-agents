@@ -351,6 +351,10 @@ export const CRASHED_GLYPH_OFFSET_X_PX = TILE_SIZE - 6;
 export const CRASHED_GLYPH_OFFSET_Y_PX = -6;
 export const CRASHED_GLYPH_BG = '#d14249';
 export const CRASHED_GLYPH_BORDER = '#0a0a14';
+/** Line width (minimum, pre-zoom px) for crash glyph border — v2 visual parity. */
+export const CRASHED_GLYPH_LINE_WIDTH_MIN = 1;
+/** Line width zoom factor for crash glyph border — v2 visual parity. */
+export const CRASHED_GLYPH_LINE_WIDTH_ZOOM_FACTOR = 0.3;
 
 // ── Focus halo + sub-agent link lines ───────────────────────
 /** Seat-anchored rectangle drawn around the focused terminal's character.
