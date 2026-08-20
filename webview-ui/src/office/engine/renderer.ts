@@ -21,6 +21,11 @@ import {
   CARPET_DEFAULT_COLOR,
   CHARACTER_SITTING_OFFSET_PX,
   CHARACTER_Z_SORT_OFFSET,
+  CRASHED_GLYPH_BG,
+  CRASHED_GLYPH_BORDER,
+  CRASHED_GLYPH_OFFSET_X_PX,
+  CRASHED_GLYPH_OFFSET_Y_PX,
+  CRASHED_GLYPH_SIZE_PX,
   DELETE_BUTTON_BG,
   FALLBACK_FLOOR_COLOR,
   GHOST_BORDER_HOVER_FILL,
@@ -355,8 +360,7 @@ export function renderScene(
   offsetX: number,
   offsetY: number,
   zoom: number,
-  selectedAgentId: number | null,
-  hoveredAgentId: number | null,
+  selection: SelectionRenderState,
   pets: Pet[] = [],
 ): void {
   const drawables: ZDrawable[] = [];
@@ -389,7 +393,7 @@ export function renderScene(
 
   // Characters
   for (const ch of characters) {
-    const sprites = getCharacterSprites(ch.palette, ch.hueShift);
+    const sprites = getCharacterSprites(ch.palette, ch.hueShift, ch.crashed);
     const spriteData = getCharacterSprite(ch, sprites);
     const cached = getCachedSprite(spriteData, zoom);
     // Sitting offset: shift character down when seated so they visually sit in the chair
@@ -426,8 +430,8 @@ export function renderScene(
     }
 
     // White outline: full opacity for selected, 50% for hover
-    const isSelected = selectedAgentId !== null && ch.id === selectedAgentId;
-    const isHovered = hoveredAgentId !== null && ch.id === hoveredAgentId;
+    const isSelected = selection.selectedAgentId !== null && ch.id === selection.selectedAgentId;
+    const isHovered = selection.hoveredAgentId !== null && ch.id === selection.hoveredAgentId;
     if (isSelected || isHovered) {
       const outlineAlpha = isSelected ? SELECTED_OUTLINE_ALPHA : HOVERED_OUTLINE_ALPHA;
       const outlineData = getOutlineSprite(spriteData);
@@ -441,6 +445,24 @@ export function renderScene(
           c.globalAlpha = outlineAlpha;
           c.drawImage(outlineCached, olDrawX, olDrawY);
           c.restore();
+        },
+      });
+    }
+
+    // Crash glyph: only a NEW drawable, so it's the only thing gated on
+    // !isEditMode — the outline block above stays ungated (base behavior).
+    if (!selection.isEditMode && ch.crashed && !ch.crashedAcknowledged) {
+      const gx = offsetX + ch.tileCol * TILE_SIZE * zoom + CRASHED_GLYPH_OFFSET_X_PX * zoom;
+      const gy = offsetY + ch.tileRow * TILE_SIZE * zoom + CRASHED_GLYPH_OFFSET_Y_PX * zoom;
+      const gs = CRASHED_GLYPH_SIZE_PX * zoom;
+      drawables.push({
+        zY: charZY + 1, // after the character sprite
+        draw: (c) => {
+          c.fillStyle = CRASHED_GLYPH_BG;
+          c.fillRect(gx, gy, gs, gs);
+          c.strokeStyle = CRASHED_GLYPH_BORDER;
+          c.lineWidth = Math.max(1, Math.floor(zoom * 0.3));
+          c.strokeRect(gx + 0.5, gy + 0.5, gs - 1, gs - 1);
         },
       });
     }
@@ -881,7 +903,22 @@ export interface SelectionRenderState {
   hoveredTile: { col: number; row: number } | null;
   seats: Map<string, Seat>;
   characters: Map<number, Character>;
+  /** True while the layout editor is open. Gates NEW selection-adjacent
+   *  drawables (this crash glyph, Task 10's halo + link lines) — the
+   *  pre-existing outline block stays ungated. */
+  isEditMode: boolean;
 }
+
+/** Fallback used by `renderFrame` when called without a `selection` — keeps
+ *  `renderScene` a single required-`SelectionRenderState` parameter. */
+const EMPTY_SELECTION: SelectionRenderState = {
+  selectedAgentId: null,
+  hoveredAgentId: null,
+  hoveredTile: null,
+  seats: new Map(),
+  characters: new Map(),
+  isEditMode: false,
+};
 
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
@@ -948,8 +985,6 @@ export function renderFrame(
   const allFurniture = wallInstances.length > 0 ? [...wallInstances, ...furniture] : furniture;
 
   // Draw walls + furniture + characters (z-sorted)
-  const selectedId = selection?.selectedAgentId ?? null;
-  const hoveredId = selection?.hoveredAgentId ?? null;
   renderScene(
     ctx,
     allFurniture,
@@ -957,8 +992,7 @@ export function renderFrame(
     offsetX,
     offsetY,
     zoom,
-    selectedId,
-    hoveredId,
+    selection ?? EMPTY_SELECTION,
     pets ?? [],
   );
 

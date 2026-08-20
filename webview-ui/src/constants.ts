@@ -340,3 +340,14 @@ export const TERMINAL_BAND_HANDLE_HEIGHT_PX = 6;
 /** Terminal search bar dimensions (px). */
 export const TERMINAL_SEARCH_BAR_WIDTH_PX = 240;
 export const TERMINAL_SEARCH_BAR_HEIGHT_PX = 26;
+
+// ── Crash visual state ──────────────────────────────────────
+/** Saturation cut (0-100) applied to a crashed character's sprites. */
+export const CRASHED_DESATURATION_PCT = 60;
+/** Crash glyph square size (pre-zoom px). */
+export const CRASHED_GLYPH_SIZE_PX = 5;
+/** Crash glyph offset from the character's tile origin (pre-zoom px). */
+export const CRASHED_GLYPH_OFFSET_X_PX = TILE_SIZE - 6;
+export const CRASHED_GLYPH_OFFSET_Y_PX = -6;
+export const CRASHED_GLYPH_BG = '#d14249';
+export const CRASHED_GLYPH_BORDER = '#0a0a14';

@@ -1,6 +1,7 @@
 import type { ColorValue } from '../../components/ui/types.js';
-import { PALETTE_COUNT } from '../../constants.js';
+import { CRASHED_DESATURATION_PCT, PALETTE_COUNT } from '../../constants.js';
 import { adjustSprite } from '../colorize.js';
+import { desaturateCharacterSprites } from '../engine/desaturateSprites.js';
 import type { Direction, SpriteData } from '../types.js';
 import { Direction as Dir } from '../types.js';
 import bubblePermissionData from './bubble-permission.json';
@@ -115,8 +116,12 @@ function emptySprite(w: number, h: number): SpriteData {
   return rows;
 }
 
-export function getCharacterSprites(paletteIndex: number, hueShift = 0): CharacterSprites {
-  const cacheKey = `${paletteIndex}:${hueShift}`;
+export function getCharacterSprites(
+  paletteIndex: number,
+  hueShift = 0,
+  crashed = false,
+): CharacterSprites {
+  const cacheKey = `${paletteIndex}:${hueShift}${crashed ? ':crashed' : ''}`;
   const cached = spriteCache.get(cacheKey);
   if (cached) return cached;
 
@@ -180,6 +185,10 @@ export function getCharacterSprites(paletteIndex: number, hueShift = 0): Charact
   // Apply hue shift if non-zero
   if (hueShift !== 0) {
     sprites = hueShiftSprites(sprites, hueShift);
+  }
+
+  if (crashed) {
+    sprites = desaturateCharacterSprites(sprites, CRASHED_DESATURATION_PCT);
   }
 
   spriteCache.set(cacheKey, sprites);

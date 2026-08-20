@@ -267,6 +267,17 @@ export interface Character {
    *  "typing" for the focused agent's character, absent an active tool. Bumped
    *  by useCharacterPtyActivity on PtyEventBus activity; 0 until first bumped. */
   ptyActivityUntil: number;
+
+  // -- Crash visual state --
+  /** True while the backing pty has crashed (unexpected exit). Sprites render
+   *  desaturated and a glyph appears until acknowledged. Propagated to live
+   *  sub-agents by `setAgentCrashed`. */
+  crashed: boolean;
+  /** True once the crash has been acknowledged (clicked) — suppresses the
+   *  glyph without clearing `crashed` (sprites stay desaturated until the
+   *  agent restarts). Reset to false on every `setAgentCrashed` call so a
+   *  re-crash re-glyphs. */
+  crashedAcknowledged: boolean;
 }
 
 export const PetState = { IDLE: 'idle', WALK: 'walk', FOLLOW: 'follow' } as const;

@@ -255,6 +255,11 @@ function App() {
       // If clicked agent is a sub-agent, focus the parent's terminal instead
       const os = getOfficeState();
       const meta = os.subagentMeta.get(agentId);
+      // Sub-agent ids are webview-local; the ack must target the stable,
+      // wire-meaningful parent id — same resolution as the focus logic below.
+      const ackTarget = meta ? meta.parentAgentId : agentId;
+      const clicked = os.characters.get(agentId);
+      if (clicked?.crashed && !clicked.crashedAcknowledged) os.acknowledgeCrash(ackTarget);
       const focusId = meta ? meta.parentAgentId : agentId;
       transport.send({ type: 'focusAgent', id: focusId });
       // Browser runtime: also focus that agent's pane in the terminal band.

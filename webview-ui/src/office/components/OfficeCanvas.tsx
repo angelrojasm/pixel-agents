@@ -270,6 +270,7 @@ export function OfficeCanvas({
           hoveredTile: officeState.hoveredTile,
           seats: officeState.seats,
           characters: officeState.characters,
+          isEditMode,
         };
 
         const layout = officeState.getLayout();

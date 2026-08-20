@@ -92,6 +92,8 @@ export function createCharacter(
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
     ptyActivityUntil: 0,
+    crashed: false,
+    crashedAcknowledged: false,
   };
 }
 

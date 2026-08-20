@@ -784,6 +784,40 @@ export class OfficeState {
     ch.awaitingSince = since;
   }
 
+  /** Mark (or clear, on restart) an agent's crashed state, propagating to its
+   *  live sub-agents so one pty-crash event glyphs the whole family. */
+  setAgentCrashed(id: number, crashed: boolean): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.crashed = crashed;
+    // Always reset the ack so a re-crash re-glyphs.
+    ch.crashedAcknowledged = false;
+    for (const [subId, meta] of this.subagentMeta) {
+      if (meta.parentAgentId !== id) continue;
+      const sub = this.characters.get(subId);
+      if (!sub || sub.matrixEffect === 'despawn') continue;
+      sub.crashed = crashed;
+      sub.crashedAcknowledged = false;
+    }
+  }
+
+  /** Acknowledge a crash (clears the glyph without clearing `crashed`),
+   *  propagating to live sub-agents so one click clears the whole family's
+   *  glyphs. */
+  acknowledgeCrash(id: number): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.crashedAcknowledged = true;
+    // Propagate to live subs so one click clears the whole family's glyphs
+    // (mirrors setAgentCrashed's propagation).
+    for (const [subId, meta] of this.subagentMeta) {
+      if (meta.parentAgentId !== id) continue;
+      const sub = this.characters.get(subId);
+      if (!sub || sub.matrixEffect === 'despawn') continue;
+      sub.crashedAcknowledged = true;
+    }
+  }
+
   setAgentActive(id: number, active: boolean): void {
     const ch = this.characters.get(id);
     if (ch) {

@@ -254,9 +254,11 @@ export function useExtensionMessages(
             break;
           case 'crashed':
             ptyEventBus.emitCrashed(ptyEvent.id, { code: ptyEvent.code, signal: ptyEvent.signal });
+            if (os.characters.has(ptyEvent.id)) os.setAgentCrashed(ptyEvent.id, true);
             break;
           case 'restarted':
             ptyEventBus.emitRestarted(ptyEvent.id);
+            os.setAgentCrashed(ptyEvent.id, false);
             break;
         }
         return;
