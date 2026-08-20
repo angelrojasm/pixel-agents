@@ -15,6 +15,9 @@ declare global {
         waitingAwaitingInput?: boolean;
         isHeadless?: boolean;
         isGreeter?: boolean;
+        crashed: boolean;
+        crashedAcknowledged: boolean;
+        restSeatId: string | null;
       }>;
       /** Effective "Display headless as ghosts" setting the renderer is using. */
       getGhostHeadlessAgents?: () => boolean;
@@ -57,6 +60,7 @@ declare global {
         row: number;
         areaLabel: string | null;
         assigned: boolean;
+        role: 'work' | 'rest';
       }>;
       /** Drive the real edit-mode tile paint/erase handlers by (col,row),
        *  bypassing only canvas pixel→tile geometry (mirrors petClick). */
@@ -129,6 +133,9 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       waitingAwaitingInput: ch.waitingAwaitingInput,
       isHeadless: ch.isHeadless,
       isGreeter: ch.isGreeter,
+      crashed: ch.crashed,
+      crashedAcknowledged: ch.crashedAcknowledged,
+      restSeatId: ch.restSeatId,
     }));
   };
 
@@ -266,6 +273,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       row: seat.seatRow,
       areaLabel: os.seatZone(uid),
       assigned: seat.assigned,
+      role: seat.role,
     }));
   };
 
