@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { WANDER_MOVES_BEFORE_REST_MAX, WANDER_MOVES_BEFORE_REST_MIN } from '../src/constants.js';
 import {
   createCharacter,
   findNearestFreeRestSeat,
@@ -232,5 +233,90 @@ describe('updateCharacter — rest-seat FSM', () => {
     updateCharacter(ch, 1, walkableTiles, seats, tileMap, blockedTiles); // arrival: no seat found
     expect(ch.restSeatId).toBeNull();
     expect(ch.state).toBe(CharacterState.IDLE);
+  });
+
+  // ── Task 4 addendum: rest-seat arrival, staying put, and mid-walk release ──
+
+  it('rest-seat arrival: sits facing the seat and resets wander state', () => {
+    const tileMap = openTileMap(5, 5);
+    const restSeat = makeSeat('rest-1', 3, 1, 'rest', true, Direction.RIGHT);
+    const seats = new Map<string, Seat>([['rest-1', restSeat]]);
+    const blockedTiles = new Set<string>(['3,1']);
+    const walkableTiles = getWalkableTiles(tileMap, blockedTiles);
+
+    const ch = createCharacter(8, 0, null, null); // tileCol=1, tileRow=1
+    ch.state = CharacterState.WALK;
+    ch.restSeatId = 'rest-1';
+    ch.wanderCount = 5;
+    ch.wanderLimit = 5;
+    ch.path = [
+      { col: 2, row: 1 },
+      { col: 3, row: 1 },
+    ];
+
+    // dt=1 with WALK_SPEED_PX_PER_SEC=48 / TILE_SIZE=16 moves exactly one tile per call.
+    updateCharacter(ch, 1, walkableTiles, seats, tileMap, blockedTiles); // -> (2,1), path=[{3,1}]
+    updateCharacter(ch, 1, walkableTiles, seats, tileMap, blockedTiles); // -> (3,1), path=[]
+    updateCharacter(ch, 1, walkableTiles, seats, tileMap, blockedTiles); // arrival: sit on the couch
+
+    expect(ch.state).toBe(CharacterState.TYPE);
+    expect(ch.dir).toBe(Direction.RIGHT);
+    expect(ch.wanderCount).toBe(0);
+    expect(ch.wanderLimit).toBeGreaterThanOrEqual(WANDER_MOVES_BEFORE_REST_MIN);
+    expect(ch.wanderLimit).toBeLessThanOrEqual(WANDER_MOVES_BEFORE_REST_MAX);
+  });
+
+  it('stays seated on the couch across many idle ticks (no wander-off)', () => {
+    const tileMap = openTileMap(5, 5);
+    const restSeat = makeSeat('rest-1', 3, 1, 'rest', true, Direction.LEFT);
+    const seats = new Map<string, Seat>([['rest-1', restSeat]]);
+    const blockedTiles = new Set<string>();
+    const walkableTiles = getWalkableTiles(tileMap, blockedTiles);
+
+    const ch = createCharacter(9, 0, null, null);
+    ch.tileCol = 3;
+    ch.tileRow = 1;
+    ch.state = CharacterState.TYPE;
+    ch.restSeatId = 'rest-1';
+    ch.isActive = false;
+    ch.awaitingSince = null;
+    ch.seatTimer = 0;
+
+    for (let i = 0; i < 50; i++) {
+      updateCharacter(ch, 1, walkableTiles, seats, tileMap, blockedTiles);
+      expect(ch.state).toBe(CharacterState.TYPE);
+    }
+  });
+
+  it('flipping active mid-walk releases a claimed rest seat and repaths to the work seat', () => {
+    const tileMap = openTileMap(5, 5);
+    const workSeat = makeSeat('work-1', 0, 0, 'work');
+    const restSeat = makeSeat('rest-1', 3, 1, 'rest', true, Direction.RIGHT);
+    const seats = new Map<string, Seat>([
+      ['work-1', workSeat],
+      ['rest-1', restSeat],
+    ]);
+    // The character's own work seat is temporarily unblocked (as OfficeState's
+    // withOwnSeatUnblocked would do); the claimed rest seat it's walking away
+    // from stays blocked.
+    const blockedTiles = new Set<string>(['3,1']);
+    const walkableTiles = getWalkableTiles(tileMap, blockedTiles);
+
+    const ch = createCharacter(10, 0, 'work-1', workSeat);
+    ch.tileCol = 1;
+    ch.tileRow = 1;
+    ch.state = CharacterState.WALK;
+    ch.restSeatId = 'rest-1';
+    // Work starts mid-walk (still heading toward the couch at (3,1), not the work seat).
+    ch.isActive = true;
+    ch.path = [
+      { col: 2, row: 1 },
+      { col: 3, row: 1 },
+    ];
+
+    updateCharacter(ch, 1, walkableTiles, seats, tileMap, blockedTiles);
+
+    expect(restSeat.assigned).toBe(false);
+    expect(ch.restSeatId).toBeNull();
   });
 });

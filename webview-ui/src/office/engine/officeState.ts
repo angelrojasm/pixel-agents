@@ -148,11 +148,18 @@ export class OfficeState {
       seat.assigned = false;
     }
 
+    // Rest seats never persist across rebuilds — the seats themselves were
+    // already unassigned above (a fresh map from layoutToSeats), so clearing
+    // the character-side claim here needs no matching seat free.
+    for (const ch of this.characters.values()) {
+      ch.restSeatId = null;
+    }
+
     // First pass: try to keep characters at their existing seats
     for (const ch of this.characters.values()) {
       if (ch.seatId && this.seats.has(ch.seatId)) {
         const seat = this.seats.get(ch.seatId)!;
-        if (!seat.assigned) {
+        if (!seat.assigned && seat.role === 'work') {
           seat.assigned = true;
           // Snap character to seat position
           ch.tileCol = seat.seatCol;
@@ -242,20 +249,28 @@ export class OfficeState {
     return this.layout;
   }
 
-  /** Get the blocked-tile key for a character's own seat, or null */
-  private ownSeatKey(ch: Character): string | null {
-    if (!ch.seatId) return null;
-    const seat = this.seats.get(ch.seatId);
-    if (!seat) return null;
-    return `${seat.seatCol},${seat.seatRow}`;
+  /** Get the blocked-tile keys for a character's own seats: its work seat
+   *  (`seatId`) and, while resting, its claimed rest seat (`restSeatId`).
+   *  Both are blocked for other characters but must pathfind for this one. */
+  private ownSeatKeys(ch: Character): string[] {
+    const keys: string[] = [];
+    if (ch.seatId) {
+      const seat = this.seats.get(ch.seatId);
+      if (seat) keys.push(`${seat.seatCol},${seat.seatRow}`);
+    }
+    if (ch.restSeatId) {
+      const rest = this.seats.get(ch.restSeatId);
+      if (rest) keys.push(`${rest.seatCol},${rest.seatRow}`);
+    }
+    return keys;
   }
 
-  /** Temporarily unblock a character's own seat, run fn, then re-block */
+  /** Temporarily unblock a character's own seats (work + claimed rest), run fn, then re-block */
   private withOwnSeatUnblocked<T>(ch: Character, fn: () => T): T {
-    const key = this.ownSeatKey(ch);
-    if (key) this.blockedTiles.delete(key);
+    const keys = this.ownSeatKeys(ch);
+    for (const key of keys) this.blockedTiles.delete(key);
     const result = fn();
-    if (key) this.blockedTiles.add(key);
+    for (const key of keys) this.blockedTiles.add(key);
     return result;
   }
 
@@ -508,6 +523,10 @@ export class OfficeState {
       const seat = this.seats.get(ch.seatId);
       if (seat) seat.assigned = false;
     }
+    if (ch.restSeatId) {
+      const rest = this.seats.get(ch.restSeatId);
+      if (rest) rest.assigned = false;
+    }
     if (this.selectedAgentId === id) this.selectedAgentId = null;
     if (this.cameraFollowId === id) this.cameraFollowId = null;
     // Start despawn animation instead of immediate delete
@@ -623,9 +642,10 @@ export class OfficeState {
     const ch = this.characters.get(agentId);
     if (!ch || ch.isSubagent) return false;
     if (!isWalkable(col, row, this.tileMap, this.blockedTiles)) {
-      // Also allow walking to own seat tile (blocked for others but not self)
-      const key = this.ownSeatKey(ch);
-      if (!key || key !== `${col},${row}`) return false;
+      // Also allow walking to any of the character's own seat tiles — work
+      // seat or claimed rest seat — blocked for others but not for self.
+      const keys = this.ownSeatKeys(ch);
+      if (!keys.includes(`${col},${row}`)) return false;
     }
     const path = this.withOwnSeatUnblocked(ch, () =>
       findPath(ch.tileCol, ch.tileRow, col, row, this.tileMap, this.blockedTiles),
@@ -666,6 +686,9 @@ export class OfficeState {
     if (parentCh) ch.dir = parentCh.dir;
     ch.isSubagent = true;
     ch.parentAgentId = parentAgentId;
+    // Sub-agents are born active (the Task/Agent tool is already running).
+    // createCharacter defaults to isActive:false for regular agents; override here.
+    ch.isActive = true;
     startMatrixEffect(ch, 'spawn');
     this.characters.set(id, ch);
 
@@ -691,6 +714,12 @@ export class OfficeState {
       if (ch.seatId) {
         const seat = this.seats.get(ch.seatId);
         if (seat) seat.assigned = false;
+      }
+      // Belt: the FSM never lets a sub-agent claim a rest seat, but free one
+      // defensively if it's somehow set.
+      if (ch.restSeatId) {
+        const rest = this.seats.get(ch.restSeatId);
+        if (rest) rest.assigned = false;
       }
       // Start despawn animation — keep character in map for rendering
       startMatrixEffect(ch, 'despawn');
@@ -721,6 +750,12 @@ export class OfficeState {
             const seat = this.seats.get(ch.seatId);
             if (seat) seat.assigned = false;
           }
+          // Belt: the FSM never lets a sub-agent claim a rest seat, but free
+          // one defensively if it's somehow set.
+          if (ch.restSeatId) {
+            const rest = this.seats.get(ch.restSeatId);
+            if (rest) rest.assigned = false;
+          }
           // Start despawn animation
           startMatrixEffect(ch, 'despawn');
           ch.bubbleType = null;
@@ -739,6 +774,14 @@ export class OfficeState {
   /** Look up the sub-agent character ID for a given parent+toolId, or null */
   getSubagentId(parentAgentId: number, parentToolId: string): number | null {
     return this.subagentIdMap.get(`${parentAgentId}:${parentToolId}`) ?? null;
+  }
+
+  /** Latch/clear the awaiting-user timestamp — see `shouldBeSeated` in
+   *  characters.ts, which treats a set latch the same as `isActive`. */
+  setAwaitingSince(id: number, since: number | null): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.awaitingSince = since;
   }
 
   setAgentActive(id: number, active: boolean): void {

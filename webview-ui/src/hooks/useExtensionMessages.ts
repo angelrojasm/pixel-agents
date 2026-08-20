@@ -561,6 +561,10 @@ export function useExtensionMessages(
           return { ...prev, [id]: status };
         });
         os.setAgentActive(id, status === 'active');
+        os.setAwaitingSince(
+          id,
+          status === 'waiting' && msg.awaitingInput === true ? Date.now() : null,
+        );
         if (status === 'waiting') {
           os.showWaitingBubble(id, msg.awaitingInput === true);
           playDoneSound();
