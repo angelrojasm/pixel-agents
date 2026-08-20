@@ -189,6 +189,11 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
         hueShift: agent.hueShift,
         ptyBacked: agent.ptyBacked || undefined,
         customTitle: agent.customTitle,
+        // Live AgentState has no terminalName field (that only exists on the
+        // persisted shape) — source it from terminalRef.name, the same
+        // pattern agentStateStore.ts uses when persisting. Standalone-only:
+        // VS Code's own emit site (PixelAgentsViewProvider) defers this to M2.
+        terminalName: agent.terminalRef?.name || undefined,
       });
     };
 
@@ -199,10 +204,17 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
     // Pty frames carry raw terminal I/O (keystrokes echo, command output), so
     // an untokened same-origin viewer never receives them — the delivery-side
     // mirror of the ptyInput/launchAgent privilege gate in clientMessageHandler.
+    // crashAcknowledged rides the same gate as agentCrashed: an unprivileged
+    // viewer never learned about the crash, so it must not learn it was
+    // acknowledged either.
     const PRIVILEGED_ONLY_TYPES = /^pty/;
     const onBroadcast = (message: Record<string, unknown>) => {
       const t = String(message.type ?? '');
-      if (!privileged && (PRIVILEGED_ONLY_TYPES.test(t) || t === 'agentCrashed')) return;
+      if (
+        !privileged &&
+        (PRIVILEGED_ONLY_TYPES.test(t) || t === 'agentCrashed' || t === 'crashAcknowledged')
+      )
+        return;
       safeSend(socket, message);
     };
 

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as vscode from 'vscode';
 
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
@@ -59,6 +60,11 @@ function makeFakePtyHost() {
     scrollback: vi.fn(() => ['line-1', 'line-2']),
     has: vi.fn((id: number) => running.has(id) || exits.has(id)),
     exitInfo: vi.fn((id: number) => exits.get(id)),
+    crashedAgentIds: vi.fn(() =>
+      [...exits.entries()]
+        .filter(([, exit]) => exit.code !== 0 || exit.signal !== undefined)
+        .map(([id]) => id),
+    ),
     disposeAll: vi.fn(),
   };
   return { host: host as unknown as PtyManager, starts, running, exits };
@@ -271,6 +277,25 @@ describe('clientMessageHandler: standalone pty dispatch', () => {
     });
   });
 
+  describe('acknowledgeCrash', () => {
+    it('privileged: broadcasts crashAcknowledged', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host, true);
+      handleClientMessage({ type: 'acknowledgeCrash', id: 9 }, send, ctx);
+      expect(broadcasts.find((b) => b.type === 'crashAcknowledged')).toEqual({
+        type: 'crashAcknowledged',
+        id: 9,
+      });
+    });
+
+    it('unprivileged: ignored (no broadcast)', () => {
+      const { host } = makeFakePtyHost();
+      const ctx = makeCtx(host, false);
+      handleClientMessage({ type: 'acknowledgeCrash', id: 9 }, send, ctx);
+      expect(broadcasts.find((b) => b.type === 'crashAcknowledged')).toBeUndefined();
+    });
+  });
+
   describe('webviewReady reconnect payloads', () => {
     it('existingAgents carries ptyBackedAgents and customTitles', () => {
       const { host } = makeFakePtyHost();
@@ -285,6 +310,35 @@ describe('clientMessageHandler: standalone pty dispatch', () => {
       expect(existing).toBeDefined();
       expect(existing!.ptyBackedAgents).toEqual({ 2: true });
       expect(existing!.customTitles).toEqual({ 2: 'Ada' });
+    });
+
+    it('existingAgents includes terminalNames and, when privileged, crashedAgentIds', () => {
+      const { host, exits } = makeFakePtyHost();
+      const ctx = makeCtx(host, true);
+      store.set(
+        2,
+        createTestAgent({
+          id: 2,
+          sessionId: 'sess-2',
+          terminalRef: { name: 'Claude Code #1' } as vscode.Terminal,
+        }),
+      );
+      exits.set(9, { code: 1 }); // a crashed, retained worker (unrelated agent id)
+      handleClientMessage({ type: 'webviewReady' }, send, ctx);
+      const existing = sent.find((m) => m.type === 'existingAgents');
+      expect(existing).toBeDefined();
+      expect(existing!.terminalNames).toEqual({ 2: 'Claude Code #1' });
+      expect(existing!.crashedAgentIds).toEqual([9]);
+    });
+
+    it('existingAgents reply omits crashedAgentIds for unprivileged connections', () => {
+      const { host, exits } = makeFakePtyHost();
+      const ctx = makeCtx(host, false);
+      exits.set(9, { code: 1 });
+      handleClientMessage({ type: 'webviewReady' }, send, ctx);
+      const existing = sent.find((m) => m.type === 'existingAgents');
+      expect(existing).toBeDefined();
+      expect(existing!.crashedAgentIds).toBeUndefined();
     });
 
     it('settingsLoaded includes recentAgentFolders', () => {

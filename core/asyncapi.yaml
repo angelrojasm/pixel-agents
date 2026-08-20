@@ -105,6 +105,7 @@ components:
         - $ref: '#/components/schemas/PtyExit'
         - $ref: '#/components/schemas/PtyScrollback'
         - $ref: '#/components/schemas/AgentCrashed'
+        - $ref: '#/components/schemas/CrashAcknowledged'
         - $ref: '#/components/schemas/AgentRenamed'
         - $ref: '#/components/schemas/AgentRestarted'
         # Layout
@@ -156,6 +157,7 @@ components:
         - $ref: '#/components/schemas/PtyResize'
         - $ref: '#/components/schemas/TerminalPaneReady'
         - $ref: '#/components/schemas/RestartAgent'
+        - $ref: '#/components/schemas/AcknowledgeCrash'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -208,6 +210,11 @@ components:
         customTitle:
           type: string
           description: User-chosen display name set at creation time.
+        terminalName:
+          type: string
+          description: >-
+            Terminal display name (e.g. "Claude Code #3"). Standalone emits it
+            in M1.5; VS Code defers to M2.
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -270,6 +277,19 @@ components:
           description: Map of agent ID (string) to user-chosen display name.
           additionalProperties:
             type: string
+        terminalNames:
+          type: object
+          description: Map of agent ID (string) to terminal display name.
+          additionalProperties:
+            type: string
+        crashedAgentIds:
+          type: array
+          description: >-
+            Ids whose pty last exited abnormally (still showing a crash glyph
+            pending acknowledgement). Privileged replies only — an
+            unprivileged client never learns about it.
+          items:
+            type: integer
 
     AgentStatus:
       description: Active vs waiting state for an agent (drives character animation).
@@ -527,6 +547,19 @@ components:
           type: integer
         signal:
           type: string
+
+    CrashAcknowledged:
+      description: >-
+        Broadcast confirming a crash acknowledgement so all privileged
+        webviews clear the glyph together.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: crashAcknowledged
+        id:
+          type: integer
 
     AgentRenamed:
       description: An agent's display name (customTitle) was set or changed.
@@ -976,6 +1009,17 @@ components:
       properties:
         type:
           const: restartAgent
+        id:
+          type: integer
+
+    AcknowledgeCrash:
+      description: User acknowledged a crashed agent's glyph. Privileged clients only.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: acknowledgeCrash
         id:
           type: integer
 

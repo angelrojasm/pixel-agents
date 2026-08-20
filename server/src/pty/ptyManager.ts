@@ -40,6 +40,11 @@ export interface PtyManagerOptions {
  *   ptyData { id, data }        — live output chunks
  *   ptyExit { id, code, signal? } — the current worker's exit
  *   agentCrashed { id, code, signal? } — non-zero/signalled current-worker exits
+ *
+ * crashedAgentIds() exposes the same abnormal-exit predicate for reload-time
+ * state: existingAgents.crashedAgentIds (privileged replies only) lets a
+ * reconnecting client re-show the crash glyph for ids it missed the
+ * agentCrashed broadcast for.
  */
 export class PtyManager {
   private readonly workers = new Map<number, PtyWorker>();
@@ -105,6 +110,19 @@ export class PtyManager {
   /** The retained worker's exit, if it has ended. Undefined while alive. */
   exitInfo(id: number): { code: number; signal?: string } | undefined {
     return this.lastExit.get(id);
+  }
+
+  /** Ids retained in `lastExit` whose exit was abnormal (non-zero code or a
+   *  signal) — the same predicate `start()`'s exit handler uses to decide
+   *  `agentCrashed` emission. There is no separate "intentional stop" marker:
+   *  stop() deletes the `lastExit` entry synchronously, so intentional stops
+   *  are excluded structurally rather than by a second predicate. */
+  crashedAgentIds(): number[] {
+    const ids: number[] = [];
+    for (const [id, exit] of this.lastExit) {
+      if (exit.code !== 0 || exit.signal !== undefined) ids.push(id);
+    }
+    return ids;
   }
 
   /** Explicit reap (close/restart): kill and delete synchronously, so the
