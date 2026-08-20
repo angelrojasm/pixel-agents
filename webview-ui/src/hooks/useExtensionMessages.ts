@@ -119,6 +119,9 @@ interface ExtensionMessageState {
   ptyBackedByAgent: Record<number, boolean>;
   /** User-chosen display names (New-agent form / agentRenamed). */
   customTitles: Record<number, string>;
+  /** Server-assigned terminal names (standalone pty terminals) — mirrors
+   *  customTitles' set/bulk-load/delete lifecycle, keyed by agent id. */
+  terminalNames: Record<number, string>;
   /** Imperative per-agent pty event fan-out for xterm panes. */
   ptyEventBus: PtyEventBus;
 }
@@ -168,6 +171,7 @@ export function useExtensionMessages(
   const [recentAgentFolders, setRecentAgentFolders] = useState<string[]>([]);
   const [ptyBackedByAgent, setPtyBackedByAgent] = useState<Record<number, boolean>>({});
   const [customTitles, setCustomTitles] = useState<Record<number, string>>({});
+  const [terminalNames, setTerminalNames] = useState<Record<number, string>>({});
   // Per-agent pty event fan-out for xterm panes. A ref (not state): subscribers
   // attach imperatively; per-keystroke data must never re-render React.
   const ptyEventBusRef = useRef<PtyEventBus | null>(null);
@@ -194,6 +198,10 @@ export function useExtensionMessages(
   useEffect(() => {
     // Buffer agents from existingAgents until layout is loaded
     let pendingAgents: PendingAgent[] = [];
+    // Buffer crashedAgentIds alongside pendingAgents: setAgentCrashed needs a
+    // live character, so ids that arrive before layoutLoaded ride along and
+    // are applied at the same point pendingAgents is flushed.
+    let pendingCrashedIds: number[] = [];
 
     // Accumulate distinct folderNames seen across agents (never removed during the
     // session): the source for the Areas folder-mapping dropdown, so a folder stays
@@ -285,6 +293,10 @@ export function useExtensionMessages(
           if (p.isHeadless) os.setHeadless(p.id, true);
         }
         pendingAgents = [];
+        for (const id of pendingCrashedIds) {
+          os.setAgentCrashed(id, true);
+        }
+        pendingCrashedIds = [];
         layoutReadyRef.current = true;
         setLayoutReady(true);
         if (msg.wasReset) {
@@ -301,6 +313,10 @@ export function useExtensionMessages(
         if (typeof msg.customTitle === 'string' && msg.customTitle) {
           const title = msg.customTitle as string;
           setCustomTitles((prev) => ({ ...prev, [id]: title }));
+        }
+        if (typeof msg.terminalName === 'string' && msg.terminalName) {
+          const terminalName = msg.terminalName as string;
+          setTerminalNames((prev) => ({ ...prev, [id]: terminalName }));
         }
         const folderName = msg.folderName as string | undefined;
         const isTeammate = msg.isTeammate as boolean | undefined;
@@ -362,6 +378,12 @@ export function useExtensionMessages(
           delete next[id];
           return next;
         });
+        setTerminalNames((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
         ptyEventBus.remove(id);
         setAgentTools((prev) => {
           if (!(id in prev)) return prev;
@@ -395,11 +417,15 @@ export function useExtensionMessages(
         // Plain React maps (not officeState), so no layout buffering needed.
         const ptyBackedAgents = (msg.ptyBackedAgents || {}) as Record<number, boolean>;
         const restoredTitles = (msg.customTitles || {}) as Record<number, string>;
+        const restoredTerminalNames = (msg.terminalNames || {}) as Record<number, string>;
         if (Object.keys(ptyBackedAgents).length > 0) {
           setPtyBackedByAgent((prev) => ({ ...prev, ...ptyBackedAgents }));
         }
         if (Object.keys(restoredTitles).length > 0) {
           setCustomTitles((prev) => ({ ...prev, ...restoredTitles }));
+        }
+        if (Object.keys(restoredTerminalNames).length > 0) {
+          setTerminalNames((prev) => ({ ...prev, ...restoredTerminalNames }));
         }
         const headlessAgents: Record<number, boolean> = {};
         for (const id of incoming) {
@@ -422,6 +448,18 @@ export function useExtensionMessages(
           )
         ) {
           saveAgentSeats(os);
+        }
+        // Crashed glyph on reconnect: apply immediately when the characters
+        // above were just materialized (layout already ready), otherwise stash
+        // for the layoutLoaded flush alongside the pendingAgents they came in
+        // with — setAgentCrashed is a no-op on a character that doesn't exist yet.
+        const crashedAgentIds = (msg.crashedAgentIds ?? []) as number[];
+        if (crashedAgentIds.length > 0) {
+          if (layoutReadyRef.current) {
+            for (const id of crashedAgentIds) os.setAgentCrashed(id, true);
+          } else {
+            pendingCrashedIds.push(...crashedAgentIds);
+          }
         }
         setAgents((prev) => {
           const ids = new Set(prev);
@@ -829,6 +867,8 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentContextUsage') {
         const id = msg.id as number;
         os.setAgentContext(id, msg.contextTokens as number, msg.maxContextTokens as number);
+      } else if (msg.type === 'crashAcknowledged') {
+        os.acknowledgeCrash(msg.id as number);
       }
     };
     const unsubscribe = transport.onMessage(handler);
@@ -896,6 +936,7 @@ export function useExtensionMessages(
     recentAgentFolders,
     ptyBackedByAgent,
     customTitles,
+    terminalNames,
     ptyEventBus,
   };
 }

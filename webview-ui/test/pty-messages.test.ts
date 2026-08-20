@@ -50,4 +50,12 @@ describe('toPtyEvent', () => {
     expect(toPtyEvent({ type: 'ptyData', data: 'x' })).toBeNull();
     expect(toPtyEvent({ type: 'ptyData', id: 'nope', data: 'x' })).toBeNull();
   });
+
+  // Watch-list: crashAcknowledged is handled in the MAIN message chain
+  // (os.acknowledgeCrash), not the pty fast-path. Anything claimed here
+  // short-circuits before the main chain ever sees it — pinned so a future
+  // addition to KIND_BY_TYPE doesn't silently swallow this message.
+  it('crashAcknowledged is not a pty event', () => {
+    expect(toPtyEvent({ type: 'crashAcknowledged', id: 1 })).toBeNull();
+  });
 });

@@ -259,7 +259,10 @@ function App() {
       // wire-meaningful parent id — same resolution as the focus logic below.
       const ackTarget = meta ? meta.parentAgentId : agentId;
       const clicked = os.characters.get(agentId);
-      if (clicked?.crashed && !clicked.crashedAcknowledged) os.acknowledgeCrash(ackTarget);
+      if (clicked?.crashed && !clicked.crashedAcknowledged) {
+        os.acknowledgeCrash(ackTarget);
+        transport.send({ type: 'acknowledgeCrash', id: ackTarget });
+      }
       const focusId = meta ? meta.parentAgentId : agentId;
       transport.send({ type: 'focusAgent', id: focusId });
       // Browser runtime: also focus that agent's pane in the terminal band.
