@@ -248,7 +248,11 @@ describe('updateCharacter — rest-seat FSM', () => {
     ch.state = CharacterState.WALK;
     ch.restSeatId = 'rest-1';
     ch.wanderCount = 5;
-    ch.wanderLimit = 5;
+    // Deliberately outside [WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX]
+    // so the post-arrival in-range assertion below can only pass if the
+    // re-roll at characters.ts:300 actually ran (an in-range seed like 5
+    // wouldn't discriminate — it'd pass whether or not the re-roll fired).
+    ch.wanderLimit = 999;
     ch.path = [
       { col: 2, row: 1 },
       { col: 3, row: 1 },
