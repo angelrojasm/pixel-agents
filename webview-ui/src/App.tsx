@@ -399,6 +399,7 @@ function App() {
           panRef={editor.panRef}
           showAreas={effectiveShowAreas}
           activeAreaLabel={activeAreaLabel}
+          focusedAgentId={focusedTerminalId}
         />
 
         {!isDebugMode ? (

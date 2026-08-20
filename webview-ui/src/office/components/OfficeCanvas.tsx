@@ -45,6 +45,10 @@ interface OfficeCanvasProps {
   showAreas: boolean;
   /** Currently-selected area label in the editor (alpha-bumped overlay). null otherwise. */
   activeAreaLabel: string | null;
+  /** Character id of the currently-focused terminal. Drives the focus halo
+   *  and sub-agent link lines. Mirrored into a ref (see `focusedAgentIdRef`)
+   *  so focus changes don't restart the game loop's render effect. */
+  focusedAgentId?: number | null;
 }
 
 export function OfficeCanvas({
@@ -64,10 +68,15 @@ export function OfficeCanvas({
   panRef,
   showAreas,
   activeAreaLabel,
+  focusedAgentId,
 }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef({ x: 0, y: 0 });
+  // Mirrored every render so the game loop's render callback reads the
+  // latest focus without the effect restarting on every focus change.
+  const focusedAgentIdRef = useRef<number | null>(focusedAgentId ?? null);
+  focusedAgentIdRef.current = focusedAgentId ?? null;
   // Middle-mouse pan state (imperative, no re-renders)
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
@@ -271,6 +280,8 @@ export function OfficeCanvas({
           seats: officeState.seats,
           characters: officeState.characters,
           isEditMode,
+          focusedAgentId: focusedAgentIdRef.current,
+          subagentMeta: officeState.subagentMeta,
         };
 
         const layout = officeState.getLayout();

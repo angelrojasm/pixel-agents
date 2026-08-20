@@ -28,6 +28,7 @@ import {
   CRASHED_GLYPH_SIZE_PX,
   DELETE_BUTTON_BG,
   FALLBACK_FLOOR_COLOR,
+  FOCUS_HALO_INSET_PX,
   GHOST_BORDER_HOVER_FILL,
   GHOST_BORDER_HOVER_STROKE,
   GHOST_BORDER_STROKE,
@@ -46,6 +47,9 @@ import {
   SELECTED_OUTLINE_ALPHA,
   SELECTION_DASH_PATTERN,
   SELECTION_HIGHLIGHT_COLOR,
+  SUBAGENT_LINK_COLOR,
+  SUBAGENT_LINK_DASH,
+  SUBAGENT_LINK_WIDTH_PX,
   VOID_TILE_DASH_PATTERN,
   VOID_TILE_OUTLINE_COLOR,
 } from '../../constants.js';
@@ -76,6 +80,7 @@ import type {
 } from '../types.js';
 import { CharacterState, TILE_SIZE, TileType } from '../types.js';
 import { getWallInstances, hasWallSprites, wallColorToHex } from '../wallTiles.js';
+import { getFocusHaloStyle } from './characterHalo.js';
 import { getCharacterSprite } from './characters.js';
 import { renderMatrixEffect } from './matrixEffect.js';
 import { getPetSpriteData } from './petEntity.js';
@@ -391,6 +396,36 @@ export function renderScene(
     }
   }
 
+  // Sub-agent → parent dashed link lines. Only while the parent terminal is
+  // focused, and suppressed in edit mode (matches the halo's gate).
+  if (selection.focusedAgentId != null && !selection.isEditMode) {
+    const focusedId = selection.focusedAgentId;
+    for (const ch of characters) {
+      const meta = selection.subagentMeta.get(ch.id);
+      if (!meta || meta.parentAgentId !== focusedId) continue;
+      const parent = selection.characters.get(meta.parentAgentId);
+      if (!parent) continue;
+      const sx = offsetX + ch.x * zoom;
+      const sy = offsetY + ch.y * zoom;
+      const ex = offsetX + parent.x * zoom;
+      const ey = offsetY + parent.y * zoom;
+      drawables.push({
+        zY: 0,
+        draw: (c) => {
+          c.save();
+          c.strokeStyle = SUBAGENT_LINK_COLOR;
+          c.lineWidth = SUBAGENT_LINK_WIDTH_PX;
+          c.setLineDash(SUBAGENT_LINK_DASH as number[]);
+          c.beginPath();
+          c.moveTo(sx, sy);
+          c.lineTo(ex, ey);
+          c.stroke();
+          c.restore();
+        },
+      });
+    }
+  }
+
   // Characters
   for (const ch of characters) {
     const sprites = getCharacterSprites(ch.palette, ch.hueShift, ch.crashed);
@@ -447,6 +482,38 @@ export function renderScene(
           c.restore();
         },
       });
+    }
+
+    // Focus halo: seat-anchored rectangle around the focused terminal's
+    // character. Gated !isEditMode like the crash glyph below; the outline
+    // block above stays ungated (base behavior).
+    if (!selection.isEditMode) {
+      const isFocused = selection.focusedAgentId != null && ch.id === selection.focusedAgentId;
+      const haloStyle = getFocusHaloStyle({
+        isActive: ch.isActive,
+        isFocused,
+        awaitingSince: ch.awaitingSince,
+      });
+      if (haloStyle && !ch.isSubagent) {
+        // Halo anchors to the WORK SEAT — stable while the character roams.
+        const seat = ch.seatId ? selection.seats.get(ch.seatId) : null;
+        const haloCol = seat?.seatCol ?? ch.tileCol;
+        const haloRow = seat?.seatRow ?? ch.tileRow;
+        const hx = offsetX + haloCol * TILE_SIZE * zoom - FOCUS_HALO_INSET_PX;
+        const hy = offsetY + haloRow * TILE_SIZE * zoom - FOCUS_HALO_INSET_PX;
+        const hw = TILE_SIZE * zoom + FOCUS_HALO_INSET_PX * 2;
+        drawables.push({
+          zY: charZY - OUTLINE_Z_SORT_OFFSET * 2,
+          draw: (c) => {
+            c.save();
+            c.strokeStyle = haloStyle.color;
+            c.lineWidth = haloStyle.width;
+            c.setLineDash(haloStyle.dash as number[]);
+            c.strokeRect(hx, hy, hw, hw);
+            c.restore();
+          },
+        });
+      }
     }
 
     // Crash glyph: only a NEW drawable, so it's the only thing gated on
@@ -907,6 +974,13 @@ export interface SelectionRenderState {
    *  drawables (this crash glyph, Task 10's halo + link lines) — the
    *  pre-existing outline block stays ungated. */
   isEditMode: boolean;
+  /** Character id of the currently-focused terminal, or null. Drives the
+   *  focus halo and gates the sub-agent link lines. */
+  focusedAgentId: number | null;
+  /** Sub-agent id → { parentAgentId, parentToolId }, sourced from
+   *  `officeState.subagentMeta`. Used to draw dashed lines from each of the
+   *  focused parent's sub-agents back to the parent. */
+  subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }>;
 }
 
 /** Fallback used by `renderFrame` when called without a `selection` — keeps
@@ -918,6 +992,8 @@ const EMPTY_SELECTION: SelectionRenderState = {
   seats: new Map(),
   characters: new Map(),
   isEditMode: false,
+  focusedAgentId: null,
+  subagentMeta: new Map(),
 };
 
 export function renderFrame(
