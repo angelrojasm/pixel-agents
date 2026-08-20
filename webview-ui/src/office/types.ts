@@ -202,6 +202,10 @@ export interface Character {
   isActive: boolean;
   /** Assigned seat uid, or null if no seat */
   seatId: string | null;
+  /** Transient rest-seat (couch) uid the character currently occupies or is
+   *  walking to. Never persisted; cleared whenever the character leaves the
+   *  rest seat or becomes seated (active or awaiting user). */
+  restSeatId: string | null;
   /** Active speech bubble type, or null if none showing */
   bubbleType: 'permission' | 'waiting' | null;
   /** Only meaningful while bubbleType === 'waiting': true when the agent went
@@ -211,6 +215,10 @@ export interface Character {
   waitingAwaitingInput?: boolean;
   /** Countdown timer for bubble (waiting: 2→0, permission: unused) */
   bubbleTimer: number;
+  /** Timestamp (ms since epoch) when the awaiting-user latch was set, or null
+   *  when not awaiting. Keeps the character seated at its work seat alongside
+   *  `isActive` — see `shouldBeSeated`. */
+  awaitingSince: number | null;
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
   seatTimer: number;
   /** Whether this character represents a sub-agent (spawned by Task tool) */

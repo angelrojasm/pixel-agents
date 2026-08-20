@@ -1,7 +1,7 @@
 import {
   DEFAULT_MAX_CONTEXT_TOKENS,
-  SEAT_REST_MAX_SEC,
-  SEAT_REST_MIN_SEC,
+  STEP_OFF_PAUSE_MAX_SEC,
+  STEP_OFF_PAUSE_MIN_SEC,
   TYPE_FRAME_DURATION_SEC,
   WALK_FRAME_DURATION_SEC,
   WALK_SPEED_PX_PER_SEC,
@@ -74,10 +74,15 @@ export function createCharacter(
     wanderTimer: 0,
     wanderCount: 0,
     wanderLimit: randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX),
-    isActive: true,
+    // New agents spawn idle. isActive flips true on UserPromptSubmit (first real
+    // interaction). This keeps the overlay from reading "Working…" on a session
+    // the user hasn't touched yet.
+    isActive: false,
     seatId,
+    restSeatId: null,
     bubbleType: null,
     bubbleTimer: 0,
+    awaitingSince: null,
     seatTimer: 0,
     isSubagent: false,
     parentAgentId: null,
@@ -87,6 +92,35 @@ export function createCharacter(
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
+}
+
+/** @internal — exported for tests. At the work seat when actively working
+ *  OR when the awaiting-user latch is set; both read visually as "at the desk". */
+export function shouldBeSeated(ch: Character): boolean {
+  return ch.isActive || ch.awaitingSince != null;
+}
+
+/** @internal */
+export function isChairTile(col: number, row: number, seats: Map<string, Seat>): boolean {
+  for (const seat of seats.values()) {
+    if (seat.seatCol === col && seat.seatRow === row) return true;
+  }
+  return false;
+}
+
+/** Nearest free rest seat by Manhattan distance, or null. */
+export function findNearestFreeRestSeat(ch: Character, seats: Map<string, Seat>): string | null {
+  let bestUid: string | null = null;
+  let bestDist = Infinity;
+  for (const [uid, seat] of seats) {
+    if (seat.assigned || seat.role !== 'rest') continue;
+    const dist = Math.abs(seat.seatCol - ch.tileCol) + Math.abs(seat.seatRow - ch.tileRow);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestUid = uid;
+    }
+  }
+  return bestUid;
 }
 
 export function updateCharacter(
@@ -105,17 +139,28 @@ export function updateCharacter(
         ch.frameTimer -= TYPE_FRAME_DURATION_SEC;
         ch.frame = (ch.frame + 1) % 2;
       }
-      // If no longer active, stand up and start wandering (after seatTimer expires)
-      if (!ch.isActive) {
+      // Work started while resting on a couch — release it and head to the desk.
+      if (shouldBeSeated(ch) && ch.restSeatId) {
+        const rest = seats.get(ch.restSeatId);
+        if (rest) rest.assigned = false;
+        ch.restSeatId = null;
+        ch.state = CharacterState.IDLE;
+        ch.frame = 0;
+        ch.frameTimer = 0;
+        break;
+      }
+      if (!shouldBeSeated(ch)) {
         if (ch.seatTimer > 0) {
           ch.seatTimer -= dt;
           break;
         }
         ch.seatTimer = 0; // clear sentinel
+        if (ch.restSeatId) break; // resting on the couch — stay put
         ch.state = CharacterState.IDLE;
         ch.frame = 0;
         ch.frameTimer = 0;
-        ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
+        // Short step-off pause: standing on the chair tile reads as working.
+        ch.wanderTimer = randomRange(STEP_OFF_PAUSE_MIN_SEC, STEP_OFF_PAUSE_MAX_SEC);
         ch.wanderCount = 0;
         ch.wanderLimit = randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX);
       }
@@ -123,13 +168,15 @@ export function updateCharacter(
     }
 
     case CharacterState.IDLE: {
-      // No idle animation — static pose
       ch.frame = 0;
       if (ch.seatTimer < 0) ch.seatTimer = 0; // clear turn-end sentinel
-      // If became active, pathfind to seat
-      if (ch.isActive) {
+      if (shouldBeSeated(ch)) {
+        if (ch.restSeatId) {
+          const rest = seats.get(ch.restSeatId);
+          if (rest) rest.assigned = false;
+          ch.restSeatId = null;
+        }
         if (!ch.seatId) {
-          // No seat assigned — type in place
           ch.state = CharacterState.TYPE;
           ch.frame = 0;
           ch.frameTimer = 0;
@@ -152,7 +199,6 @@ export function updateCharacter(
             ch.frame = 0;
             ch.frameTimer = 0;
           } else {
-            // Already at seat or no path — sit down
             ch.state = CharacterState.TYPE;
             ch.dir = seat.facingDir;
             ch.frame = 0;
@@ -161,28 +207,39 @@ export function updateCharacter(
         }
         break;
       }
-      // Countdown wander timer
       ch.wanderTimer -= dt;
       if (ch.wanderTimer <= 0) {
-        // Check if we've wandered enough — return to seat for a rest
-        if (ch.wanderCount >= ch.wanderLimit && ch.seatId) {
-          const seat = seats.get(ch.seatId);
-          if (seat) {
-            const path = findPath(
-              ch.tileCol,
-              ch.tileRow,
-              seat.seatCol,
-              seat.seatRow,
-              tileMap,
-              blockedTiles,
-            );
-            if (path.length > 0) {
-              ch.path = path;
-              ch.moveProgress = 0;
-              ch.state = CharacterState.WALK;
-              ch.frame = 0;
-              ch.frameTimer = 0;
-              break;
+        // Wandered enough — rest on a couch (sub-agents never claim couches).
+        if (ch.wanderCount >= ch.wanderLimit && !ch.restSeatId && !ch.isSubagent) {
+          const restUid = findNearestFreeRestSeat(ch, seats);
+          if (restUid) {
+            const rest = seats.get(restUid);
+            if (rest) {
+              // Claim BEFORE pathfinding; roll back if unreachable.
+              rest.assigned = true;
+              ch.restSeatId = restUid;
+              const key = `${rest.seatCol},${rest.seatRow}`;
+              const wasBlocked = blockedTiles.has(key);
+              if (wasBlocked) blockedTiles.delete(key);
+              const path = findPath(
+                ch.tileCol,
+                ch.tileRow,
+                rest.seatCol,
+                rest.seatRow,
+                tileMap,
+                blockedTiles,
+              );
+              if (wasBlocked) blockedTiles.add(key);
+              if (path.length > 0) {
+                ch.path = path;
+                ch.moveProgress = 0;
+                ch.state = CharacterState.WALK;
+                ch.frame = 0;
+                ch.frameTimer = 0;
+                break;
+              }
+              rest.assigned = false;
+              ch.restSeatId = null;
             }
           }
         }
@@ -218,14 +275,12 @@ export function updateCharacter(
       }
 
       if (ch.path.length === 0) {
-        // Path complete — snap to tile center and transition
         const center = tileCenter(ch.tileCol, ch.tileRow);
         ch.x = center.x;
         ch.y = center.y;
 
-        if (ch.isActive) {
+        if (shouldBeSeated(ch)) {
           if (!ch.seatId) {
-            // No seat — type in place
             ch.state = CharacterState.TYPE;
           } else {
             const seat = seats.get(ch.seatId);
@@ -236,32 +291,25 @@ export function updateCharacter(
               ch.state = CharacterState.IDLE;
             }
           }
-        } else {
-          // Check if arrived at assigned seat — sit down for a rest before wandering again
-          if (ch.seatId) {
-            const seat = seats.get(ch.seatId);
-            if (seat && ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow) {
-              ch.state = CharacterState.TYPE;
-              ch.dir = seat.facingDir;
-              // seatTimer < 0 is a sentinel from setAgentActive(false) meaning
-              // "turn just ended" — skip the long rest so idle transition is immediate
-              if (ch.seatTimer < 0) {
-                ch.seatTimer = 0;
-              } else {
-                ch.seatTimer = randomRange(SEAT_REST_MIN_SEC, SEAT_REST_MAX_SEC);
-              }
-              ch.wanderCount = 0;
-              ch.wanderLimit = randomInt(
-                WANDER_MOVES_BEFORE_REST_MIN,
-                WANDER_MOVES_BEFORE_REST_MAX,
-              );
-              ch.frame = 0;
-              ch.frameTimer = 0;
-              break;
-            }
+        } else if (ch.restSeatId) {
+          const rest = seats.get(ch.restSeatId);
+          if (rest && ch.tileCol === rest.seatCol && ch.tileRow === rest.seatRow) {
+            ch.state = CharacterState.TYPE;
+            ch.dir = rest.facingDir;
+            ch.wanderCount = 0;
+            ch.wanderLimit = randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX);
+          } else {
+            // Lost the rest seat during travel — release and resume wandering.
+            if (rest) rest.assigned = false;
+            ch.restSeatId = null;
+            ch.state = CharacterState.IDLE;
+            ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
           }
+        } else {
           ch.state = CharacterState.IDLE;
-          ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
+          ch.wanderTimer = isChairTile(ch.tileCol, ch.tileRow, seats)
+            ? randomRange(STEP_OFF_PAUSE_MIN_SEC, STEP_OFF_PAUSE_MAX_SEC)
+            : randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
         }
         ch.frame = 0;
         ch.frameTimer = 0;
@@ -290,12 +338,18 @@ export function updateCharacter(
         ch.moveProgress = 0;
       }
 
-      // If became active while wandering, repath to seat
-      if (ch.isActive && ch.seatId) {
+      // If should be seated (active or awaiting user) while wandering, repath to seat
+      if (shouldBeSeated(ch) && ch.seatId) {
         const seat = seats.get(ch.seatId);
         if (seat) {
           const lastStep = ch.path[ch.path.length - 1];
           if (!lastStep || lastStep.col !== seat.seatCol || lastStep.row !== seat.seatRow) {
+            // Release any rest claim — diverting to the desk.
+            if (ch.restSeatId) {
+              const rest = seats.get(ch.restSeatId);
+              if (rest) rest.assigned = false;
+              ch.restSeatId = null;
+            }
             const newPath = findPath(
               ch.tileCol,
               ch.tileRow,
