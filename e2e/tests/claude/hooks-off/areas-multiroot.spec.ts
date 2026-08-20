@@ -142,11 +142,17 @@ test.describe('Areas (multi-root)', () => {
   test.describe('seat preference (alpha → Engineering)', () => {
     test.use({ seedConfig: buildSeedConfig({ areaMappings: { [ALPHA]: ['Engineering'] } }) });
 
-    /** Add "Engineering", paint it over some real (free) seats, and save. */
+    /**
+     * Add "Engineering", paint it over some real (free) WORK seats, and save.
+     * Area-zone seat preference only steers work-seat selection
+     * (findFreeSeat in officeState.ts stages over freeWork, not every free
+     * seat) — painting over rest seats would leave Engineering with no seat
+     * the preference logic can ever pick.
+     */
     async function paintAndSaveEngineering(frame: Frame): Promise<void> {
       await startArea(frame, 'Engineering');
       const seats = await readSeats(frame);
-      const targetSeats = seats.filter((s) => !s.assigned).slice(0, 3);
+      const targetSeats = seats.filter((s) => !s.assigned && s.role === 'work').slice(0, 3);
       expect(targetSeats.length).toBeGreaterThan(0);
       for (const seat of targetSeats) {
         await paintTile(frame, seat.col, seat.row);

@@ -39,6 +39,7 @@ export interface TestHooksWindow extends Window {
       row: number;
       areaLabel: string | null;
       assigned: boolean;
+      role: 'work' | 'rest';
     }>;
     editorTileAction?: (col: number, row: number) => void;
     editorEraseAction?: (col: number, row: number) => void;
@@ -172,11 +173,16 @@ export async function readAreas(frame: Frame): Promise<Array<{ label: string; co
   );
 }
 
-/** Read all seats (uid + coords + the area their tile falls in). */
-export async function readSeats(
-  frame: Frame,
-): Promise<
-  Array<{ uid: string; col: number; row: number; areaLabel: string | null; assigned: boolean }>
+/** Read all seats (uid + coords + the area their tile falls in + work/rest role). */
+export async function readSeats(frame: Frame): Promise<
+  Array<{
+    uid: string;
+    col: number;
+    row: number;
+    areaLabel: string | null;
+    assigned: boolean;
+    role: 'work' | 'rest';
+  }>
 > {
   return frame.evaluate(
     () => (window as TestHooksWindow).__pixelAgentsTestHooks?.getSeats?.() ?? [],
